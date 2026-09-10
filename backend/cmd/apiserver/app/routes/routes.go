@@ -49,5 +49,8 @@ func NewHTTPServer(appStore *store.Store) *fiber.App {
 	// ======= AUTH ROUTE =======
 	initAuthenticationRoute(api.Group("/auth"), appStore)
 
+	// ======= APP ROUTE (signed in) =======
+	initAppRoute(api, appStore)
+
 	return app
 }

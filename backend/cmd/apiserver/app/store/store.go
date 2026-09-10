@@ -13,6 +13,10 @@ import (
 
 	// Repositories
 	reposDevice "befriend/internal/repositories/device"
+	reposFriend "befriend/internal/repositories/friend"
+	reposOnboardingResponse "befriend/internal/repositories/onboarding_response"
+	reposPersonalityVersion "befriend/internal/repositories/personality_version"
+	reposQuestionSet "befriend/internal/repositories/question_set"
 	reposRefreshToken "befriend/internal/repositories/refresh_token"
 	reposTx "befriend/internal/repositories/tx"
 	reposUser "befriend/internal/repositories/user"
@@ -22,6 +26,10 @@ import (
 	// Services
 	serviceAuthentication "befriend/internal/services/authentication"
 	serviceDevice "befriend/internal/services/device"
+	serviceFriend "befriend/internal/services/friend"
+	serviceOnboarding "befriend/internal/services/onboarding"
+	servicePersonalityVersion "befriend/internal/services/personality_version"
+	serviceQuestionSet "befriend/internal/services/question_set"
 	serviceRefreshToken "befriend/internal/services/refresh_token"
 	serviceUser "befriend/internal/services/user"
 	serviceUserApplication "befriend/internal/services/user_application"
@@ -29,6 +37,8 @@ import (
 	serviceVerificationCode "befriend/internal/services/verification_code"
 
 	// Handlers
+	handlerFriend "befriend/cmd/apiserver/app/handlers/friend"
+	handlerOnboarding "befriend/cmd/apiserver/app/handlers/onboarding"
 	handlerUser "befriend/cmd/apiserver/app/handlers/user"
 	handlerUserAuth "befriend/cmd/apiserver/app/handlers/user_auth"
 
@@ -43,8 +53,10 @@ type Store struct {
 	Log   *logs.Logger
 
 	// Handlers
-	UserAuthHandler *handlerUserAuth.UserAuthHandler
-	UserHandler     *handlerUser.UserHandler
+	UserAuthHandler   *handlerUserAuth.UserAuthHandler
+	UserHandler       *handlerUser.UserHandler
+	OnboardingHandler *handlerOnboarding.OnboardingHandler
+	FriendHandler     *handlerFriend.FriendHandler
 
 	// Middleware
 	MiddlewarePasetoAuth middlewares.MiddlewarePasetoAuth
@@ -110,6 +122,10 @@ func Init() {
 	deviceRepo := reposDevice.NewDeviceRepo(db)
 	refreshTokenRepo := reposRefreshToken.NewRefreshTokenRepo(db)
 	verificationCodeRepo := reposVerificationCode.NewVerificationCodeRepo(db)
+	questionSetRepo := reposQuestionSet.NewQuestionSetRepo(db)
+	onboardingResponseRepo := reposOnboardingResponse.NewOnboardingResponseRepo(db)
+	friendRepo := reposFriend.NewFriendRepo(db)
+	personalityVersionRepo := reposPersonalityVersion.NewPersonalityVersionRepo(db)
 
 	// Services
 	userService := serviceUser.NewUserService(txRepo, userRepo)
@@ -117,7 +133,17 @@ func Init() {
 	deviceService := serviceDevice.NewDeviceService(txRepo, deviceRepo)
 	refreshTokenService := serviceRefreshToken.NewRefreshTokenService(txRepo, refreshTokenRepo)
 	verificationCodeService := serviceVerificationCode.NewVerificationCodeService(txRepo, verificationCodeRepo, smtpClient)
-	userApplicationService := serviceUserApplication.NewUserApplicationService(txRepo, userService, verificationCodeService)
+	questionSetService := serviceQuestionSet.NewQuestionSetService(txRepo, questionSetRepo)
+	personalityVersionService := servicePersonalityVersion.NewPersonalityVersionService(txRepo, personalityVersionRepo)
+	friendService := serviceFriend.NewFriendService(txRepo, friendRepo, personalityVersionService)
+	onboardingService := serviceOnboarding.NewOnboardingService(
+		txRepo,
+		onboardingResponseRepo,
+		questionSetService,
+		friendService,
+		personalityVersionService,
+	)
+	userApplicationService := serviceUserApplication.NewUserApplicationService(txRepo, userService, verificationCodeService, friendService)
 	authenticationService := serviceAuthentication.NewAuthenticationService(
 		txRepo,
 		userService,
@@ -135,8 +161,10 @@ func Init() {
 		Email: smtpClient,
 		Log:   logs.Log,
 
-		UserAuthHandler: handlerUserAuth.NewUserAuthHandler(authenticationService),
-		UserHandler:     handlerUser.NewUserHandler(userApplicationService),
+		UserAuthHandler:   handlerUserAuth.NewUserAuthHandler(authenticationService),
+		UserHandler:       handlerUser.NewUserHandler(userApplicationService),
+		OnboardingHandler: handlerOnboarding.NewOnboardingHandler(onboardingService),
+		FriendHandler:     handlerFriend.NewFriendHandler(friendService),
 
 		MiddlewarePasetoAuth: middlewares.NewMiddlewarePasetoAuth(),
 	}
