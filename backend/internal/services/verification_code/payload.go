@@ -4,7 +4,6 @@ import "time"
 
 type CreatePayload struct {
 	UserID    string
-	Email     string
 	TableType string
 	ExpiresAt time.Time
 }

@@ -1,0 +1,63 @@
+# Local dev stack (credentials below are local-only).
+#   Infra:       docker compose up -d                      -> postgres, redis, mailpit (inbox UI: http://localhost:8025)
+#   Host API:    make migration-up && make run               (reads .env)
+#   Full stack:  docker compose --profile api up -d --build
+#                docker compose --profile api run --rm api migrate up
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: befriend
+      POSTGRES_PASSWORD: befriend
+      POSTGRES_DB: befriend
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U befriend -d befriend"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # web inbox
+
+  api:
+    profiles: ["api"]
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_ADDRESS: redis:6379
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SYSTEM_ADDR: ":8305"
+    ports:
+      - "8305:8305"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+volumes:
+  postgres-data:

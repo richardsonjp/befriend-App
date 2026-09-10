@@ -2,47 +2,35 @@ package authentication
 
 import (
 	"context"
+
 	"befriend/internal/repositories/tx"
-	"befriend/internal/services/account"
-	"befriend/internal/services/account_member"
-	"befriend/internal/services/app_resource"
-	"befriend/internal/services/operator"
-	"befriend/internal/services/role"
+	"befriend/internal/services/device"
+	"befriend/internal/services/refresh_token"
 	"befriend/internal/services/user"
 )
 
 type AuthenticationService interface {
 	AuthenticateUser(ctx context.Context, payload Login) (*AuthenticateSessionResponse, error)
-	AuthenticateOperator(ctx context.Context, payload Login) (*AuthenticateSessionResponse, error)
 	AuthenticateLogout(ctx context.Context, payload LogoutPayload) error
 }
 
 type authenticationService struct {
-	txRepo               tx.TxRepo
-	userService          user.UserService
-	operatorService      operator.OperatorService
-	roleService          role.RoleService
-	accountService       account.AccountService
-	accountMemberService account_member.AccountMemberService
-	appResourceService   app_resource.AppResourceService
+	txRepo              tx.TxRepo
+	userService         user.UserService
+	deviceService       device.DeviceService
+	refreshTokenService refresh_token.RefreshTokenService
 }
 
 func NewAuthenticationService(
 	txRepo tx.TxRepo,
 	userService user.UserService,
-	operatorService operator.OperatorService,
-	roleService role.RoleService,
-	accountService account.AccountService,
-	accountMemberService account_member.AccountMemberService,
-	appResourceService app_resource.AppResourceService,
+	deviceService device.DeviceService,
+	refreshTokenService refresh_token.RefreshTokenService,
 ) AuthenticationService {
 	return &authenticationService{
-		txRepo:               txRepo,
-		userService:          userService,
-		operatorService:      operatorService,
-		roleService:          roleService,
-		accountService:       accountService,
-		accountMemberService: accountMemberService,
-		appResourceService:   appResourceService,
+		txRepo:              txRepo,
+		userService:         userService,
+		deviceService:       deviceService,
+		refreshTokenService: refreshTokenService,
 	}
 }

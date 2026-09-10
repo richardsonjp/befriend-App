@@ -1,11 +1,11 @@
 package strings
 
 import (
+	"befriend/pkg/utils/null"
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"befriend/pkg/utils/null"
 	"math/big"
 	"strings"
 )

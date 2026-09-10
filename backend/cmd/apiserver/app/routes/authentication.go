@@ -7,18 +7,13 @@ import (
 )
 
 func initAuthenticationRoute(group fiber.Router, appStore *store.Store) {
+	auth := appStore.MiddlewarePasetoAuth.MiddlewarePasetoAuth
+
 	// public
-	group.Route("/user", func(router fiber.Router) {
-		group.Post("/register", appStore.UserHandler.Registration)
-		group.Post("/verify-email", appStore.UserHandler.VerifyEmail)
-		group.Post("/login", appStore.UserAuthHandler.Login)
-		// protected
-		protected := group.Use(appStore.MiddlewarePasetoAuth.MiddlewarePasetoAuth)
-		protected.Post("/logout", appStore.UserAuthHandler.Logout)
-	})
+	group.Post("/register", appStore.UserHandler.Registration)
+	group.Post("/verify-email", appStore.UserHandler.VerifyEmail)
+	group.Post("/login", appStore.UserAuthHandler.Login)
 
-	group.Route("/backoffice", func(group fiber.Router) {
-		group.Post("/login", appStore.UserAuthHandler.Login)
-	})
-
+	// protected
+	group.Post("/logout", auth, appStore.UserAuthHandler.Logout)
 }

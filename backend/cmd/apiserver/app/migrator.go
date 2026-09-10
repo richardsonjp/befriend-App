@@ -1,8 +1,8 @@
 package app
 
 import (
-	"fmt"
 	"befriend/config"
+	"fmt"
 	"os"
 
 	"github.com/golang-migrate/migrate/v4"

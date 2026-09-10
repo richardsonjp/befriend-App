@@ -28,7 +28,7 @@ func (MiddlewarePasetoAuth) MiddlewarePasetoAuth(c *fiber.Ctx) error {
 
 	// Set user context
 	c.Locals("user_id", claims.UserID)
-	c.Locals("role_id", claims.RoleID)
+	c.Locals("device_id", claims.DeviceID)
 
 	return c.Next()
 }

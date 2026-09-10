@@ -2,9 +2,11 @@ package user
 
 import (
 	"context"
+	"strings"
+	"time"
+
 	"befriend/internal/model"
 	"befriend/internal/model/enum"
-	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -14,18 +16,17 @@ func (s *userService) CreateUser(ctx context.Context, payload CreatePayload) (*m
 	if err != nil {
 		return nil, err
 	}
-	payload.Password = string(hashedPassword)
-	data := s.setData(payload)
 
-	result, err := s.userRepo.Create(ctx, data)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	email := strings.ToLower(strings.TrimSpace(payload.Email))
+	passwordHash := string(hashedPassword)
+	return s.userRepo.Create(ctx, &model.User{
+		Email:        &email,
+		PasswordHash: &passwordHash,
+		Status:       enum.UNVERIFIED,
+	})
 }
 
-func (s *userService) GetUserByID(ctx context.Context, id uint) (*model.User, error) {
+func (s *userService) GetUserByID(ctx context.Context, id string) (*model.User, error) {
 	return s.userRepo.GetByID(ctx, id)
 }
 
@@ -48,14 +49,4 @@ func (s *userService) UpdateEmailVerified(ctx context.Context, email string) (*m
 	}
 
 	return data, nil
-}
-
-func (s *userService) setData(payload CreatePayload) *model.User {
-	return &model.User{
-		Email:        payload.Email,
-		PasswordHash: payload.Password,
-		FullName:     payload.FullName,
-		PhoneNumber:  payload.PhoneNumber,
-		Status:       enum.UNVERIFIED,
-	}
 }

@@ -1,9 +1,9 @@
 package verification_code
 
 import (
-	"context"
 	"befriend/internal/model"
 	"befriend/pkg/clients/db"
+	"context"
 )
 
 type VerificationCodeRepo interface {

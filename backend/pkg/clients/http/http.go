@@ -38,15 +38,14 @@ type Logger interface {
 
 // RequestOptions contains per-request configuration
 type RequestOptions struct {
-	Headers      map[string]string
-	QueryParams  map[string]string
-	PathParams   map[string]string
-	Cookies      map[string]string
-	Timeout      *time.Duration
-	Context      context.Context
-	Body         interface{}
-	FormData     map[string]string
-	DisableRetry bool
+	Headers     map[string]string
+	QueryParams map[string]string
+	PathParams  map[string]string
+	Cookies     map[string]string
+	Timeout     *time.Duration
+	Context     context.Context
+	Body        interface{}
+	FormData    map[string]string
 }
 
 // Response wraps the Fiber response with useful metadata
@@ -374,8 +373,9 @@ func (r *Response) IsError() bool {
 
 // defaultRetryCondition is the default retry logic
 func defaultRetryCondition(statusCode int) bool {
-	// Retry on 5xx server errors and 429 Too Many Requests
-	return statusCode >= 500 || statusCode == 429
+	// Retry on 5xx only. A 429 means "slow down": blind retries just burn the caller's rate limit
+	// (e.g. OpenRouter's per-minute cap), so callers handle 429 themselves.
+	return statusCode >= 500
 }
 
 // logRequest logs the HTTP request details

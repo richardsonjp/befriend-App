@@ -2,6 +2,8 @@ package refresh_token
 
 import (
 	"context"
+	"time"
+
 	"befriend/internal/model"
 )
 
@@ -12,21 +14,9 @@ func (r *refreshTokenRepo) Create(ctx context.Context, m *model.RefreshToken) er
 	return nil
 }
 
-func (r *refreshTokenRepo) Update(ctx context.Context, m model.RefreshToken, updatedFields ...string) (int64, error) {
-	query := r.dbdget.Get(ctx).
-		Model(&m).
-		Where("id = ?", m.ID)
-
-	if len(updatedFields) > 0 {
-		updatedFields = append(updatedFields, "updated_at")
-		query = query.Select(updatedFields)
-	}
-
-	query.Updates(m)
-
-	if query.Error != nil {
-		return 0, query.Error
-	}
-
-	return query.RowsAffected, nil
+func (r *refreshTokenRepo) RevokeByDevice(ctx context.Context, deviceID string, revokedAt time.Time) error {
+	return r.dbdget.Get(ctx).
+		Model(&model.RefreshToken{}).
+		Where("device_id = ? AND revoked_at IS NULL", deviceID).
+		Update("revoked_at", revokedAt).Error
 }

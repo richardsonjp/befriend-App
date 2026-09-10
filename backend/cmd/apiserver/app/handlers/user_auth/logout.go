@@ -13,19 +13,15 @@ func (h *UserAuthHandler) Logout(c *fiber.Ctx) error {
 	if !ok {
 		return errors.Respond(c, errors.From("UNAUTHORIZED"))
 	}
-	roleID, ok := c.Locals("role_id").(string)
+	deviceID, ok := c.Locals("device_id").(string)
 	if !ok {
 		return errors.Respond(c, errors.From("UNAUTHORIZED"))
 	}
 
-	session := authentication.LogoutPayload{
-		UserID: userID,
-		RoleID: roleID,
-	}
-
-	return c.Status(fiber.StatusOK).JSON(api.Base{Data: session})
-
-	err := h.authenticationService.AuthenticateLogout(c.Context(), session)
+	err := h.authenticationService.AuthenticateLogout(c.Context(), authentication.LogoutPayload{
+		UserID:   userID,
+		DeviceID: deviceID,
+	})
 	if err != nil {
 		return errors.Respond(c, err)
 	}

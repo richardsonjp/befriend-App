@@ -1,8 +1,8 @@
 package wording
 
 import (
-	"fmt"
 	"befriend/pkg/utils/array"
+	"fmt"
 	"math"
 	"math/big"
 	"regexp"

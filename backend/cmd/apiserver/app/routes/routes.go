@@ -6,9 +6,7 @@ import (
 	"befriend/internal/middlewares"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/logger" // Add this import
-	//fiberSwagger "github.com/gofiber/swagger"
-	//_ "befriend/docs"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 )
 
 func Ping(c *fiber.Ctx) error {
@@ -22,12 +20,7 @@ func NewHTTPServer(appStore *store.Store) *fiber.App {
 		EnablePrintRoutes:     true,
 	})
 
-	// Swagger
-	//app.Get("/swagger/*", fiberSwagger.WrapHandler)
-
 	// Global Middlewares
-
-	// app.Use(middlewares.AccessLog())
 	app.Use(logger.New(logger.Config{
 		Format: "[Fiber] ${time} | ${status} | ${latency} | ${ip} | ${method} | ${path} ${error}\n",
 		// Time format matching Gin (YYYY/MM/DD - HH:MM:SS)
@@ -41,27 +34,14 @@ func NewHTTPServer(appStore *store.Store) *fiber.App {
 
 	app.Get("/ping", Ping)
 
-	// Protected routes after static API key
+	// Everything below requires the static API key; protected routes add PASETO auth per route.
 	app.Use(middlewares.CheckHeaderStaticApiKey())
 
 	// all system use api prefix /api
 	api := app.Group("/api")
 
 	// ======= AUTH ROUTE =======
-	authGroup := api.Group("/auth")
-	initAuthenticationRoute(authGroup, appStore)
-
-	// ======= PASETO AUTH =======
-	api.Use(appStore.MiddlewarePasetoAuth.MiddlewarePasetoAuth)
-	api.Use(appStore.MiddlewareAccessControl.CheckAccess)
-
-	// ======= DASHBOARD ROUTE =======
-	dashboardGroup := api.Group("/dashboard")
-	initDashboardRoute(dashboardGroup, appStore)
-
-	// ======= BACKOFFICE ROUTE =======
-	// backofficeGroup := api.Group("/backoffice")
-	// initDashboardRoute(dashboardGroup, appStore)
+	initAuthenticationRoute(api.Group("/auth"), appStore)
 
 	return app
 }

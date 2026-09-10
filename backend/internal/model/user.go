@@ -11,14 +11,14 @@ func (User) TableName() string {
 }
 
 type UserStatus = enum.UserStatus
+
+// User is one account. Email and PasswordHash are nil for Apple/Google-only accounts.
 type User struct {
 	ID              string     `gorm:"primarykey;default:gen_random_uuid()"`
-	Email           string     `gorm:"column:email;unique;not null"`
-	PasswordHash    string     `gorm:"column:password_hash;not null"`
-	FullName        string     `gorm:"column:full_name"`
-	PhoneNumber     string     `gorm:"column:phone_number;unique"`
+	Email           *string    `gorm:"column:email"`
+	PasswordHash    *string    `gorm:"column:password_hash"`
 	Status          UserStatus `gorm:"column:status"`
 	EmailVerifiedAt *time.Time `gorm:"column:email_verified_at"`
-	CreatedAt       time.Time  `gorm:"column:created_at;type:datetime;default:now()"`
-	UpdatedAt       time.Time  `gorm:"column:updated_at;type:datetime;default:now()"`
+	CreatedAt       time.Time  `gorm:"column:created_at;default:now()"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at;default:now()"`
 }

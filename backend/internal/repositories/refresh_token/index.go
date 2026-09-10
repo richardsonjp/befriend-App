@@ -2,13 +2,15 @@ package refresh_token
 
 import (
 	"context"
+	"time"
+
 	"befriend/internal/model"
 	"befriend/pkg/clients/db"
 )
 
 type RefreshTokenRepo interface {
 	Create(ctx context.Context, m *model.RefreshToken) error
-	Update(ctx context.Context, m model.RefreshToken, updatedFields ...string) (int64, error)
+	RevokeByDevice(ctx context.Context, deviceID string, revokedAt time.Time) error
 }
 
 type refreshTokenRepo struct {

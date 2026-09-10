@@ -11,10 +11,10 @@ import (
 	"aidanwoods.dev/go-paseto"
 )
 
+// Claims identify one signed-in device of one user.
 type Claims struct {
-	UserID     string `json:"user_id,omitempty"`
-	OperatorID string `json:"operator_id,omitempty"`
-	RoleID     string `json:"role_id"`
+	UserID   string `json:"user_id"`
+	DeviceID string `json:"device_id"`
 }
 
 // getSymmetricKey derives a 32-byte key from a string secret using SHA256
@@ -29,41 +29,28 @@ func getSymmetricKey(secret string) paseto.V4SymmetricKey {
 	return key
 }
 
-// GenerateTokens generates access and refresh tokens for a user using PASETO v4
+// GenerateTokens generates access and refresh tokens for a user's device using PASETO v4
 func GenerateTokens(data Claims) (string, string, error) {
-	// Access Token
+	now := time.Now()
+
 	accessToken := paseto.NewToken()
-	if data.UserID != "" {
-		accessToken.Set("user_id", data.UserID)
-	}
-	if data.OperatorID != "" {
-		accessToken.Set("operator_id", data.OperatorID)
-	}
-	accessToken.Set("role_id", data.RoleID)
+	accessToken.SetString("user_id", data.UserID)
+	accessToken.SetString("device_id", data.DeviceID)
 	accessToken.SetIssuer(config.Config.System.AppName)
-	accessToken.SetIssuedAt(time.Now())
-	accessToken.SetNotBefore(time.Now())
-	accessToken.SetExpiration(time.Now().Add(time.Duration(config.Config.PASETO.AccessExpiryMin) * time.Minute))
+	accessToken.SetIssuedAt(now)
+	accessToken.SetNotBefore(now)
+	accessToken.SetExpiration(now.Add(time.Duration(config.Config.PASETO.AccessExpiryMin) * time.Minute))
 
-	accessKey := getSymmetricKey(config.Config.PASETO.AccessSecret)
-	encryptedAccess := accessToken.V4Encrypt(accessKey, nil)
-
-	// Refresh Token
 	refreshToken := paseto.NewToken()
-	if data.UserID != "" {
-		refreshToken.Set("user_id", data.UserID)
-	}
-	if data.OperatorID != "" {
-		refreshToken.Set("operator_id", data.OperatorID)
-	}
-	refreshToken.Set("role_id", data.RoleID)
+	refreshToken.SetString("user_id", data.UserID)
+	refreshToken.SetString("device_id", data.DeviceID)
 	refreshToken.SetIssuer(config.Config.System.AppName)
-	refreshToken.SetIssuedAt(time.Now())
-	refreshToken.SetNotBefore(time.Now())
-	refreshToken.SetExpiration(time.Now().Add(time.Duration(config.Config.PASETO.RefreshExpiryDay) * 24 * time.Hour))
+	refreshToken.SetIssuedAt(now)
+	refreshToken.SetNotBefore(now)
+	refreshToken.SetExpiration(now.Add(time.Duration(config.Config.PASETO.RefreshExpiryDay) * 24 * time.Hour))
 
-	refreshKey := getSymmetricKey(config.Config.PASETO.RefreshSecret)
-	encryptedRefresh := refreshToken.V4Encrypt(refreshKey, nil)
+	encryptedAccess := accessToken.V4Encrypt(getSymmetricKey(config.Config.PASETO.AccessSecret), nil)
+	encryptedRefresh := refreshToken.V4Encrypt(getSymmetricKey(config.Config.PASETO.RefreshSecret), nil)
 
 	return encryptedAccess, encryptedRefresh, nil
 }
@@ -74,27 +61,26 @@ func ValidateToken(tokenString string, secret string) (*Claims, error) {
 	parser.AddRule(paseto.NotExpired())
 	parser.AddRule(paseto.ValidAt(time.Now()))
 
-	key := getSymmetricKey(secret)
-	token, err := parser.ParseV4Local(key, tokenString, nil)
+	token, err := parser.ParseV4Local(getSymmetricKey(secret), tokenString, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	userID, _ := token.GetString("user_id")
-	operatorID, _ := token.GetString("operator_id")
-
-	if userID == "" && operatorID == "" {
-		return nil, errors.New("invalid token: missing identity (user_id or operator_id)")
+	userID, err := token.GetString("user_id")
+	if err != nil || userID == "" {
+		return nil, errors.New("invalid token: missing user_id")
 	}
 
-	roleID, err := token.GetString("role_id")
-	if err != nil {
-		return nil, errors.New("invalid token: missing role_id")
+	deviceID, err := token.GetString("device_id")
+	if err != nil || deviceID == "" {
+		return nil, errors.New("invalid token: missing device_id")
 	}
 
-	return &Claims{
-		UserID:     userID,
-		OperatorID: operatorID,
-		RoleID:     roleID,
-	}, nil
+	return &Claims{UserID: userID, DeviceID: deviceID}, nil
+}
+
+// HashToken returns the sha256 hex digest stored instead of the raw refresh token.
+func HashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }

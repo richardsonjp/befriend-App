@@ -1,9 +1,9 @@
 package verification_code
 
 import (
-	"context"
 	"befriend/internal/model"
 	"befriend/pkg/utils/errors"
+	"context"
 )
 
 func (r *verificationCodeRepo) Create(ctx context.Context, m *model.VerificationCode) (*model.VerificationCode, error) {

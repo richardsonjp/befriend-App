@@ -2,10 +2,8 @@ package user_application
 
 import (
 	"context"
+
 	"befriend/internal/repositories/tx"
-	"befriend/internal/services/account"
-	"befriend/internal/services/account_member"
-	"befriend/internal/services/role"
 	"befriend/internal/services/user"
 	"befriend/internal/services/verification_code"
 )
@@ -18,26 +16,17 @@ type UserApplicationService interface {
 type userApplicationService struct {
 	txRepo                  tx.TxRepo
 	userService             user.UserService
-	roleService             role.RoleService
-	accountService          account.AccountService
-	accountMemberService    account_member.AccountMemberService
 	verificationCodeService verification_code.VerificationCodeService
 }
 
 func NewUserApplicationService(
 	txRepo tx.TxRepo,
 	userService user.UserService,
-	roleService role.RoleService,
-	accountService account.AccountService,
-	accountMemberService account_member.AccountMemberService,
 	verificationCodeService verification_code.VerificationCodeService,
 ) UserApplicationService {
 	return &userApplicationService{
 		txRepo:                  txRepo,
 		userService:             userService,
-		roleService:             roleService,
-		accountService:          accountService,
-		accountMemberService:    accountMemberService,
 		verificationCodeService: verificationCodeService,
 	}
 }

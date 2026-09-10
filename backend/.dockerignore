@@ -1,0 +1,7 @@
+.git
+.cursor
+bin/
+docs/
+.env
+*.md
+concept.png

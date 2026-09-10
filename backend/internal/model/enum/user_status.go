@@ -1,16 +1,30 @@
 package enum
 
+import (
+	"database/sql/driver"
+	"fmt"
+)
+
 type UserStatus int64
 
 // Scan for converting byte to string for fetching/read
 func (s *UserStatus) Scan(value interface{}) error {
-	key := value.(string)
+	key, err := scanString(value)
+	if err != nil {
+		return err
+	}
 	for i, v := range UserStatusKey {
 		if v == key {
 			*s = i
+			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("unknown user status %q", key)
+}
+
+// Value for converting enum to string for storing/write
+func (s UserStatus) Value() (driver.Value, error) {
+	return s.String(), nil
 }
 
 func NewUserStatus(value string) UserStatus {

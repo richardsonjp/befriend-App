@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+
 	"befriend/internal/model"
 	"befriend/pkg/clients/db"
 )
@@ -9,9 +10,8 @@ import (
 type UserRepo interface {
 	Create(ctx context.Context, m *model.User) (*model.User, error)
 	Update(ctx context.Context, m model.User, updatedFields ...string) (int64, error)
-	GetByID(ctx context.Context, ID uint) (*model.User, error)
+	GetByID(ctx context.Context, id string) (*model.User, error)
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
-	GetListUser(ctx context.Context, pagination model.Pagination, filter map[string]string) ([]*UserList, *model.Pagination, error)
 }
 
 type userRepo struct {

@@ -1,8 +1,8 @@
 package math
 
 import (
-	"fmt"
 	"befriend/pkg/utils/null"
+	"fmt"
 	"math"
 	"math/rand"
 	"strconv"

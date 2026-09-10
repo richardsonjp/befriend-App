@@ -1,19 +1,12 @@
 package user_application
 
-// RegisterPayload contains all data needed for user registration
+// RegisterPayload contains all data needed for email/password registration
 type RegisterPayload struct {
-	// Account information
-	AccountType string `json:"account_type" validate:"omitempty,oneof=personal corporate"`
-	AccountName string `json:"account_name" validate:"required_if=AccountType corporate,max=100"`
-
-	// User information
-	FullName    string `json:"full_name" validate:"required,min=3,max=255"`
-	Email       string `json:"email" validate:"required,email,min=8,max=255"`
-	PhoneNumber string `json:"phone_number" validate:"required,min=10,max=20"`
-	Password    string `json:"password" validate:"required,min=8,max=100"`
+	Email    string `json:"email" validate:"required,email,max=255"`
+	Password string `json:"password" validate:"required,min=8,max=72"` // bcrypt only reads 72 bytes
 }
 
 type VerifyEmailPayload struct {
-	Email   string `json:"email" validate:"required,email,min=8,max=255"`
-	OTPCode string `json:"otp_code" validate:"required,min=6,max=6"`
+	Email   string `json:"email" validate:"required,email,max=255"`
+	OTPCode string `json:"otp_code" validate:"required,len=6,numeric"`
 }

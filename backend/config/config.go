@@ -17,7 +17,7 @@ var Config = struct {
 		Password     string `env:"DB_PASSWORD" envDefault:""`
 		Name         string `env:"DB_NAME" envDefault:""`
 		Host         string `env:"DB_HOST" envDefault:"db"`
-		Port         string `env:"DB_PORT" envDefault:"3306"`
+		Port         string `env:"DB_PORT" envDefault:"5432"`
 		Encoding     string `env:"DB_ENCODING" envDefault:"utf8mb4"`
 		Maxconns     uint64 `env:"DB_MAXCONNS" envDefault:"10"`
 		Maxidleconns uint64 `env:"DB_MAXIDLECONNS" envDefault:"10"`
@@ -36,10 +36,10 @@ var Config = struct {
 
 	SMTP struct {
 		Host     string `env:"SMTP_HOST" envDefault:"localhost"`
-		Port     string `env:"SMTP_PORT" envDefault:"2740"`
-		Username string `env:"SMTP_USERNAME" envDefault:"eg@example.com"`
-		Password string `env:"SMTP_PASSWORD" envDefault:"password"`
-		From     string `env:"SMTP_FROM" envDefault:"eg@example.com"`
+		Port     string `env:"SMTP_PORT" envDefault:"1025"` // Mailpit
+		Username string `env:"SMTP_USERNAME" envDefault:""`
+		Password string `env:"SMTP_PASSWORD" envDefault:""`
+		From     string `env:"SMTP_FROM" envDefault:"befriend@localhost"`
 	}
 
 	System struct {

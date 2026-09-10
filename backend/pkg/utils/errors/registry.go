@@ -20,12 +20,10 @@ var Registry = map[string]AppError{
 
 	// domain specific error
 	"DATA_NOT_FOUND": {Code: "DATA_NOT_FOUND", Status: http.StatusNotFound, Message: "Data not found"},
+	"DATA_CONFLICT":  {Code: "DATA_CONFLICT", Status: http.StatusConflict, Message: "Data already exists"},
 
 	// services specific error:
 	// # authentication
-	"ACCOUNT":           {Code: "ACCOUNT", Status: http.StatusBadRequest, Message: "Account bad request"},
-	"ACCOUNT_MEMBER":    {Code: "ACCOUNT_MEMBER", Status: http.StatusBadRequest, Message: "Account Member bad request"},
 	"USER":              {Code: "USER", Status: http.StatusBadRequest, Message: "User bad request"},
-	"ROLE":              {Code: "ROLE", Status: http.StatusBadRequest, Message: "Role bad request"},
 	"VERIFICATION_CODE": {Code: "VERIFICATION_CODE", Status: http.StatusBadRequest, Message: "Verification Code bad request"},
 }

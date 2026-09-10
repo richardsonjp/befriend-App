@@ -1,10 +1,10 @@
 package middlewares
 
 import (
-	"encoding/json"
 	"befriend/config"
 	"befriend/pkg/utils/logs"
 	stringer "befriend/pkg/utils/strings"
+	"encoding/json"
 	"time"
 
 	"github.com/gofiber/fiber/v2"

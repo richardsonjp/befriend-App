@@ -3,11 +3,12 @@ package verification_code
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"befriend/internal/model"
 	"befriend/pkg/clients/email"
 	"befriend/pkg/utils/errors"
 	customStr "befriend/pkg/utils/strings"
-	"time"
 )
 
 const (
@@ -28,20 +29,15 @@ func (s *verificationCodeService) Create(ctx context.Context, payload CreatePayl
 	return data, nil
 }
 
-func (s *verificationCodeService) SendVerificationEmail(ctx context.Context, payload CreatePayload) error {
-	data, err := s.Create(ctx, payload)
-	if err != nil {
-		return err
-	}
-
-	return nil
-
-	// TODO: bypass for now because we got no valid email config
+// SendVerificationEmail mails an already-created code. Call it after the transaction that created
+// the code has committed, so a slow mail server never holds a database transaction open.
+func (s *verificationCodeService) SendVerificationEmail(ctx context.Context, emailAddress string, data *model.VerificationCode) error {
 	return s.smtpClient.SendEmail(&email.EmailRequest{
-		To:      []string{data.UserID},
-		Subject: "Verification Code",
-		Body:    fmt.Sprintf("Your verification code is %s", data.Code),
-		IsHTML:  false,
+		To:      []string{emailAddress},
+		Subject: "Your befriend verification code",
+		Body: fmt.Sprintf("Your befriend verification code is %s. It expires in %d minutes.",
+			data.Code, int(time.Until(data.ExpiresAt).Round(time.Minute).Minutes())),
+		IsHTML: false,
 	})
 }
 
