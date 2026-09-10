@@ -1,0 +1,12 @@
+.DS_Store
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# SwiftPM
+.build/
+.swiftpm/
+
+# backend
+backend/.env
+backend/bin/
