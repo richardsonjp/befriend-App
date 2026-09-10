@@ -29,4 +29,6 @@ var Registry = map[string]AppError{
 	// # authentication
 	"USER":              {Code: "USER", Status: http.StatusBadRequest, Message: "User bad request"},
 	"VERIFICATION_CODE": {Code: "VERIFICATION_CODE", Status: http.StatusBadRequest, Message: "Verification Code bad request"},
+	// # pairing: the code expired, was already used, or doesn't match
+	"PAIRING_GONE": {Code: "PAIRING_GONE", Status: http.StatusGone, Message: "Pairing code expired"},
 }

@@ -17,9 +17,11 @@ import (
 	reposFriend "befriend/internal/repositories/friend"
 	reposLLMBudget "befriend/internal/repositories/llm_budget"
 	reposOnboardingResponse "befriend/internal/repositories/onboarding_response"
+	reposPairingCode "befriend/internal/repositories/pairing_code"
 	reposPersonalityVersion "befriend/internal/repositories/personality_version"
 	reposQuestionSet "befriend/internal/repositories/question_set"
 	reposRefreshToken "befriend/internal/repositories/refresh_token"
+	reposTriggerEvent "befriend/internal/repositories/trigger_event"
 	reposTx "befriend/internal/repositories/tx"
 	reposUser "befriend/internal/repositories/user"
 	reposUserIdentity "befriend/internal/repositories/user_identity"
@@ -30,10 +32,12 @@ import (
 	serviceDevice "befriend/internal/services/device"
 	serviceFriend "befriend/internal/services/friend"
 	serviceOnboarding "befriend/internal/services/onboarding"
+	servicePairingCode "befriend/internal/services/pairing_code"
 	servicePersonality "befriend/internal/services/personality"
 	servicePersonalityVersion "befriend/internal/services/personality_version"
 	serviceQuestionSet "befriend/internal/services/question_set"
 	serviceRefreshToken "befriend/internal/services/refresh_token"
+	serviceTriggerEvent "befriend/internal/services/trigger_event"
 	serviceUser "befriend/internal/services/user"
 	serviceUserApplication "befriend/internal/services/user_application"
 	serviceUserIdentity "befriend/internal/services/user_identity"
@@ -43,6 +47,8 @@ import (
 	handlerDevice "befriend/cmd/apiserver/app/handlers/device"
 	handlerFriend "befriend/cmd/apiserver/app/handlers/friend"
 	handlerOnboarding "befriend/cmd/apiserver/app/handlers/onboarding"
+	handlerPairing "befriend/cmd/apiserver/app/handlers/pairing"
+	handlerTriggerEvent "befriend/cmd/apiserver/app/handlers/trigger_event"
 	handlerUser "befriend/cmd/apiserver/app/handlers/user"
 	handlerUserAuth "befriend/cmd/apiserver/app/handlers/user_auth"
 
@@ -60,11 +66,13 @@ type Store struct {
 	PersonalityService servicePersonality.PersonalityService
 
 	// Handlers
-	UserAuthHandler   *handlerUserAuth.UserAuthHandler
-	UserHandler       *handlerUser.UserHandler
-	OnboardingHandler *handlerOnboarding.OnboardingHandler
-	FriendHandler     *handlerFriend.FriendHandler
-	DeviceHandler     *handlerDevice.DeviceHandler
+	UserAuthHandler     *handlerUserAuth.UserAuthHandler
+	UserHandler         *handlerUser.UserHandler
+	OnboardingHandler   *handlerOnboarding.OnboardingHandler
+	FriendHandler       *handlerFriend.FriendHandler
+	DeviceHandler       *handlerDevice.DeviceHandler
+	PairingHandler      *handlerPairing.PairingHandler
+	TriggerEventHandler *handlerTriggerEvent.TriggerEventHandler
 
 	// Middleware
 	MiddlewarePasetoAuth middlewares.MiddlewarePasetoAuth
@@ -145,6 +153,8 @@ func Init() {
 	onboardingResponseRepo := reposOnboardingResponse.NewOnboardingResponseRepo(db)
 	friendRepo := reposFriend.NewFriendRepo(db)
 	personalityVersionRepo := reposPersonalityVersion.NewPersonalityVersionRepo(db)
+	pairingCodeRepo := reposPairingCode.NewPairingCodeRepo(db)
+	triggerEventRepo := reposTriggerEvent.NewTriggerEventRepo(db)
 	llmBudgetRepo := reposLLMBudget.NewLLMBudgetRepo(redis)
 
 	// Services
@@ -155,6 +165,8 @@ func Init() {
 	verificationCodeService := serviceVerificationCode.NewVerificationCodeService(txRepo, verificationCodeRepo, smtpClient)
 	questionSetService := serviceQuestionSet.NewQuestionSetService(txRepo, questionSetRepo)
 	personalityVersionService := servicePersonalityVersion.NewPersonalityVersionService(txRepo, personalityVersionRepo)
+	pairingCodeService := servicePairingCode.NewPairingCodeService(txRepo, pairingCodeRepo)
+	triggerEventService := serviceTriggerEvent.NewTriggerEventService(txRepo, triggerEventRepo, userService)
 	friendService := serviceFriend.NewFriendService(txRepo, friendRepo, personalityVersionService)
 	onboardingService := serviceOnboarding.NewOnboardingService(
 		txRepo,
@@ -171,13 +183,20 @@ func Init() {
 		onboardingService,
 		openRouterClient,
 	)
-	userApplicationService := serviceUserApplication.NewUserApplicationService(txRepo, userService, verificationCodeService, friendService)
+	userApplicationService := serviceUserApplication.NewUserApplicationService(
+		txRepo,
+		userService,
+		verificationCodeService,
+		friendService,
+		triggerEventService,
+	)
 	authenticationService := serviceAuthentication.NewAuthenticationService(
 		txRepo,
 		userService,
 		userIdentityService,
 		deviceService,
 		refreshTokenService,
+		pairingCodeService,
 		appleVerifier,
 		googleVerifier,
 		appleClient,
@@ -191,11 +210,13 @@ func Init() {
 
 		PersonalityService: personalityService,
 
-		UserAuthHandler:   handlerUserAuth.NewUserAuthHandler(authenticationService),
-		UserHandler:       handlerUser.NewUserHandler(userApplicationService),
-		OnboardingHandler: handlerOnboarding.NewOnboardingHandler(onboardingService),
-		FriendHandler:     handlerFriend.NewFriendHandler(friendService),
-		DeviceHandler:     handlerDevice.NewDeviceHandler(deviceService),
+		UserAuthHandler:     handlerUserAuth.NewUserAuthHandler(authenticationService),
+		UserHandler:         handlerUser.NewUserHandler(userApplicationService),
+		OnboardingHandler:   handlerOnboarding.NewOnboardingHandler(onboardingService),
+		FriendHandler:       handlerFriend.NewFriendHandler(friendService),
+		DeviceHandler:       handlerDevice.NewDeviceHandler(deviceService),
+		PairingHandler:      handlerPairing.NewPairingHandler(pairingCodeService, authenticationService),
+		TriggerEventHandler: handlerTriggerEvent.NewTriggerEventHandler(triggerEventService),
 
 		MiddlewarePasetoAuth: middlewares.NewMiddlewarePasetoAuth(),
 	}

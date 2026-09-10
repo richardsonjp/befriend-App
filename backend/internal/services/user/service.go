@@ -72,6 +72,12 @@ func (s *userService) ClaimForProvider(ctx context.Context, id string) error {
 	return err
 }
 
+// UpdateSyncSettings saves the user's activity sync settings.
+func (s *userService) UpdateSyncSettings(ctx context.Context, m model.User) error {
+	_, err := s.userRepo.Update(ctx, m, "log_sync_paused", "excluded_apps")
+	return err
+}
+
 func (s *userService) DeleteUser(ctx context.Context, id string) error {
 	return s.userRepo.Delete(ctx, id)
 }

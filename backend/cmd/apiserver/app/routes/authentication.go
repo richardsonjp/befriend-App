@@ -8,6 +8,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// pairingClaimPerMinute leaves room for a Mac polling every 2 seconds.
+const pairingClaimPerMinute = 40
+
 func initAuthenticationRoute(group fiber.Router, appStore *store.Store) {
 	auth := appStore.MiddlewarePasetoAuth.MiddlewarePasetoAuth
 	// Brute-force protection for passwords, codes and tokens: per client IP, per route.
@@ -21,6 +24,8 @@ func initAuthenticationRoute(group fiber.Router, appStore *store.Store) {
 	group.Post("/apple", limit, appStore.UserAuthHandler.LoginApple)
 	group.Post("/google", limit, appStore.UserAuthHandler.LoginGoogle)
 	group.Post("/refresh", limit, appStore.UserAuthHandler.Refresh)
+	group.Post("/pairing", limit, appStore.PairingHandler.Create)
+	group.Post("/pairing/claim", middlewares.RateLimit(pairingClaimPerMinute), appStore.PairingHandler.Claim)
 
 	// protected
 	group.Post("/logout", auth, appStore.UserAuthHandler.Logout)

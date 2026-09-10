@@ -2,6 +2,8 @@ package routes
 
 import (
 	"befriend/cmd/apiserver/app/store"
+	"befriend/config"
+	"befriend/internal/middlewares"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -9,11 +11,19 @@ import (
 // initAppRoute registers the signed-in app endpoints.
 func initAppRoute(api fiber.Router, appStore *store.Store) {
 	auth := appStore.MiddlewarePasetoAuth.MiddlewarePasetoAuth
+	// Pairing codes are short: limit guessing them even for signed-in users.
+	codeLimit := middlewares.RateLimit(config.Config.RateLimit.AuthPerMinute)
 
 	api.Get("/me", auth, appStore.UserHandler.GetMe)
 	api.Delete("/me", auth, appStore.UserAuthHandler.DeleteAccount)
+	api.Get("/me/settings", auth, appStore.UserHandler.GetSettings)
+	api.Patch("/me/settings", auth, appStore.UserHandler.UpdateSettings)
 	api.Put("/devices/me/push-tokens", auth, appStore.DeviceHandler.UpdatePushTokens)
 	api.Get("/onboarding/questions", auth, appStore.OnboardingHandler.GetQuestions)
 	api.Post("/onboarding/complete", auth, appStore.OnboardingHandler.Complete)
 	api.Get("/friend", auth, appStore.FriendHandler.GetFriend)
+	api.Get("/pairing/:code", codeLimit, auth, appStore.PairingHandler.Get)
+	api.Post("/pairing/:code/confirm", codeLimit, auth, appStore.PairingHandler.Confirm)
+	api.Post("/trigger-events", auth, appStore.TriggerEventHandler.Record)
+	api.Delete("/trigger-events", auth, appStore.TriggerEventHandler.DeleteAll)
 }

@@ -5,6 +5,7 @@ import (
 
 	"befriend/internal/repositories/tx"
 	"befriend/internal/services/friend"
+	"befriend/internal/services/trigger_event"
 	"befriend/internal/services/user"
 	"befriend/internal/services/verification_code"
 )
@@ -14,6 +15,8 @@ type UserApplicationService interface {
 	VerifyUserEmail(ctx context.Context, payload VerifyEmailPayload) error
 	ResendVerificationCode(ctx context.Context, payload ResendCodePayload) error
 	GetMe(ctx context.Context, userID string) (*MeResponse, error)
+	GetSettings(ctx context.Context, userID string) (*SettingsResponse, error)
+	UpdateSettings(ctx context.Context, userID string, payload UpdateSettingsPayload) (*SettingsResponse, error)
 }
 
 type userApplicationService struct {
@@ -21,6 +24,7 @@ type userApplicationService struct {
 	userService             user.UserService
 	verificationCodeService verification_code.VerificationCodeService
 	friendService           friend.FriendService
+	triggerEventService     trigger_event.TriggerEventService
 }
 
 func NewUserApplicationService(
@@ -28,11 +32,13 @@ func NewUserApplicationService(
 	userService user.UserService,
 	verificationCodeService verification_code.VerificationCodeService,
 	friendService friend.FriendService,
+	triggerEventService trigger_event.TriggerEventService,
 ) UserApplicationService {
 	return &userApplicationService{
 		txRepo:                  txRepo,
 		userService:             userService,
 		verificationCodeService: verificationCodeService,
 		friendService:           friendService,
+		triggerEventService:     triggerEventService,
 	}
 }

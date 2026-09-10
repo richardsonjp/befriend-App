@@ -15,6 +15,7 @@ type UserService interface {
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	MarkEmailVerified(ctx context.Context, id string) error
 	ClaimForProvider(ctx context.Context, id string) error
+	UpdateSyncSettings(ctx context.Context, m model.User) error
 	DeleteUser(ctx context.Context, id string) error
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"befriend/internal/repositories/tx"
 	"befriend/internal/services/device"
+	"befriend/internal/services/pairing_code"
 	"befriend/internal/services/refresh_token"
 	"befriend/internal/services/user"
 	"befriend/internal/services/user_identity"
@@ -16,6 +17,7 @@ type AuthenticationService interface {
 	AuthenticateUser(ctx context.Context, payload Login) (*AuthenticateSessionResponse, error)
 	AuthenticateWithApple(ctx context.Context, payload AppleLogin) (*AuthenticateSessionResponse, error)
 	AuthenticateWithGoogle(ctx context.Context, payload GoogleLogin) (*AuthenticateSessionResponse, error)
+	ClaimPairing(ctx context.Context, payload pairing_code.ClaimPayload) (*AuthenticateSessionResponse, error)
 	RefreshSession(ctx context.Context, payload RefreshPayload) (*AuthenticateSessionResponse, error)
 	AuthenticateLogout(ctx context.Context, payload LogoutPayload) error
 	DeleteAccount(ctx context.Context, userID string) error
@@ -27,6 +29,7 @@ type authenticationService struct {
 	userIdentityService user_identity.UserIdentityService
 	deviceService       device.DeviceService
 	refreshTokenService refresh_token.RefreshTokenService
+	pairingCodeService  pairing_code.PairingCodeService
 	appleVerifier       *idtoken.Verifier // nil when Sign in with Apple isn't configured
 	googleVerifier      *idtoken.Verifier // nil when Google sign-in isn't configured
 	appleClient         *apple.Client     // nil when Apple server credentials aren't configured
@@ -38,6 +41,7 @@ func NewAuthenticationService(
 	userIdentityService user_identity.UserIdentityService,
 	deviceService device.DeviceService,
 	refreshTokenService refresh_token.RefreshTokenService,
+	pairingCodeService pairing_code.PairingCodeService,
 	appleVerifier *idtoken.Verifier,
 	googleVerifier *idtoken.Verifier,
 	appleClient *apple.Client,
@@ -48,6 +52,7 @@ func NewAuthenticationService(
 		userIdentityService: userIdentityService,
 		deviceService:       deviceService,
 		refreshTokenService: refreshTokenService,
+		pairingCodeService:  pairingCodeService,
 		appleVerifier:       appleVerifier,
 		googleVerifier:      googleVerifier,
 		appleClient:         appleClient,
