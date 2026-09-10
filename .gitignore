@@ -10,3 +10,6 @@ DerivedData/
 # backend
 backend/.env
 backend/bin/
+
+# iOS machine-specific build settings
+ios_app/Config/Local.xcconfig

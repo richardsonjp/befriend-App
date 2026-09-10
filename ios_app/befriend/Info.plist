@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>APIBaseURL</key>
+	<string>$(API_BASE_URL)</string>
+	<key>StaticAPIKey</key>
+	<string>$(STATIC_API_KEY)</string>
+	<key>APNSEnvironment</key>
+	<string>$(APNS_ENV)</string>
+	<key>KeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)com.richardsonjp.befriend.shared</string>
+	<key>GIDClientID</key>
+	<string>$(GOOGLE_CLIENT_ID)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.richardsonjp.befriend</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>befriend</string>
+				<string>$(GOOGLE_REVERSED_CLIENT_ID)</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSLocationDefaultAccuracyReduced</key>
+	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_befriend-pres._tcp</string>
+		<string>_befriend-pres._udp</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.richardsonjp.befriend.checkin</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

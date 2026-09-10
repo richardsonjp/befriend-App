@@ -1,0 +1,16 @@
+// Build settings shared by the app and the widget. Machine-specific values (your tunnel URL, the static API
+// key, Google client IDs) go in Local.xcconfig next to this file, which is gitignored.
+// xcconfig treats "//" as a comment, hence the $() in URLs.
+
+API_BASE_URL = http:/$()/localhost:8305
+STATIC_API_KEY = change-me
+
+// APNs environment the build's push tokens belong to.
+APNS_ENV = sandbox
+APNS_ENV[config=Release] = production
+
+// Google Sign-In: the iOS OAuth client ID and its reversed form (the URL scheme Google redirects to).
+GOOGLE_CLIENT_ID =
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.not-configured
+
+#include? "Local.xcconfig"
