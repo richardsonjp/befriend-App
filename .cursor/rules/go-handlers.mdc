@@ -1,0 +1,55 @@
+---
+description: Fiber handler patterns — validate all inputs, call services only
+globs: cmd/**/handlers/**/*.go
+alwaysApply: false
+---
+
+# Handlers (Fiber)
+
+## Structure
+
+- `index.go`: `{Domain}Handler` + `New{Domain}Handler(...)`
+- One HTTP method per file: `registration.go`, `login.go`, `list_widgets.go`
+- Alias service import when needed: `userAppService "go-skeleton/internal/services/user_application"`
+
+## Mandatory flow
+
+1. Parse (`BodyParser` / `QueryParser` / `ParamsParser`)
+2. `validator.Validate(payload)` — first error only
+3. Call service with `c.Context()` — never repo
+4. `errors.Respond(c, err)` on failure
+5. `api.Base` on success
+
+## Template (matches user_auth/login.go)
+
+```go
+func (h *UserAuthHandler) Login(c *fiber.Ctx) error {
+    payload := new(authentication.Login)
+    if err := c.BodyParser(payload); err != nil {
+        return errors.Respond(c, errors.From("BAD_REQUEST"))
+    }
+    if errMessage, err := validator.Validate(payload); err != nil {
+        return errors.Respond(c, errors.From("VALIDATION_FAILED").WithDetail(errMessage))
+    }
+    result, err := h.authenticationService.AuthenticateUser(c.Context(), *payload)
+    if err != nil {
+        return errors.Respond(c, err)
+    }
+    return c.Status(fiber.StatusOK).JSON(api.Base{Data: result})
+}
+```
+
+## Related services in one handler
+
+```go
+type UserHandler struct {
+    userApplicationService user_application.UserApplicationService
+}
+```
+
+Only when the HTTP use case spans that service's domain (registration, onboarding, etc.).
+
+## Do / Don't
+
+- DO: validate all inputs; `c.Context()` into services
+- DON'T: repos, GORM, business logic, raw error returns

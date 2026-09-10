@@ -1,0 +1,53 @@
+---
+description: Model entities and enum package — no inline enums on models
+globs: internal/model/**/*.go
+alwaysApply: false
+---
+
+# Model & Enum
+
+## Model (matches user.go)
+
+```go
+package model
+
+import (
+    "go-skeleton/internal/model/enum"
+    "time"
+)
+
+func (User) TableName() string { return "user" }
+
+type UserStatus = enum.UserStatus
+
+type User struct {
+    ID     string     `gorm:"primarykey;default:gen_random_uuid()"`
+    Status UserStatus `gorm:"column:status"`
+}
+```
+
+## Enum (matches enum/generic_status.go)
+
+```go
+package enum
+
+type GenericStatus int64
+
+const (
+    ACTIVE GenericStatus = iota + 1
+    INACTIVE
+)
+
+var genericStatusKey = map[GenericStatus]string{
+    ACTIVE: "active", INACTIVE: "inactive",
+}
+
+func (s GenericStatus) String() string { return genericStatusKey[s] }
+
+func (s *GenericStatus) Scan(value interface{}) error { /* string → enum */ }
+```
+
+## Do / Don't
+
+- DO: type alias on model (`type X = enum.X`)
+- DON'T: inline string/const enums on model files

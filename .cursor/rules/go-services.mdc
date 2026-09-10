@@ -1,0 +1,66 @@
+---
+description: Service layer — business logic, txRepo, own repo, cross-domain via other Service
+globs: internal/services/**/*.go
+alwaysApply: false
+---
+
+# Services
+
+## File layout
+
+| File | Purpose |
+|------|---------|
+| `index.go` | Interface + private struct + constructor |
+| `service.go` | Implementation (`service_{feature}.go` if large) |
+| `payload.go` | Request DTOs with `validate` tags |
+| `response.go` | Response DTOs |
+| `transformer.go` | Model → response (optional) |
+
+## Constructor pattern (matches role/index.go)
+
+```go
+type roleService struct {
+    txRepo                tx.TxRepo
+    roleRepo              role.RoleRepo
+    accountService        account.AccountService
+    rolePermissionService role_permission.RolePermissionService
+}
+
+func NewRoleService(
+    txRepo tx.TxRepo,
+    roleRepo role.RoleRepo,
+    accountService account.AccountService,
+    rolePermissionService role_permission.RolePermissionService,
+) RoleService { ... }
+```
+
+## Return types
+
+- Prefer `*Response` or `*transformer.Pagination` for handler-facing methods.
+- `*model.X` is acceptable for simple internal CRUD when no response DTO exists yet.
+- Never return GORM types to handlers from repos directly — always through service.
+
+## Transactions
+
+```go
+return s.txRepo.Run(ctx, func(ctx context.Context) error {
+    if err := s.userRepo.Create(ctx, m); err != nil { return err }
+    return nil
+})
+```
+
+## Cross-domain + error checks
+
+```go
+accountData, err := s.accountService.GetAccountByID(ctx, roleData.AccountID)
+if err != nil && !errors.Is(err, "DATA_NOT_FOUND") {
+    return nil, err
+}
+```
+
+## Rules
+
+- `context.Context` first on every method
+- No Fiber imports
+- DRY; skip pointless helpers
+- Register new codes in `registry.go`

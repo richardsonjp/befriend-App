@@ -1,0 +1,41 @@
+---
+description: Agent behavior — rules are the style source, not the codebase index
+alwaysApply: true
+---
+
+# Go Agent Behavior
+
+## Style authority
+
+- `.cursor/rules/go-*.mdc` are the **only** source for architecture and patterns.
+- Do **not** search or read the codebase to discover conventions.
+- Read repo files only for business logic, signatures you must implement, or files you are editing.
+
+## Stack (go-skeleton / fiber-app-skeleton / platform-api-core)
+
+- **HTTP:** Fiber v2 — handlers return `error`
+- **Errors:** `AppError` — `errors.From("CODE")`, `errors.Respond(c, err)`, `errors.Is(err, "CODE")`
+- **DB:** GORM + PostgreSQL via `dbdget.Get(ctx)`
+- **Tx:** `txRepo.Run(ctx, fn)` from service only
+- **Module:** use `go.mod` module path (e.g. `go-skeleton/...`, `platform-api-core/...`)
+
+## Folder layout
+
+```
+cmd/apiserver/app/
+  handlers/{domain}/
+  routes/
+  store/store.go       # Init() → store.App
+  locale/              # id.json, en-US.json
+  migrations/
+config/
+internal/{middlewares,services,repositories,model/enum}
+pkg/{clients,utils}
+Makefile               # make lint, make test, make run
+```
+
+## Before finishing
+
+- Run `make lint` (`go vet ./...`)
+- Verify layer boundaries
+- New error codes in `pkg/utils/errors/registry.go`

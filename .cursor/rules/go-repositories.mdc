@@ -1,0 +1,48 @@
+---
+description: Repository layer — GORM DB logic, own service caller only
+globs: internal/repositories/**/*.go
+alwaysApply: false
+---
+
+# Repositories
+
+## File layout
+
+- `index.go` — `{Domain}Repo` interface + `New{Domain}Repo(dbdget db.DBGormDelegate)`
+- `repo.go` — GORM queries
+- `struct.go` — join DTOs (optional)
+
+## Pattern (matches user/repo.go)
+
+```go
+type userRepo struct {
+    dbdget db.DBGormDelegate
+}
+
+func (r *userRepo) GetByID(ctx context.Context, id uint) (*model.User, error) {
+    user := &model.User{}
+    q := r.dbdget.Get(ctx).Where("id = ?", id).First(user)
+    if q.Error != nil {
+        if q.Error == gorm.ErrRecordNotFound {
+            return nil, errors.From("DATA_NOT_FOUND")
+        }
+        return nil, q.Error
+    }
+    return user, nil
+}
+
+func (r *userRepo) Update(ctx context.Context, m model.User, updatedFields ...string) (int64, error) {
+    if len(updatedFields) == 0 {
+        return 0, errors.From("BAD_REQUEST")
+    }
+    updatedFields = append(updatedFields, "updated_at")
+    query := r.dbdget.Get(ctx).Model(&m).Where("id = ?", m.ID).Select(updatedFields).Updates(m)
+    return query.RowsAffected, query.Error
+}
+```
+
+## Rules
+
+- Always `r.dbdget.Get(ctx)` (respects tx from `txRepo.Run`)
+- Map not-found in repo, not service
+- No business logic; only own service may call this repo
