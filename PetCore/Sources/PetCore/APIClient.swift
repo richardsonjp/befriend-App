@@ -108,13 +108,17 @@ public final class APIClient {
         tokens.save(session)
     }
 
-    private func send<Response: Decodable>(_ method: String, _ path: String, body: (any Encodable)? = nil, authorized: Bool = true) async throws -> Response {
+    func storeSession(_ session: AuthTokens) {
+        tokens.save(session)
+    }
+
+    func send<Response: Decodable>(_ method: String, _ path: String, body: (any Encodable)? = nil, authorized: Bool = true) async throws -> Response {
         let data = try await sendRaw(method, path, body: body, authorized: authorized)
         guard let value = try Wire.decoder.decode(Envelope<Response>.self, from: data).data else { throw APIError.invalidResponse }
         return value
     }
 
-    private func sendIgnoringData(_ method: String, _ path: String, body: (any Encodable)? = nil, authorized: Bool = true) async throws {
+    func sendIgnoringData(_ method: String, _ path: String, body: (any Encodable)? = nil, authorized: Bool = true) async throws {
         _ = try await sendRaw(method, path, body: body, authorized: authorized)
     }
 

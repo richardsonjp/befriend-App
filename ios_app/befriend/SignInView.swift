@@ -4,7 +4,6 @@
 //
 
 import AuthenticationServices
-import CryptoKit
 import GoogleSignIn
 import PetCore
 import SwiftUI
@@ -108,17 +107,5 @@ struct SignInView: View {
                 model.errorMessage = "Google sign-in didn't finish. Please try again."
             }
         }
-    }
-}
-
-enum Nonce {
-    /// 32 random bytes as hex, from the system CSPRNG.
-    static func random() -> String {
-        var generator = SystemRandomNumberGenerator()
-        return (0..<32).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max, using: &generator)) }.joined()
-    }
-
-    static func sha256(_ text: String) -> String {
-        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
