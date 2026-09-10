@@ -7,16 +7,19 @@ import Foundation
 import FoundationModels
 import os
 
-/// Turns triggers into reactions: the on-device model when it's available, canned fallbacks otherwise.
-/// One request at a time. Triggers that arrive mid-request still land in memory; only the latest one waits its turn.
+/// Turns triggers into reactions: the on-device model when it's available, the friend's phrasebook otherwise.
+/// One request at a time for `handle`. Triggers that arrive mid-request still land in memory; only the latest one
+/// waits its turn. Build a new brain when the friend's personality version changes.
 public final class PetBrain {
     private static let log = Logger(subsystem: "com.richardsonjp.befriend", category: "brain")
 
     // ponytail: in-memory log for this launch only; the backend owns the durable event log.
     nonisolated static let memoryLimit = 6
+    /// Instructions plus schema must leave room in the 4K context for the prompt and the answer.
+    nonisolated static let instructionTokenBudget = 1200
 
-    /// Static block: never interpolated, so it stays byte-identical across calls.
-    nonisolated static let instructions = """
+    /// Device-neutral base; the friend's name and persona are appended once per personality version.
+    nonisolated static let baseInstructions = """
         You are a small, friendly companion who lives on the user's devices.
         You notice what the user is doing and react briefly, like a playful friend.
 
@@ -35,6 +38,9 @@ public final class PetBrain {
 
     public var onReaction: (PetReaction) -> Void = { _ in }
 
+    /// Never interpolated per call, so it stays byte-identical for the life of this brain.
+    let instructions: String
+    private let phrasebook: Phrasebook?
     private let model = SystemLanguageModel.default
     private let forceFallback: Bool
     private let appSwitchCooldown: TimeInterval
@@ -46,19 +52,56 @@ public final class PetBrain {
     private var hasExplainedFallback = false
 
     public init(
+        friend: FriendProfile? = nil,
         forceFallback: Bool = ProcessInfo.processInfo.environment["PET_FORCE_FALLBACK"] == "1",
         appSwitchCooldown: TimeInterval = 20
     ) {
+        self.instructions = Self.makeInstructions(for: friend)
+        self.phrasebook = friend?.phrasebook
         self.forceFallback = forceFallback
         self.appSwitchCooldown = appSwitchCooldown
         Self.log.info("Model availability: \(String(describing: self.model.availability), privacy: .public)")
         prepareNextSession()
+        #if DEBUG
+        checkInstructionBudget()
+        #endif
     }
 
+    /// Fire-and-forget: the reaction arrives through `onReaction`.
     public func handle(_ trigger: Trigger) {
+        let record = remember(trigger)
+        if isBusy { pending = record } else { start(record) }
+    }
+
+    /// For callers that need the answer in place (intents, background refresh). No cooldown, no queue.
+    public func react(to trigger: Trigger) async -> PetReaction {
+        await makeReaction(for: remember(trigger))
+    }
+
+    /// An instant reaction without the model: a phrasebook line, or a canned one.
+    public func quickReaction(to trigger: Trigger, mood: PetMood? = nil) -> PetReaction {
+        let trigger = trigger.sanitized
+        return phrasebook?.reaction(for: trigger, mood: mood) ?? PetReaction.fallback(for: trigger).clamped(for: trigger)
+    }
+
+    nonisolated static func makeInstructions(for friend: FriendProfile?) -> String {
+        guard let friend else { return baseInstructions }
+        var text = baseInstructions + "\n\nYour name is \"\(flattened(friend.name))\". Call the user \"\(flattened(friend.userNickname))\"."
+        if let persona = friend.personality.content?.instructions, !persona.isEmpty {
+            text += "\n\n" + persona
+        }
+        return text
+    }
+
+    /// Names are user input: keep them on one line and inside their quotes.
+    private nonisolated static func flattened(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline).joined(separator: " ").replacingOccurrences(of: "\"", with: "'")
+    }
+
+    private func remember(_ trigger: Trigger) -> TriggerRecord {
         let record = TriggerRecord(trigger: trigger.sanitized, at: .now)
         memory = Array((memory + [record]).suffix(Self.memoryLimit))
-        if isBusy { pending = record } else { start(record) }
+        return record
     }
 
     private func start(_ record: TriggerRecord) {
@@ -86,18 +129,13 @@ public final class PetBrain {
     }
 
     private func makeReaction(for record: TriggerRecord) async -> PetReaction {
-        let reaction: PetReaction
-        if forceFallback {
-            reaction = .fallback(for: record.trigger)
-        } else {
-            switch model.availability {
-            case .available:
-                reaction = await generate(for: record)
-            case .unavailable(let reason):
-                reaction = explainOnce(reason, over: .fallback(for: record.trigger))
-            }
+        if forceFallback { return quickReaction(to: record.trigger) }
+        switch model.availability {
+        case .available:
+            return await generate(for: record).clamped(for: record.trigger)
+        case .unavailable(let reason):
+            return explainOnce(reason, over: quickReaction(to: record.trigger))
         }
-        return reaction.clamped(for: record.trigger)
     }
 
     private func generate(for record: TriggerRecord) async -> PetReaction {
@@ -108,9 +146,9 @@ public final class PetBrain {
             let prompt = Self.dynamicBlock(for: record, memory: memory)
             return try await session.respond(to: prompt, generating: PetReaction.self).content
         } catch {
-            // guardrailViolation, exceededContextWindowSize, rateLimited, … all degrade the same way.
-            Self.log.error("Generation failed, using fallback: \(String(describing: error), privacy: .public)")
-            return .fallback(for: record.trigger)
+            // guardrailViolation, exceededContextWindowSize, rateLimited (backgrounded), … all degrade the same way.
+            Self.log.error("Generation failed, using the phrasebook: \(String(describing: error), privacy: .public)")
+            return quickReaction(to: record.trigger)
         }
     }
 
@@ -124,8 +162,22 @@ public final class PetBrain {
     }
 
     private func makeSession() -> LanguageModelSession {
-        LanguageModelSession(model: model, instructions: Self.instructions)
+        LanguageModelSession(model: model, instructions: instructions)
     }
+
+    #if DEBUG
+    private func checkInstructionBudget() {
+        guard model.isAvailable else { return }
+        guard #available(iOS 26.4, macOS 26.4, *) else { return }
+        let instructions = self.instructions
+        Task { [model] in
+            guard let count = try? await model.tokenCount(for: Instructions(instructions)) else { return }
+            if count > Self.instructionTokenBudget {
+                Self.log.fault("Instructions use \(count) tokens, over the \(Self.instructionTokenBudget)-token budget")
+            }
+        }
+    }
+    #endif
 
     /// Dynamic block: a trimmed window of earlier triggers, then the current one. Kept short for the 4K context.
     nonisolated static func dynamicBlock(for current: TriggerRecord, memory: [TriggerRecord]) -> String {
@@ -142,7 +194,7 @@ public final class PetBrain {
     private func explainOnce(_ reason: SystemLanguageModel.Availability.UnavailableReason, over reaction: PetReaction) -> PetReaction {
         guard !hasExplainedFallback else { return reaction }
         hasExplainedFallback = true
-        Self.log.notice("Model unavailable, using fallbacks: \(String(describing: reason), privacy: .public)")
+        Self.log.notice("Model unavailable, using the phrasebook: \(String(describing: reason), privacy: .public)")
         return PetReaction(action: reaction.action, mood: .concerned, dialogue: Self.explanation(for: reason))
     }
 
