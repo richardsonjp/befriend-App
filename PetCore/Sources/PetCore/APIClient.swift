@@ -16,9 +16,9 @@ public nonisolated enum APIError: Error, Equatable, Sendable {
 /// The befriend backend. Every request carries the static API key; signed-in requests carry the access token,
 /// and a 401 refreshes the session once (concurrent callers share that refresh) and retries.
 public final class APIClient {
-    private let baseURL: URL
-    private let staticAPIKey: String
-    private let tokens: TokenStorage
+    let baseURL: URL
+    let staticAPIKey: String
+    let tokens: TokenStorage
     private let session: URLSession
     private var refreshing: Task<AuthTokens, Error>?
 

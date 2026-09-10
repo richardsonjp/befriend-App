@@ -25,16 +25,25 @@ nonisolated struct FriendTimelineProvider: TimelineProvider {
         completion(entries(from: .now).first ?? placeholder(in: context))
     }
 
+    /// Asks the backend where the friend is (falling back to what the app last saved), then builds the entries.
     func getTimeline(in context: Context, completion: @escaping (Timeline<FriendEntry>) -> Void) {
-        let entries = entries(from: .now)
-        completion(Timeline(entries: entries, policy: .after(entries.last?.date ?? .now.addingTimeInterval(3600))))
+        Task { @MainActor in
+            let owner = try? await AppConfig.makeAPIClient().presence().owner
+            let entries = entries(from: .now, owner: owner)
+            completion(Timeline(entries: entries, policy: .after(entries.last?.date ?? .now.addingTimeInterval(3600))))
+        }
     }
 
-    func entries(from now: Date) -> [FriendEntry] {
+    func entries(from now: Date, owner: PresenceOwner? = nil) -> [FriendEntry] {
         guard let friend = SharedStore.loadFriend(), friend.isReady else {
             return [FriendEntry(date: now, name: nil, state: nil)]
         }
-        let current = SharedStore.loadSurface()
+        var current = SharedStore.loadSurface()
+        if let owner, let saved = current {
+            current = FriendSurfaceState(presence: owner == .mac ? .onMac : .here, mood: saved.mood, action: saved.action, line: saved.line)
+        } else if owner == .mac {
+            current = FriendSurfaceState(presence: .onMac, mood: .content, action: .idle, line: "")
+        }
         var entries = [FriendEntry(date: now, name: friend.name, state: current)]
         guard let phrasebook = friend.phrasebook, current?.presence != .onMac else { return entries }
         for hour in 1...6 {

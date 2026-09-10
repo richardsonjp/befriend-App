@@ -35,6 +35,9 @@ final class AppModel {
     @ObservationIgnored private var surfaces: SurfaceController!
     @ObservationIgnored private var hatchPoll: Task<Void, Never>?
     @ObservationIgnored private var backgroundedAt: Date?
+    @ObservationIgnored private var isForeground = false
+    @ObservationIgnored private var presenceClaim: Task<Void, Never>?
+    @ObservationIgnored private var peer: PresencePeer?
 
     init() {
         surfaces = SurfaceController(api: api)
@@ -101,6 +104,10 @@ final class AppModel {
 
     private func signedOut() {
         hatchPoll?.cancel()
+        presenceClaim?.cancel()
+        presenceClaim = nil
+        peer?.stop()
+        peer = nil
         SharedStore.saveFriend(nil)
         surfaces.signedOut()
         brain = PetBrain()
@@ -128,6 +135,49 @@ final class AppModel {
             let hello = brain.quickReaction(to: .returned(afterSeconds: 0))
             show(hello)
             surfaces.friendReady(latest, state: FriendSurfaceState(presence: .here, mood: hello.mood, action: hello.action, line: hello.dialogue))
+        }
+        if peer == nil {
+            Task { [weak self] in
+                guard let self, self.peer == nil, let me = try? await self.api.me() else { return }
+                self.peer = PresencePeer(userID: me.id, displayName: UIDevice.current.name)
+                if self.isForeground { self.startClaiming() }
+            }
+        }
+        if isForeground { startClaiming() }
+    }
+
+    // MARK: Presence
+
+    /// While the app is open the friend is on the iPhone: claim it now and every minute (a claim lasts 5), and tell
+    /// a Mac on the same Wi-Fi directly.
+    private func startClaiming() {
+        peer?.start()
+        peer?.send(.claim)
+        guard presenceClaim == nil else { return }
+        presenceClaim = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                _ = try? await self.api.claimPresence()
+                self.peer?.send(.claim)
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
+    }
+
+    /// Leaving the app hands the friend back (to an active Mac); finish the request in the background.
+    private func stopClaiming() {
+        presenceClaim?.cancel()
+        presenceClaim = nil
+        peer?.send(.release)
+        let app = UIApplication.shared
+        var taskID = UIBackgroundTaskIdentifier.invalid
+        taskID = app.beginBackgroundTask(withName: "presence-release") {
+            app.endBackgroundTask(taskID)
+        }
+        Task { [weak self] in
+            _ = try? await self?.api.releasePresence()
+            self?.peer?.stop()
+            app.endBackgroundTask(taskID)
         }
     }
 
@@ -159,12 +209,14 @@ final class AppModel {
     }
 
     func scenePhaseChanged(_ scenePhase: ScenePhase) {
+        if scenePhase != .inactive { isForeground = scenePhase == .active }
         guard let current = friend else { return }
         switch scenePhase {
         case .active:
             let away = backgroundedAt.map { Date.now.timeIntervalSince($0) } ?? 0
             backgroundedAt = nil
             brain.handle(.returned(afterSeconds: away))
+            startClaiming()
             Task {
                 if let latest = try? await api.friend(), latest.isReady, latest.personality.version != current.personality.version {
                     adopt(latest)
@@ -173,6 +225,7 @@ final class AppModel {
         case .background:
             backgroundedAt = .now
             show(brain.quickReaction(to: .leftApp, mood: pet.mood))
+            stopClaiming()
             CheckIn.schedule()
         default:
             break

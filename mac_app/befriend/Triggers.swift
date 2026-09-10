@@ -22,13 +22,20 @@ final class TriggerMonitor {
     }
 
     private let idleThreshold: TimeInterval
+    private let onIdleReading: (TimeInterval) -> Void
     private let onTrigger: (Trigger) -> Void
     private var idleStart: Date?
     private var appObserver: NSObjectProtocol?
     private var idleTimer: Timer?
 
-    init(idleThreshold: TimeInterval = TriggerMonitor.configuredIdleThreshold, onTrigger: @escaping (Trigger) -> Void) {
+    /// `onIdleReading` gets every idle poll (seconds since the last input), e.g. for presence.
+    init(
+        idleThreshold: TimeInterval = TriggerMonitor.configuredIdleThreshold,
+        onIdleReading: @escaping (TimeInterval) -> Void = { _ in },
+        onTrigger: @escaping (Trigger) -> Void
+    ) {
         self.idleThreshold = idleThreshold
+        self.onIdleReading = onIdleReading
         self.onTrigger = onTrigger
     }
 
@@ -53,7 +60,10 @@ final class TriggerMonitor {
 
         let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
             let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: Self.anyInputEvent)
-            MainActor.assumeIsolated { self?.update(idleSeconds: idle) }
+            MainActor.assumeIsolated {
+                self?.onIdleReading(idle)
+                self?.update(idleSeconds: idle)
+            }
         }
         timer.tolerance = Self.pollInterval / 4
         RunLoop.main.add(timer, forMode: .common)

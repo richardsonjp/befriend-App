@@ -43,6 +43,10 @@ final class MacController {
     @ObservationIgnored private var pairingTask: Task<Void, Never>?
     @ObservationIgnored private var friendPoll: Task<Void, Never>?
     @ObservationIgnored private var backgroundRefresh: Task<Void, Never>?
+    @ObservationIgnored private var presence: PresenceReporter?
+    @ObservationIgnored private var peer: PresencePeer?
+    @ObservationIgnored private var phoneClaimedNearby = false
+    @ObservationIgnored private var friendVisible = true
 
     init() {
         uploader = TriggerLogUploader(api: api, fileURL: MacConfig.triggerQueueURL)
@@ -130,7 +134,20 @@ final class MacController {
         let panel = PetPanel(rootView: PetView(pet: pet, poke: { [weak self] in self?.handle(.poked) }, simulate: { [weak self] in self?.handle($0) }))
         panel.orderFrontRegardless()
         self.panel = panel
-        let monitor = TriggerMonitor { [weak self] in self?.handle($0) }
+        friendVisible = true
+
+        let presence = PresenceReporter(api: api)
+        presence.onChange = { [weak self] in self?.updateVisibility() }
+        presence.start()
+        self.presence = presence
+        Task { [weak self] in
+            guard let self, let me = try? await self.api.me() else { return }
+            self.startPeer(userID: me.id)
+        }
+
+        let monitor = TriggerMonitor(onIdleReading: { [weak self] in self?.presence?.update(idleSeconds: $0) }) { [weak self] in
+            self?.handle($0)
+        }
         monitor.start()
         self.monitor = monitor
         uploader.start()
@@ -149,7 +166,46 @@ final class MacController {
     private func handle(_ trigger: Trigger) {
         if case .appSwitched(let name) = trigger { frontmostApp = name }
         uploader.record(trigger)
-        if panel?.isVisible == true { brain.handle(trigger) }
+        if friendVisible { brain.handle(trigger) }
+    }
+
+    // MARK: Presence
+
+    private func startPeer(userID: String) {
+        guard peer == nil, stage == .ready else { return }
+        let peer = PresencePeer(userID: userID, displayName: MacConfig.device.name)
+        peer.onMessage = { [weak self] message in
+            self?.phoneClaimedNearby = message == .claim
+            self?.updateVisibility()
+        }
+        peer.start()
+        self.peer = peer
+    }
+
+    /// Shows the friend only where it is (see PresenceVisibility), fading the panel in or out.
+    private func updateVisibility() {
+        guard let panel, let presence else { return }
+        if presence.owner == .phone { phoneClaimedNearby = false } // the backend caught up with the nearby claim
+        let show = PresenceVisibility.macShowsFriend(
+            isActive: presence.isActive,
+            owner: presence.owner,
+            socketConnected: presence.isConnected,
+            phoneClaimedNearby: phoneClaimedNearby
+        )
+        guard show != friendVisible else { return }
+        friendVisible = show
+        if show {
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+        }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.3
+            panel.animator().alphaValue = show ? 1 : 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                if self?.friendVisible == false { self?.panel?.orderOut(nil) }
+            }
+        })
     }
 
     // MARK: Pairing
@@ -297,6 +353,11 @@ final class MacController {
         friendPoll?.cancel()
         friendPoll = nil
         backgroundRefresh?.cancel()
+        presence?.stop()
+        presence = nil
+        peer?.stop()
+        peer = nil
+        phoneClaimedNearby = false
         uploader.stop()
         uploader.clear()
         monitor?.stop()
