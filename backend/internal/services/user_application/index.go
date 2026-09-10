@@ -11,6 +11,7 @@ import (
 type UserApplicationService interface {
 	Register(ctx context.Context, payload RegisterPayload) error
 	VerifyUserEmail(ctx context.Context, payload VerifyEmailPayload) error
+	ResendVerificationCode(ctx context.Context, payload ResendCodePayload) error
 }
 
 type userApplicationService struct {

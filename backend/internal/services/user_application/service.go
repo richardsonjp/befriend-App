@@ -2,10 +2,11 @@ package user_application
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	"befriend/config"
 	"befriend/internal/model"
+	"befriend/internal/model/enum"
 	"befriend/internal/services/user"
 	"befriend/internal/services/verification_code"
 	"befriend/pkg/utils/errors"
@@ -57,22 +58,79 @@ func (s *userApplicationService) Register(ctx context.Context, payload RegisterP
 	return nil
 }
 
+// VerifyUserEmail activates the account when the latest emailed code matches
 func (s *userApplicationService) VerifyUserEmail(ctx context.Context, payload VerifyEmailPayload) error {
-	return s.txRepo.Run(ctx, func(ctx context.Context) error {
-		userData, err := s.userService.UpdateEmailVerified(ctx, payload.Email)
-		if err != nil {
-			return errors.From("USER").WithDetail(fmt.Sprintf("failed to update user email verified: %v", err))
+	userData, err := s.userService.GetUserByEmail(ctx, payload.Email)
+	if err != nil {
+		if errors.Is(err, "DATA_NOT_FOUND") {
+			return verification_code.InvalidCodeError()
 		}
+		return err
+	}
+	// Same answer as a wrong code, so this endpoint can't reveal which accounts are verified.
+	if userData.Status != enum.UNVERIFIED {
+		return verification_code.InvalidCodeError()
+	}
 
-		err = s.verificationCodeService.Delete(ctx, verification_code.DeletePayload{
+	// Deliberately outside the transaction below, so a wrong guess stays counted.
+	err = s.verificationCodeService.Check(ctx, verification_code.CheckPayload{
+		UserID:    userData.ID,
+		TableType: verification_code.USER_EMAIL_VERIFICATION,
+		Code:      payload.OTPCode,
+	})
+	if err != nil {
+		return err
+	}
+
+	return s.txRepo.Run(ctx, func(ctx context.Context) error {
+		if err := s.userService.MarkEmailVerified(ctx, userData.ID); err != nil {
+			return err
+		}
+		return s.verificationCodeService.DeleteAll(ctx, verification_code.USER_EMAIL_VERIFICATION, userData.ID)
+	})
+}
+
+// ResendVerificationCode emails a fresh code to an unverified account. Unknown or already-verified
+// emails get the same success reply, so this can't be used to probe accounts.
+func (s *userApplicationService) ResendVerificationCode(ctx context.Context, payload ResendCodePayload) error {
+	userData, err := s.userService.GetUserByEmail(ctx, payload.Email)
+	if err != nil {
+		if errors.Is(err, "DATA_NOT_FOUND") {
+			return nil
+		}
+		return err
+	}
+	if userData.Status != enum.UNVERIFIED || userData.Email == nil {
+		return nil
+	}
+
+	latest, err := s.verificationCodeService.GetLatest(ctx, verification_code.USER_EMAIL_VERIFICATION, userData.ID)
+	if err != nil && !errors.Is(err, "DATA_NOT_FOUND") {
+		return err
+	}
+	cooldown := time.Duration(config.Config.Verification.ResendCooldownSec) * time.Second
+	// Inside the cooldown, succeed silently without sending: a distinct 429 would reveal that this
+	// email belongs to an unverified account.
+	if latest != nil && time.Since(latest.CreatedAt) < cooldown {
+		return nil
+	}
+
+	var code *model.VerificationCode
+	err = s.txRepo.Run(ctx, func(ctx context.Context) error {
+		created, createErr := s.verificationCodeService.Create(ctx, verification_code.CreatePayload{
 			UserID:    userData.ID,
 			TableType: verification_code.USER_EMAIL_VERIFICATION,
-			Code:      payload.OTPCode,
+			ExpiresAt: time.Now().Add(verificationCodeTTL),
 		})
-		if err != nil {
-			return errors.From("VERIFICATION_CODE").WithDetail(fmt.Sprintf("failed to delete verification code: %v", err))
-		}
-
-		return nil
+		code = created
+		return createErr
 	})
+	if err != nil {
+		return err
+	}
+
+	if err := s.verificationCodeService.SendVerificationEmail(ctx, *userData.Email, code); err != nil {
+		return errors.From("VERIFICATION_CODE").WithDetail("the verification email could not be sent")
+	}
+	return nil
 }

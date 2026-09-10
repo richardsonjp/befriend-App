@@ -1,15 +1,17 @@
 package verification_code
 
 import (
+	"context"
+
 	"befriend/internal/model"
 	"befriend/pkg/clients/db"
-	"context"
 )
 
 type VerificationCodeRepo interface {
 	Create(ctx context.Context, m *model.VerificationCode) (*model.VerificationCode, error)
-	Get(ctx context.Context, tableType, userID, code string) (*model.VerificationCode, error)
-	Delete(ctx context.Context, tableType, userID, code string) error
+	GetLatest(ctx context.Context, tableType, userID string) (*model.VerificationCode, error)
+	IncrementAttempts(ctx context.Context, id string) error
+	DeleteAll(ctx context.Context, tableType, userID string) error
 }
 
 type verificationCodeRepo struct {

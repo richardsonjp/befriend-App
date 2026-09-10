@@ -11,6 +11,7 @@ import (
 
 type AuthenticationService interface {
 	AuthenticateUser(ctx context.Context, payload Login) (*AuthenticateSessionResponse, error)
+	RefreshSession(ctx context.Context, payload RefreshPayload) (*AuthenticateSessionResponse, error)
 	AuthenticateLogout(ctx context.Context, payload LogoutPayload) error
 }
 

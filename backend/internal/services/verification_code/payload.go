@@ -8,7 +8,7 @@ type CreatePayload struct {
 	ExpiresAt time.Time
 }
 
-type DeletePayload struct {
+type CheckPayload struct {
 	UserID    string
 	TableType string
 	Code      string

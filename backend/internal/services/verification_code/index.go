@@ -1,17 +1,20 @@
 package verification_code
 
 import (
+	"context"
+
 	"befriend/internal/model"
 	"befriend/internal/repositories/tx"
 	"befriend/internal/repositories/verification_code"
 	"befriend/pkg/clients/email"
-	"context"
 )
 
 type VerificationCodeService interface {
 	Create(ctx context.Context, payload CreatePayload) (*model.VerificationCode, error)
+	GetLatest(ctx context.Context, tableType, userID string) (*model.VerificationCode, error)
+	Check(ctx context.Context, payload CheckPayload) error
+	DeleteAll(ctx context.Context, tableType, userID string) error
 	SendVerificationEmail(ctx context.Context, emailAddress string, data *model.VerificationCode) error
-	Delete(ctx context.Context, payload DeletePayload) error
 }
 
 type verificationCodeService struct {

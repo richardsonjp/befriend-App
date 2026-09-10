@@ -44,31 +44,8 @@ func (s *authenticationService) AuthenticateUser(ctx context.Context, params Log
 		if err != nil {
 			return err
 		}
-
-		accessToken, refreshToken, err := paseto.GenerateTokens(paseto.Claims{
-			UserID:   user.ID,
-			DeviceID: newDevice.ID,
-		})
-		if err != nil {
-			return err
-		}
-
-		err = s.refreshTokenService.Create(ctx, refresh_token.CreatePayload{
-			UserID:    user.ID,
-			DeviceID:  newDevice.ID,
-			TokenHash: paseto.HashToken(refreshToken),
-			ExpiresAt: time.Now().Add(time.Duration(config.Config.PASETO.RefreshExpiryDay) * 24 * time.Hour),
-		})
-		if err != nil {
-			return err
-		}
-
-		response = &AuthenticateSessionResponse{
-			AccessToken:  accessToken,
-			RefreshToken: refreshToken,
-			DeviceID:     newDevice.ID,
-		}
-		return nil
+		response, err = s.issueSession(ctx, user.ID, newDevice.ID)
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -77,7 +54,96 @@ func (s *authenticationService) AuthenticateUser(ctx context.Context, params Log
 	return response, nil
 }
 
+// RefreshSession rotates a refresh token: the presented token is marked rotated and a new pair is issued
+// for the same device. Reusing a token long after it was rotated signs the whole device out.
+func (s *authenticationService) RefreshSession(ctx context.Context, payload RefreshPayload) (*AuthenticateSessionResponse, error) {
+	invalid := errors.From("UNAUTHORIZED").WithDetail("Invalid or expired refresh token")
+
+	claims, err := paseto.ValidateToken(payload.RefreshToken, config.Config.PASETO.RefreshSecret)
+	if err != nil {
+		return nil, invalid
+	}
+
+	user, err := s.userService.GetUserByID(ctx, claims.UserID)
+	if err != nil {
+		if errors.Is(err, "DATA_NOT_FOUND") {
+			return nil, invalid
+		}
+		return nil, err
+	}
+	if user.Status != enum.ACTIVE {
+		return nil, errors.From("UNAUTHORIZED").WithDetail("Account is not active")
+	}
+
+	var response *AuthenticateSessionResponse
+	reuseDetected := false
+	err = s.txRepo.Run(ctx, func(ctx context.Context) error {
+		current, err := s.refreshTokenService.GetForRotation(ctx, paseto.HashToken(payload.RefreshToken))
+		if err != nil {
+			if errors.Is(err, "DATA_NOT_FOUND") {
+				return invalid
+			}
+			return err
+		}
+		if current.UserID != claims.UserID || current.DeviceID != claims.DeviceID {
+			return invalid
+		}
+
+		grace := time.Duration(config.Config.PASETO.RefreshReuseGraceSec) * time.Second
+		switch refresh_token.Decide(current, time.Now(), grace) {
+		case refresh_token.DecisionReject:
+			return invalid
+		case refresh_token.DecisionReuseDetected:
+			// Let the revocation commit (returning an error would roll it back); refuse after the transaction.
+			reuseDetected = true
+			return s.refreshTokenService.RevokeByDevice(ctx, current.DeviceID)
+		}
+
+		if err := s.refreshTokenService.MarkRotated(ctx, current.ID); err != nil {
+			return err
+		}
+		response, err = s.issueSession(ctx, current.UserID, current.DeviceID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if reuseDetected {
+		return nil, invalid
+	}
+
+	return response, nil
+}
+
 // AuthenticateLogout revokes the device's refresh tokens; its short-lived access token expires on its own
 func (s *authenticationService) AuthenticateLogout(ctx context.Context, payload LogoutPayload) error {
 	return s.refreshTokenService.RevokeByDevice(ctx, payload.DeviceID)
+}
+
+// issueSession generates a token pair for one device and stores only the refresh token's hash.
+// Call it inside a transaction.
+func (s *authenticationService) issueSession(ctx context.Context, userID, deviceID string) (*AuthenticateSessionResponse, error) {
+	accessToken, refreshToken, err := paseto.GenerateTokens(paseto.Claims{
+		UserID:   userID,
+		DeviceID: deviceID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.refreshTokenService.Create(ctx, refresh_token.CreatePayload{
+		UserID:    userID,
+		DeviceID:  deviceID,
+		TokenHash: paseto.HashToken(refreshToken),
+		ExpiresAt: time.Now().Add(time.Duration(config.Config.PASETO.RefreshExpiryDay) * 24 * time.Hour),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthenticateSessionResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		DeviceID:     deviceID,
+	}, nil
 }

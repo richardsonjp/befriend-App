@@ -10,3 +10,7 @@ type VerifyEmailPayload struct {
 	Email   string `json:"email" validate:"required,email,max=255"`
 	OTPCode string `json:"otp_code" validate:"required,len=6,numeric"`
 }
+
+type ResendCodePayload struct {
+	Email string `json:"email" validate:"required,email,max=255"`
+}

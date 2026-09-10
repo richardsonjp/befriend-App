@@ -1,9 +1,12 @@
 package verification_code
 
 import (
+	"context"
+
 	"befriend/internal/model"
 	"befriend/pkg/utils/errors"
-	"context"
+
+	"gorm.io/gorm"
 )
 
 func (r *verificationCodeRepo) Create(ctx context.Context, m *model.VerificationCode) (*model.VerificationCode, error) {
@@ -13,27 +16,30 @@ func (r *verificationCodeRepo) Create(ctx context.Context, m *model.Verification
 	return m, nil
 }
 
-func (r *verificationCodeRepo) Get(ctx context.Context, tableType, userID, code string) (*model.VerificationCode, error) {
-	var m model.VerificationCode
-	if err := r.dbdget.Get(ctx).Where("table_type = ? AND user_id = ? AND code = ?", tableType, userID, code).First(&m).Error; err != nil {
-		return nil, err
+func (r *verificationCodeRepo) GetLatest(ctx context.Context, tableType, userID string) (*model.VerificationCode, error) {
+	m := &model.VerificationCode{}
+	q := r.dbdget.Get(ctx).
+		Where("table_type = ? AND user_id = ?", tableType, userID).
+		Order("created_at DESC").
+		Take(m)
+	if q.Error != nil {
+		if q.Error == gorm.ErrRecordNotFound {
+			return nil, errors.From("DATA_NOT_FOUND")
+		}
+		return nil, q.Error
 	}
-	return &m, nil
+	return m, nil
 }
 
-func (r *verificationCodeRepo) Delete(ctx context.Context, tableType, userID, code string) error {
-	result := r.dbdget.Get(ctx).
-		Where("table_type = ? AND user_id = ? AND code = ?", tableType, userID, code). // Note: Fixed 'table_type' to 'type' based on your schema
-		Delete(&model.VerificationCode{})
+func (r *verificationCodeRepo) IncrementAttempts(ctx context.Context, id string) error {
+	return r.dbdget.Get(ctx).
+		Model(&model.VerificationCode{}).
+		Where("id = ?", id).
+		UpdateColumn("attempts", gorm.Expr("attempts + 1")).Error
+}
 
-	if result.Error != nil {
-		return result.Error // Actual DB error (connection died, syntax error)
-	}
-
-	if result.RowsAffected == 0 {
-		return errors.From("DATA_NOT_FOUND")
-		// Or return nil if you consider "idempotent delete" a success
-	}
-
-	return nil
+func (r *verificationCodeRepo) DeleteAll(ctx context.Context, tableType, userID string) error {
+	return r.dbdget.Get(ctx).
+		Where("table_type = ? AND user_id = ?", tableType, userID).
+		Delete(&model.VerificationCode{}).Error
 }

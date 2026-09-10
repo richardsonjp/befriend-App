@@ -10,6 +10,8 @@ import (
 
 type RefreshTokenRepo interface {
 	Create(ctx context.Context, m *model.RefreshToken) error
+	GetByHashForUpdate(ctx context.Context, tokenHash string) (*model.RefreshToken, error)
+	MarkRotated(ctx context.Context, id string, rotatedAt time.Time) error
 	RevokeByDevice(ctx context.Context, deviceID string, revokedAt time.Time) error
 }
 

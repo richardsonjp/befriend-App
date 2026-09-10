@@ -18,6 +18,12 @@ func NewHTTPServer(appStore *store.Store) *fiber.App {
 		AppName:               config.Config.System.AppName,
 		DisableStartupMessage: true,
 		EnablePrintRoutes:     true,
+		// Header carrying the real client IP behind a proxy (e.g. CF-Connecting-IP via Cloudflare Tunnel).
+		// It is honoured only for requests arriving from TrustedProxies; otherwise c.IP() is the socket
+		// address, so clients can't forge their IP to dodge rate limits.
+		ProxyHeader:             config.Config.System.ProxyHeader,
+		EnableTrustedProxyCheck: true,
+		TrustedProxies:          config.Config.System.TrustedProxies,
 	})
 
 	// Global Middlewares

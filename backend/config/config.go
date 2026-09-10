@@ -43,22 +43,34 @@ var Config = struct {
 	}
 
 	System struct {
-		AppName   string `env:"SYSTEM_APP_NAME" envDefault:"befriend"`
-		AppServer string `env:"SYSTEM_SERVER" envDefault:"127.0.0.1"`
-		AppAddr   string `env:"SYSTEM_ADDR" envDefault:":7000"`
-		Mode      string `env:"SYSTEM_MODE" envDefault:"debug"`
-		TimeZone  string `env:"SYSTEM_TIME_ZONE" envDefault:"Asia/Jakarta"`
+		AppName     string `env:"SYSTEM_APP_NAME" envDefault:"befriend"`
+		AppServer   string `env:"SYSTEM_SERVER" envDefault:"127.0.0.1"`
+		AppAddr     string `env:"SYSTEM_ADDR" envDefault:":8305"`
+		Mode        string `env:"SYSTEM_MODE" envDefault:"debug"`
+		TimeZone    string `env:"SYSTEM_TIME_ZONE" envDefault:"Asia/Jakarta"`
+		ProxyHeader string `env:"SYSTEM_PROXY_HEADER" envDefault:""`
+		// IPs/CIDRs allowed to set ProxyHeader; from anyone else the header is ignored.
+		TrustedProxies []string `env:"SYSTEM_TRUSTED_PROXIES" envSeparator:","`
 	}
 
 	MiddlewareKeys struct {
 		StaticAPIKey string `env:"STATIC_API_KEY" envDefault:"secret"`
 	}
 
+	RateLimit struct {
+		AuthPerMinute int `env:"AUTH_RATE_LIMIT_PER_MINUTE" envDefault:"10"`
+	}
+
+	Verification struct {
+		ResendCooldownSec int `env:"VERIFICATION_RESEND_COOLDOWN_SECONDS" envDefault:"60"`
+	}
+
 	PASETO struct {
-		AccessSecret     string `env:"PASETO_ACCESS_SECRET" envDefault:""`
-		RefreshSecret    string `env:"PASETO_REFRESH_SECRET" envDefault:""`
-		AccessExpiryMin  int    `env:"PASETO_ACCESS_EXPIRY_MINUTES" envDefault:"15"`
-		RefreshExpiryDay int    `env:"PASETO_REFRESH_EXPIRY_DAYS" envDefault:"7"`
+		AccessSecret         string `env:"PASETO_ACCESS_SECRET" envDefault:""`
+		RefreshSecret        string `env:"PASETO_REFRESH_SECRET" envDefault:""`
+		AccessExpiryMin      int    `env:"PASETO_ACCESS_EXPIRY_MINUTES" envDefault:"15"`
+		RefreshExpiryDay     int    `env:"PASETO_REFRESH_EXPIRY_DAYS" envDefault:"7"`
+		RefreshReuseGraceSec int    `env:"PASETO_REFRESH_REUSE_GRACE_SECONDS" envDefault:"60"`
 	}
 }{}
 

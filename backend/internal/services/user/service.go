@@ -34,19 +34,13 @@ func (s *userService) GetUserByEmail(ctx context.Context, email string) (*model.
 	return s.userRepo.GetByEmail(ctx, email)
 }
 
-func (s *userService) UpdateEmailVerified(ctx context.Context, email string) (*model.User, error) {
-	data, err := s.GetUserByEmail(ctx, email)
-	if err != nil {
-		return nil, err
-	}
-
+// MarkEmailVerified activates the account.
+func (s *userService) MarkEmailVerified(ctx context.Context, id string) error {
 	now := time.Now()
-	data.Status = enum.ACTIVE
-	data.EmailVerifiedAt = &now
-	_, err = s.userRepo.Update(ctx, *data, "status", "email_verified_at")
-	if err != nil {
-		return nil, err
-	}
-
-	return data, nil
+	_, err := s.userRepo.Update(ctx, model.User{
+		ID:              id,
+		Status:          enum.ACTIVE,
+		EmailVerifiedAt: &now,
+	}, "status", "email_verified_at")
+	return err
 }

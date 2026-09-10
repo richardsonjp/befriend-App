@@ -22,6 +22,9 @@ var Registry = map[string]AppError{
 	"DATA_NOT_FOUND": {Code: "DATA_NOT_FOUND", Status: http.StatusNotFound, Message: "Data not found"},
 	"DATA_CONFLICT":  {Code: "DATA_CONFLICT", Status: http.StatusConflict, Message: "Data already exists"},
 
+	// return 429 when a client is rate limited or must wait before retrying
+	"TOO_MANY_REQUESTS": {Code: "TOO_MANY_REQUESTS", Status: http.StatusTooManyRequests, Message: "Too many requests"},
+
 	// services specific error:
 	// # authentication
 	"USER":              {Code: "USER", Status: http.StatusBadRequest, Message: "User bad request"},
