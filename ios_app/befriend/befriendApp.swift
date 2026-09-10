@@ -16,7 +16,8 @@ struct befriendApp: App {
         WindowGroup {
             RootView(model: model)
                 .onOpenURL { url in
-                    _ = GIDSignIn.sharedInstance.handle(url)
+                    if GIDSignIn.sharedInstance.handle(url) { return }
+                    model.handleDeepLink(url) // befriend://pair?code=… from the Mac's QR
                 }
                 .task { await model.start() }
         }

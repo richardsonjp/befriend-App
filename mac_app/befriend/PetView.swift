@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PetView: View {
     let pet: PetStateMachine
+    var poke: () -> Void = {}
     var simulate: (Trigger) -> Void = { _ in }
 
     var body: some View {
@@ -18,11 +19,14 @@ struct PetView: View {
                     .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
             }
             PlaceholderCharacterView(action: pet.action, mood: pet.mood)
+                .onTapGesture(perform: poke)
         }
         .animation(.snappy, value: pet.dialogue)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Poke", poke)
         .contextMenu {
             #if DEBUG
             Menu("Simulate Trigger") {

@@ -32,7 +32,14 @@ final class TriggerMonitor {
         self.onTrigger = onTrigger
     }
 
-    // ponytail: runs for the app's lifetime, so no stop()/teardown.
+    func stop() {
+        if let appObserver { NSWorkspace.shared.notificationCenter.removeObserver(appObserver) }
+        appObserver = nil
+        idleTimer?.invalidate()
+        idleTimer = nil
+        idleStart = nil
+    }
+
     func start() {
         let ownPID = ProcessInfo.processInfo.processIdentifier
         appObserver = NSWorkspace.shared.notificationCenter.addObserver(

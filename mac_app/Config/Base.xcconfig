@@ -1,0 +1,12 @@
+// Mac app build settings. Machine-specific values (your API URL, the static API key, the Google macOS client)
+// go in Local.xcconfig next to this file, which is gitignored.
+// xcconfig treats "//" as a comment, hence the $() in URLs.
+
+API_BASE_URL = http:/$()/localhost:8305
+STATIC_API_KEY = change-me
+
+// Google Sign-In: the macOS OAuth client ID and its reversed form (the URL scheme Google redirects to).
+GOOGLE_CLIENT_ID =
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.not-configured
+
+#include? "Local.xcconfig"

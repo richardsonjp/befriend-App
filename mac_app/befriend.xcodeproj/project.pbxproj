@@ -8,15 +8,30 @@
 
 /* Begin PBXBuildFile section */
 		E553DBE03053070000756D2F /* PetCore in Frameworks */ = {isa = PBXBuildFile; productRef = E553DBE13053070000756D2F /* PetCore */; };
+		E553DBF53053080000756D2F /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = E553DBF43053080000756D2F /* GoogleSignIn */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		E553DBCE3053068F00756D2F /* befriend.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = befriend.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E553DBF03053080000756D2F /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E553DBF23053080000756D2F /* Exceptions for "befriend" folder in "befriend" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E553DBCD3053068F00756D2F /* befriend */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E553DBD03053068F00756D2F /* befriend */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E553DBF23053080000756D2F /* Exceptions for "befriend" folder in "befriend" target */,
+			);
 			path = befriend;
 			sourceTree = "<group>";
 		};
@@ -28,6 +43,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E553DBE03053070000756D2F /* PetCore in Frameworks */,
+				E553DBF53053080000756D2F /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -37,6 +53,7 @@
 		E553DBC53053068F00756D2F = {
 			isa = PBXGroup;
 			children = (
+				E553DBF13053080000756D2F /* Config */,
 				E553DBD03053068F00756D2F /* befriend */,
 				E553DBCF3053068F00756D2F /* Products */,
 			);
@@ -48,6 +65,14 @@
 				E553DBCE3053068F00756D2F /* befriend.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		E553DBF13053080000756D2F /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				E553DBF03053080000756D2F /* Base.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -71,6 +96,7 @@
 			name = befriend;
 			packageProductDependencies = (
 				E553DBE13053070000756D2F /* PetCore */,
+				E553DBF43053080000756D2F /* GoogleSignIn */,
 			);
 			productName = befriend;
 			productReference = E553DBCE3053068F00756D2F /* befriend.app */;
@@ -102,6 +128,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				E553DBE23053070000756D2F /* XCLocalSwiftPackageReference "../PetCore" */,
+				E553DBF33053080000756D2F /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E553DBCF3053068F00756D2F /* Products */;
@@ -136,6 +163,7 @@
 /* Begin XCBuildConfiguration section */
 		E553DBD93053069000756D2F /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E553DBF03053080000756D2F /* Base.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -200,6 +228,7 @@
 		};
 		E553DBDA3053069000756D2F /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E553DBF03053080000756D2F /* Base.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -259,17 +288,22 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = befriend/befriend.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4XMU2Y4G7V;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = befriend/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "befriend looks for your iPhone on this network so your friend can move between your devices.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -292,17 +326,22 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = befriend/befriend.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4XMU2Y4G7V;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = befriend/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "befriend looks for your iPhone on this network so your friend can move between your devices.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -350,10 +389,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		E553DBF33053080000756D2F /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		E553DBE13053070000756D2F /* PetCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PetCore;
+		};
+		E553DBF43053080000756D2F /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E553DBF33053080000756D2F /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

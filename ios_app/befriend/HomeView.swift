@@ -22,6 +22,10 @@ struct HatchingView: View {
     }
 }
 
+private struct PairingCodeItem: Identifiable {
+    let id: String
+}
+
 struct HomeView: View {
     let model: AppModel
     let friend: FriendProfile
@@ -83,6 +87,12 @@ struct HomeView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView(model: model)
             }
+            .sheet(item: Binding(
+                get: { model.pendingPairingCode.map(PairingCodeItem.init) },
+                set: { model.pendingPairingCode = $0?.id }
+            )) { item in
+                PairingConfirmView(model: model, code: item.id)
+            }
         }
     }
 
@@ -107,17 +117,136 @@ struct HomeView: View {
     }
 }
 
+/// "Pair <Mac>?" after scanning the Mac's QR code.
+struct PairingConfirmView: View {
+    let model: AppModel
+    let code: String
+
+    private enum LoadState {
+        case loading
+        case ready(PairingInfo)
+        case confirming(PairingInfo)
+        case expired
+        case paired(String)
+        case failed(String)
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var state = LoadState.loading
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "laptopcomputer.and.iphone")
+                .font(.system(size: 52))
+                .foregroundStyle(.tint)
+            switch state {
+            case .loading:
+                ProgressView()
+            case .ready(let info), .confirming(let info):
+                Text("Pair “\(info.deviceName)”?").font(.title2.bold()).multilineTextAlignment(.center)
+                Text("Only pair a Mac you're setting up right now. Check that it shows the code **\(Self.displayCode(code))**.")
+                    .multilineTextAlignment(.center)
+                Text("That Mac gets access to your account and your friend, and syncs its activity to you.")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                Button("Pair") { Task { await confirm(info) } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isConfirming)
+                Button("Not now", role: .cancel) { dismiss() }
+            case .expired:
+                Text("This code has expired").font(.title3.bold())
+                Text("Your Mac shows a new code every two minutes. Scan the new one.")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                Button("OK") { dismiss() }
+            case .paired(let deviceName):
+                Text("Paired with “\(deviceName)”").font(.title3.bold()).multilineTextAlignment(.center)
+                Text("Your friend appears on your Mac in a moment.").foregroundStyle(.secondary)
+                Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+            case .failed(let message):
+                Text(message).multilineTextAlignment(.center)
+                Button("Close") { dismiss() }
+            }
+        }
+        .controlSize(.large)
+        .padding(32)
+        .presentationDetents([.medium])
+        .task { await load() }
+    }
+
+    /// The code as the Mac shows it: uppercase, no separators.
+    static func displayCode(_ code: String) -> String {
+        code.uppercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    private var isConfirming: Bool {
+        if case .confirming = state { true } else { false }
+    }
+
+    private func load() async {
+        do {
+            state = try await model.api.pairingInfo(code: code).map(LoadState.ready) ?? .expired
+        } catch {
+            state = .failed(AppModel.message(for: error))
+        }
+    }
+
+    private func confirm(_ info: PairingInfo) async {
+        state = .confirming(info)
+        do {
+            try await model.api.confirmPairing(code: code)
+            state = .paired(info.deviceName)
+        } catch APIError.server(status: 404, _, _) {
+            state = .expired
+        } catch {
+            state = .failed(AppModel.message(for: error))
+        }
+    }
+}
+
 struct SettingsView: View {
     let model: AppModel
 
     @Environment(\.dismiss) private var dismiss
-    @State private var confirmDelete = false
+    @State private var sync: SyncSettings?
+    @State private var confirmDeleteAccount = false
+    @State private var confirmDeleteActivity = false
     @State private var busy = false
     @State private var error: String?
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    if let sync {
+                        Toggle("Pause activity sync", isOn: Binding(
+                            get: { sync.logSyncPaused },
+                            set: { paused in Task { await updateSync { try await model.api.updateSyncSettings(paused: paused) } } }
+                        ))
+                        if sync.excludedApps.isEmpty {
+                            Text("No apps excluded. On your Mac, choose Stop Tracking in befriend's menu.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(sync.excludedApps, id: \.self) { app in
+                                Label(app, systemImage: "eye.slash")
+                            }
+                            .onDelete { offsets in
+                                var apps = sync.excludedApps
+                                apps.remove(atOffsets: offsets)
+                                Task { await updateSync { try await model.api.updateSyncSettings(excludedApps: apps) } }
+                            }
+                        }
+                        Button("Delete synced activity", role: .destructive) { confirmDeleteActivity = true }
+                    } else {
+                        ProgressView()
+                    }
+                } header: {
+                    Text("Activity")
+                } footer: {
+                    Text("Your Mac syncs the apps you switch between and when you're away, so your friend can grow each week. Excluded apps are never synced.")
+                }
+
                 Section {
                     Button("Sign out") {
                         Task {
@@ -128,7 +257,7 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    Button("Delete account", role: .destructive) { confirmDelete = true }
+                    Button("Delete account", role: .destructive) { confirmDeleteAccount = true }
                 } footer: {
                     Text("Deletes your account, your friend and all synced activity. This can't be undone.")
                 }
@@ -144,22 +273,45 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .confirmationDialog("Delete your account?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            .task {
+                do {
+                    sync = try await model.api.syncSettings()
+                } catch {
+                    self.error = AppModel.message(for: error)
+                }
+            }
+            .confirmationDialog("Delete your synced activity?", isPresented: $confirmDeleteActivity, titleVisibility: .visible) {
+                Button("Delete activity", role: .destructive) {
+                    Task { await perform { try await model.api.deleteTriggerEvents() } }
+                }
+            } message: {
+                Text("Your friend stays; the app switches and away times synced so far are deleted.")
+            }
+            .confirmationDialog("Delete your account?", isPresented: $confirmDeleteAccount, titleVisibility: .visible) {
                 Button("Delete account", role: .destructive) {
                     Task {
-                        busy = true
-                        defer { busy = false }
-                        do {
-                            try await model.deleteAccount()
-                            dismiss()
-                        } catch {
-                            self.error = AppModel.message(for: error)
-                        }
+                        await perform { try await model.deleteAccount() }
+                        if error == nil { dismiss() }
                     }
                 }
             } message: {
                 Text("Your friend will be gone for good.")
             }
+        }
+    }
+
+    private func updateSync(_ change: () async throws -> SyncSettings) async {
+        await perform { sync = try await change() }
+    }
+
+    private func perform(_ action: () async throws -> Void) async {
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            try await action()
+        } catch {
+            self.error = AppModel.message(for: error)
         }
     }
 }

@@ -1,0 +1,350 @@
+//
+//  MacController.swift
+//  befriend
+//
+
+import AppKit
+import AuthenticationServices
+import GoogleSignIn
+import Observation
+import PetCore
+import SwiftUI
+
+/// The Mac app's flow: sign in (QR pairing first), wait for the friend to hatch on iPhone, then run the friend.
+@Observable
+final class MacController {
+    enum Stage: Equatable {
+        case launching
+        case signedOut
+        case waitingForFriend
+        case ready
+    }
+
+    private static let pairingPollInterval: Duration = .seconds(2)
+    private static let friendPollInterval: Duration = .seconds(5)
+    private static let settingsRetryInterval: Duration = .seconds(60)
+    private static let personalityRefreshInterval: Duration = .seconds(6 * 60 * 60)
+
+    private(set) var stage: Stage = .launching
+    private(set) var pairing: PairingStart?
+    private(set) var settings = SyncSettings()
+    private(set) var frontmostApp: String?
+    var errorMessage: String?
+    let pet = PetStateMachine()
+
+    @ObservationIgnored let api = MacConfig.makeAPIClient()
+    @ObservationIgnored private let uploader: TriggerLogUploader
+    @ObservationIgnored private var brain = PetBrain()
+    @ObservationIgnored private var friend: FriendProfile?
+    @ObservationIgnored private var panel: PetPanel?
+    @ObservationIgnored private var monitor: TriggerMonitor?
+    @ObservationIgnored private var window: NSWindow?
+    @ObservationIgnored private var windowCloseObserver: NSObjectProtocol?
+    @ObservationIgnored private var pairingTask: Task<Void, Never>?
+    @ObservationIgnored private var friendPoll: Task<Void, Never>?
+    @ObservationIgnored private var backgroundRefresh: Task<Void, Never>?
+
+    init() {
+        uploader = TriggerLogUploader(api: api, fileURL: MacConfig.triggerQueueURL)
+        if let saved = MacConfig.loadSettings() { apply(saved) }
+    }
+
+    // MARK: Flow
+
+    func start() async {
+        guard api.isSignedIn else { return showSignIn() }
+        if let saved = MacConfig.loadFriend(), saved.isReady {
+            becomeReady(saved) // straight away; the server check below updates it
+        }
+        await checkFriend()
+    }
+
+    /// Where a signed-in account stands: a ready friend runs, anything else waits for the iPhone.
+    private func checkFriend() async {
+        do {
+            if let latest = try await api.friend(), latest.isReady {
+                becomeReady(latest)
+            } else if stage != .ready {
+                showWaiting()
+            }
+        } catch APIError.signedOut {
+            signedOut()
+        } catch {
+            if stage != .ready { showWaiting() } // offline without a saved friend: keep polling
+        }
+    }
+
+    /// The menu's Sign In… / Show Setup…: reopens the window for whatever stage we're in.
+    func reopenWindow() {
+        if api.isSignedIn {
+            if stage != .ready { showWindow() }
+        } else {
+            showSignIn()
+        }
+    }
+
+    private func showSignIn() {
+        stage = .signedOut
+        showWindow()
+        startPairing()
+    }
+
+    private func showWaiting() {
+        stage = .waitingForFriend
+        pairingTask?.cancel()
+        showWindow()
+        guard friendPoll == nil else { return }
+        friendPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.friendPollInterval)
+                guard let self, self.stage == .waitingForFriend else { break }
+                await self.checkFriend()
+            }
+            self?.friendPoll = nil
+        }
+    }
+
+    private func signedIn() async {
+        pairingTask?.cancel()
+        pairing = nil
+        errorMessage = nil
+        await checkFriend()
+    }
+
+    private func becomeReady(_ latest: FriendProfile) {
+        friendPoll?.cancel()
+        friendPoll = nil
+        pairingTask?.cancel()
+        closeWindow()
+        let isNewVersion = friend?.personality.version != latest.personality.version
+        friend = latest
+        MacConfig.saveFriend(latest)
+        stage = .ready
+
+        if isNewVersion {
+            brain = PetBrain(friend: latest)
+            brain.onReaction = { [pet] in pet.apply($0) }
+        }
+        guard panel == nil else { return }
+
+        let panel = PetPanel(rootView: PetView(pet: pet, poke: { [weak self] in self?.handle(.poked) }, simulate: { [weak self] in self?.handle($0) }))
+        panel.orderFrontRegardless()
+        self.panel = panel
+        let monitor = TriggerMonitor { [weak self] in self?.handle($0) }
+        monitor.start()
+        self.monitor = monitor
+        uploader.start()
+        pet.apply(brain.quickReaction(to: .returned(afterSeconds: 0)))
+
+        backgroundRefresh = Task { [weak self] in
+            await self?.refreshSettingsUntilLoaded()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.personalityRefreshInterval)
+                await self?.checkFriend()
+                await self?.refreshSettingsUntilLoaded()
+            }
+        }
+    }
+
+    private func handle(_ trigger: Trigger) {
+        if case .appSwitched(let name) = trigger { frontmostApp = name }
+        uploader.record(trigger)
+        if panel?.isVisible == true { brain.handle(trigger) }
+    }
+
+    // MARK: Pairing
+
+    private func startPairing() {
+        pairingTask?.cancel()
+        pairingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                do {
+                    let start = try await self.api.startPairing(deviceName: MacConfig.device.name)
+                    self.pairing = start
+                    self.errorMessage = nil
+                    while Date.now < start.expiresAt {
+                        try await Task.sleep(for: Self.pairingPollInterval)
+                        if try await self.api.claimPairing(code: start.code, pollSecret: start.pollSecret) == .signedIn {
+                            await self.signedIn()
+                            return
+                        }
+                    }
+                } catch is CancellationError {
+                    return
+                } catch APIError.server(status: 410, _, _) {
+                    continue // expired or used: show a fresh code
+                } catch {
+                    self.pairing = nil
+                    self.errorMessage = "Can't reach befriend. Trying again…"
+                    try? await Task.sleep(for: .seconds(5))
+                }
+            }
+        }
+    }
+
+    // MARK: Other sign-in methods
+
+    func appleSignInCompleted(_ result: Result<ASAuthorization, Error>, nonce: String) async {
+        switch result {
+        case .failure(let error):
+            if (error as? ASAuthorizationError)?.code != .canceled {
+                errorMessage = "Sign in with Apple didn't finish. Please try again."
+            }
+        case .success(let authorization):
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let tokenData = credential.identityToken,
+                  let identityToken = String(data: tokenData, encoding: .utf8) else {
+                errorMessage = "Sign in with Apple didn't finish. Please try again."
+                return
+            }
+            let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
+            await signIn {
+                try await self.api.signInWithApple(identityToken: identityToken, authorizationCode: code, nonce: nonce, device: MacConfig.device)
+            }
+        }
+    }
+
+    func signInWithGoogle() async {
+        guard !MacConfig.googleClientID.isEmpty else {
+            errorMessage = "Google sign-in isn't set up in this build."
+            return
+        }
+        guard let window else { return }
+        let nonce = Nonce.random()
+        do {
+            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: window, hint: nil, additionalScopes: nil, nonce: nonce)
+            guard let idToken = result.user.idToken?.tokenString else { return }
+            await signIn {
+                try await self.api.signInWithGoogle(idToken: idToken, nonce: nonce, device: MacConfig.device)
+            }
+        } catch {
+            if (error as NSError).code != GIDSignInError.canceled.rawValue {
+                errorMessage = "Google sign-in didn't finish. Please try again."
+            }
+        }
+    }
+
+    func signInWithEmail(email: String, password: String) async {
+        await signIn {
+            try await self.api.login(email: email, password: password, device: MacConfig.device)
+        }
+    }
+
+    private func signIn(_ action: () async throws -> Void) async {
+        errorMessage = nil
+        do {
+            try await action()
+            await signedIn()
+        } catch APIError.server(status: 401, _, _) {
+            errorMessage = "Those details didn't work. New here? Create your account on iPhone first."
+        } catch {
+            errorMessage = "Can't sign in right now. Please try again."
+        }
+    }
+
+    // MARK: Menu actions
+
+    /// Settings decide what gets recorded, so keep asking until the server answers (the saved copy applies meanwhile).
+    private func refreshSettingsUntilLoaded() async {
+        while !Task.isCancelled {
+            if let latest = try? await api.syncSettings() {
+                apply(latest)
+                return
+            }
+            try? await Task.sleep(for: Self.settingsRetryInterval)
+        }
+    }
+
+    func togglePause() async {
+        await updateSettings { try await self.api.updateSyncSettings(paused: !self.settings.logSyncPaused) }
+    }
+
+    func stopTrackingFrontmostApp() async {
+        guard let app = frontmostApp else { return }
+        await updateSettings { try await self.api.updateSyncSettings(excludedApps: self.settings.excludedApps + [app]) }
+    }
+
+    func deleteActivity() async {
+        do {
+            try await api.deleteTriggerEvents()
+            uploader.clear()
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    func signOut() async {
+        await api.logout()
+        signedOut()
+    }
+
+    private func updateSettings(_ change: () async throws -> SyncSettings) async {
+        do {
+            apply(try await change())
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    private func apply(_ latest: SyncSettings) {
+        settings = latest
+        uploader.settings = latest
+        MacConfig.saveSettings(latest)
+    }
+
+    private func signedOut() {
+        friendPoll?.cancel()
+        friendPoll = nil
+        backgroundRefresh?.cancel()
+        uploader.stop()
+        uploader.clear()
+        monitor?.stop()
+        monitor = nil
+        panel?.close()
+        panel = nil
+        friend = nil
+        brain = PetBrain()
+        pet.apply(PetReaction(action: .idle, mood: .content, dialogue: ""))
+        apply(SyncSettings())
+        MacConfig.saveSettings(nil)
+        MacConfig.saveFriend(nil)
+        showSignIn()
+    }
+
+    // MARK: Window
+
+    private func showWindow() {
+        if window == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 420, height: 600),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "befriend"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: MacWindowView(controller: self))
+            window.center()
+            windowCloseObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.windowClosed() }
+            }
+            self.window = window
+        }
+        NSApp.activate()
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// The user closed the window: stop generating pairing codes until they reopen it from the menu.
+    private func windowClosed() {
+        pairingTask?.cancel()
+        pairing = nil
+        if let windowCloseObserver { NotificationCenter.default.removeObserver(windowCloseObserver) }
+        windowCloseObserver = nil
+        window = nil
+    }
+
+    private func closeWindow() {
+        window?.close() // posts willClose → windowClosed()
+    }
+}

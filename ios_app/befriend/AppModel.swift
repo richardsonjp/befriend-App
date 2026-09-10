@@ -26,6 +26,8 @@ final class AppModel {
 
     private(set) var phase: Phase = .launching
     var errorMessage: String?
+    /// A Mac pairing code from a scanned QR, shown once the friend is ready.
+    var pendingPairingCode: String?
     let pet = PetStateMachine()
 
     @ObservationIgnored let api = AppConfig.makeAPIClient()
@@ -103,6 +105,14 @@ final class AppModel {
         surfaces.signedOut()
         brain = PetBrain()
         phase = .signedOut
+    }
+
+    func handleDeepLink(_ url: URL) {
+        guard url.scheme == "befriend", url.host() == "pair",
+              let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "code" })?.value,
+              !code.isEmpty else { return }
+        pendingPairingCode = code
     }
 
     // MARK: Friend

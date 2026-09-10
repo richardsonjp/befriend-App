@@ -13,3 +13,6 @@ backend/bin/
 
 # iOS machine-specific build settings
 ios_app/Config/Local.xcconfig
+
+# macOS machine-specific build settings
+mac_app/Config/Local.xcconfig
