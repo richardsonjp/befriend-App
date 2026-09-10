@@ -12,6 +12,9 @@ import (
 
 type PersonalityVersionService interface {
 	CreateInitial(ctx context.Context, friendID string) (*model.PersonalityVersion, error)
+	// CreateEvolution queues the next version for a weekly evolution; nil when the latest version isn't ready yet
+	// (still generating, or failed and waiting to retry).
+	CreateEvolution(ctx context.Context, friendID string) (*model.PersonalityVersion, error)
 	GetByID(ctx context.Context, id string) (*model.PersonalityVersion, error)
 	GetLatestByFriend(ctx context.Context, friendID string) (*model.PersonalityVersion, error)
 	ClaimDue(ctx context.Context, limit int, lockFor time.Duration) ([]model.PersonalityVersion, error)

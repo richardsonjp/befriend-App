@@ -9,6 +9,7 @@ import (
 
 	"befriend/config"
 	"befriend/internal/model"
+	"befriend/internal/model/enum"
 	"befriend/pkg/clients/openrouter"
 	"befriend/pkg/utils/astro"
 	"befriend/pkg/utils/logs"
@@ -51,7 +52,11 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 	}()
 
 	now := time.Now()
-	ok, retryAt, err := s.llmBudgetRepo.TryConsume(ctx, now, config.Config.LLM.MinuteCap, config.Config.LLM.DailyCap)
+	dailyCap := config.Config.LLM.DailyCap
+	if job.Reason == enum.REASON_EVOLUTION {
+		dailyCap -= config.Config.LLM.OnboardingReserve
+	}
+	ok, retryAt, err := s.llmBudgetRepo.TryConsume(ctx, now, config.Config.LLM.MinuteCap, dailyCap)
 	if err != nil {
 		s.fail(ctx, job, fmt.Errorf("check LLM budget: %w", err))
 		return
@@ -61,7 +66,7 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 		return
 	}
 
-	input, err := s.promptInput(ctx, job.FriendID)
+	input, err := s.promptInput(ctx, job)
 	if err != nil {
 		s.fail(ctx, job, fmt.Errorf("load prompt input: %w", err))
 		return
@@ -117,11 +122,11 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 		logs.Log.Errorf("personality %s v%d: store result: %v", job.FriendID, job.Version, err)
 		return
 	}
-	logs.Log.Infof("personality %s v%d ready (model %s)", job.FriendID, job.Version, resp.Model)
+	logs.Log.Infof("personality %s v%d ready (%s, model %s)", job.FriendID, job.Version, job.Reason, resp.Model)
 }
 
-func (s *personalityService) promptInput(ctx context.Context, friendID string) (*PromptInput, error) {
-	f, err := s.friendService.GetByID(ctx, friendID)
+func (s *personalityService) promptInput(ctx context.Context, job *model.PersonalityVersion) (*PromptInput, error) {
+	f, err := s.friendService.GetByID(ctx, job.FriendID)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +156,59 @@ func (s *personalityService) promptInput(ctx context.Context, friendID string) (
 	for _, a := range answers {
 		input.Answers = append(input.Answers, AnsweredQuestion{Question: a.Question, Answer: a.Answer})
 	}
+
+	if job.Reason == enum.REASON_EVOLUTION {
+		if err := s.addEvolutionInput(ctx, f, input); err != nil {
+			return nil, err
+		}
+	}
 	return input, nil
+}
+
+// addEvolutionInput gives an evolution the friend's current personality and its user's recent activity.
+func (s *personalityService) addEvolutionInput(ctx context.Context, f *model.Friend, input *PromptInput) error {
+	if f.CurrentVersionID == nil {
+		return fmt.Errorf("friend %s has no personality to evolve", f.ID)
+	}
+	current, err := s.personalityVersionService.GetByID(ctx, *f.CurrentVersionID)
+	if err != nil {
+		return err
+	}
+	if current.Personality == nil {
+		return fmt.Errorf("personality version %s has no content", current.ID)
+	}
+	var previous Personality
+	if err := json.Unmarshal(current.Personality.Data, &previous); err != nil {
+		return err
+	}
+	input.Previous = &previous
+
+	events, err := s.triggerEventService.Recent(ctx, f.UserID, MaxActivityLines)
+	if err != nil {
+		return err
+	}
+	input.RecentActivity = activityLines(events, f.BirthTZ)
+	return nil
+}
+
+// activityLines formats events for the prompt in the friend's time zone ("Mon 23:40").
+func activityLines(events []model.TriggerEvent, timezone string) []ActivityLine {
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	lines := make([]ActivityLine, 0, len(events))
+	for _, e := range events {
+		line := ActivityLine{Kind: e.Kind, At: e.OccurredAt.In(loc).Format("Mon 15:04")}
+		if e.AppName != nil {
+			line.App = *e.AppName
+		}
+		if e.Seconds != nil {
+			line.Seconds = *e.Seconds
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 // fail records a failed attempt, retried with backoff. A job cut short by shutdown is deferred instead, to

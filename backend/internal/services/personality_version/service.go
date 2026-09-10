@@ -23,6 +23,22 @@ func (s *personalityVersionService) CreateInitial(ctx context.Context, friendID 
 	})
 }
 
+func (s *personalityVersionService) CreateEvolution(ctx context.Context, friendID string) (*model.PersonalityVersion, error) {
+	latest, err := s.personalityVersionRepo.GetLatestByFriend(ctx, friendID)
+	if err != nil {
+		return nil, err
+	}
+	if latest.Status != enum.PERSONALITY_READY {
+		return nil, nil
+	}
+	return s.personalityVersionRepo.Create(ctx, &model.PersonalityVersion{
+		FriendID: friendID,
+		Version:  latest.Version + 1,
+		Status:   enum.PERSONALITY_PENDING,
+		Reason:   enum.REASON_EVOLUTION,
+	})
+}
+
 func (s *personalityVersionService) GetByID(ctx context.Context, id string) (*model.PersonalityVersion, error) {
 	return s.personalityVersionRepo.GetByID(ctx, id)
 }

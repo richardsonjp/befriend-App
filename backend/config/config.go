@@ -99,6 +99,21 @@ var Config = struct {
 		DailyCap          int `env:"LLM_DAILY_CAP" envDefault:"45"`
 		WorkerIntervalSec int `env:"LLM_WORKER_INTERVAL_SECONDS" envDefault:"10"`
 		BatchSize         int `env:"LLM_WORKER_BATCH_SIZE" envDefault:"2"`
+		// Weekly evolutions stop this many requests short of the daily cap, so new users can still hatch.
+		OnboardingReserve int `env:"LLM_ONBOARDING_RESERVE" envDefault:"10"`
+	}
+
+	// APNs token authentication (a .p8 key with Apple Push Notifications service enabled). Without it presence
+	// still works, but iPhone Live Activities and widgets aren't pushed.
+	APNs struct {
+		TeamID     string `env:"APNS_TEAM_ID" envDefault:""`
+		KeyID      string `env:"APNS_KEY_ID" envDefault:""`
+		PrivateKey string `env:"APNS_PRIVATE_KEY" envDefault:""`
+		BundleID   string `env:"APNS_BUNDLE_ID" envDefault:"com.richardsonjp.befriend"`
+	}
+
+	Presence struct {
+		SweepIntervalSec int `env:"PRESENCE_SWEEP_INTERVAL_SECONDS" envDefault:"30"`
 	}
 
 	PASETO struct {

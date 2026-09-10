@@ -14,6 +14,7 @@ type PairingCodeRepo interface {
 	GetByCodeHash(ctx context.Context, codeHash string, forUpdate bool) (*model.PairingCode, error)
 	Confirm(ctx context.Context, id, userID string, at time.Time) error
 	MarkConsumed(ctx context.Context, id string, at time.Time) error
+	DeleteExpiredBefore(ctx context.Context, before time.Time) (int64, error)
 }
 
 type pairingCodeRepo struct {

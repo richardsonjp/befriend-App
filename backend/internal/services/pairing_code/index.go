@@ -2,6 +2,7 @@ package pairing_code
 
 import (
 	"context"
+	"time"
 
 	"befriend/internal/model"
 	repoPairingCode "befriend/internal/repositories/pairing_code"
@@ -18,6 +19,8 @@ type PairingCodeService interface {
 	// Claim consumes a confirmed code for the Mac holding its poll secret. It returns nil, nil while the code
 	// isn't confirmed yet, and PAIRING_GONE when it can never be claimed. Call it inside a transaction.
 	Claim(ctx context.Context, code, pollSecret string) (*model.PairingCode, error)
+	// DeleteExpired removes pairing attempts that expired more than a day ago.
+	DeleteExpired(ctx context.Context, now time.Time) (int64, error)
 }
 
 type pairingCodeService struct {

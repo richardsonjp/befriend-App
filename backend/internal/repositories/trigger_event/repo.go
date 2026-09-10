@@ -2,11 +2,27 @@ package trigger_event
 
 import (
 	"context"
+	"time"
 
 	"befriend/internal/model"
 
 	"gorm.io/gorm/clause"
 )
+
+func (r *triggerEventRepo) ListRecent(ctx context.Context, userID string, limit int) ([]model.TriggerEvent, error) {
+	var events []model.TriggerEvent
+	err := r.dbdget.Get(ctx).
+		Where("user_id = ?", userID).
+		Order("occurred_at DESC").
+		Limit(limit).
+		Find(&events).Error
+	return events, err
+}
+
+func (r *triggerEventRepo) DeleteOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	q := r.dbdget.Get(ctx).Where("occurred_at < ?", before).Delete(&model.TriggerEvent{})
+	return q.RowsAffected, q.Error
+}
 
 func (r *triggerEventRepo) InsertNew(ctx context.Context, events []model.TriggerEvent) (int64, error) {
 	if len(events) == 0 {

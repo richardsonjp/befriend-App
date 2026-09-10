@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"befriend/config"
+	"befriend/pkg/clients/apns"
 	"befriend/pkg/clients/apple"
 	"befriend/pkg/clients/db"
 	"befriend/pkg/clients/email"
@@ -19,6 +20,7 @@ import (
 	reposOnboardingResponse "befriend/internal/repositories/onboarding_response"
 	reposPairingCode "befriend/internal/repositories/pairing_code"
 	reposPersonalityVersion "befriend/internal/repositories/personality_version"
+	reposPresence "befriend/internal/repositories/presence"
 	reposQuestionSet "befriend/internal/repositories/question_set"
 	reposRefreshToken "befriend/internal/repositories/refresh_token"
 	reposTriggerEvent "befriend/internal/repositories/trigger_event"
@@ -30,11 +32,13 @@ import (
 	// Services
 	serviceAuthentication "befriend/internal/services/authentication"
 	serviceDevice "befriend/internal/services/device"
+	serviceEvolution "befriend/internal/services/evolution"
 	serviceFriend "befriend/internal/services/friend"
 	serviceOnboarding "befriend/internal/services/onboarding"
 	servicePairingCode "befriend/internal/services/pairing_code"
 	servicePersonality "befriend/internal/services/personality"
 	servicePersonalityVersion "befriend/internal/services/personality_version"
+	servicePresence "befriend/internal/services/presence"
 	serviceQuestionSet "befriend/internal/services/question_set"
 	serviceRefreshToken "befriend/internal/services/refresh_token"
 	serviceTriggerEvent "befriend/internal/services/trigger_event"
@@ -48,6 +52,7 @@ import (
 	handlerFriend "befriend/cmd/apiserver/app/handlers/friend"
 	handlerOnboarding "befriend/cmd/apiserver/app/handlers/onboarding"
 	handlerPairing "befriend/cmd/apiserver/app/handlers/pairing"
+	handlerPresence "befriend/cmd/apiserver/app/handlers/presence"
 	handlerTriggerEvent "befriend/cmd/apiserver/app/handlers/trigger_event"
 	handlerUser "befriend/cmd/apiserver/app/handlers/user"
 	handlerUserAuth "befriend/cmd/apiserver/app/handlers/user_auth"
@@ -64,6 +69,8 @@ type Store struct {
 
 	// Background work
 	PersonalityService servicePersonality.PersonalityService
+	PresenceService    servicePresence.PresenceService
+	EvolutionService   serviceEvolution.EvolutionService
 
 	// Handlers
 	UserAuthHandler     *handlerUserAuth.UserAuthHandler
@@ -73,6 +80,7 @@ type Store struct {
 	DeviceHandler       *handlerDevice.DeviceHandler
 	PairingHandler      *handlerPairing.PairingHandler
 	TriggerEventHandler *handlerTriggerEvent.TriggerEventHandler
+	PresenceHandler     *handlerPresence.PresenceHandler
 
 	// Middleware
 	MiddlewarePasetoAuth middlewares.MiddlewarePasetoAuth
@@ -142,6 +150,20 @@ func Init() {
 		logs.Log.Warn("OPENROUTER_API_KEY is not set: personalities stay pending until it is")
 	}
 
+	// Live Activity and widget pushes: nil client without APNs credentials, so presence works without pushes.
+	apnsClient, err := apns.New(apns.Config{
+		TeamID:        config.Config.APNs.TeamID,
+		KeyID:         config.Config.APNs.KeyID,
+		PrivateKeyPEM: config.Config.APNs.PrivateKey,
+		BundleID:      config.Config.APNs.BundleID,
+	})
+	if err != nil {
+		panic("init apns client: " + err.Error())
+	}
+	if apnsClient == nil {
+		logs.Log.Warn("APNS_* is not set: iPhone Live Activities and widgets won't be pushed")
+	}
+
 	// Repos
 	txRepo := reposTx.NewTxRepo(db)
 	userRepo := reposUser.NewUserRepo(db)
@@ -155,6 +177,7 @@ func Init() {
 	personalityVersionRepo := reposPersonalityVersion.NewPersonalityVersionRepo(db)
 	pairingCodeRepo := reposPairingCode.NewPairingCodeRepo(db)
 	triggerEventRepo := reposTriggerEvent.NewTriggerEventRepo(db)
+	presenceRepo := reposPresence.NewPresenceRepo(db)
 	llmBudgetRepo := reposLLMBudget.NewLLMBudgetRepo(redis)
 
 	// Services
@@ -168,6 +191,7 @@ func Init() {
 	pairingCodeService := servicePairingCode.NewPairingCodeService(txRepo, pairingCodeRepo)
 	triggerEventService := serviceTriggerEvent.NewTriggerEventService(txRepo, triggerEventRepo, userService)
 	friendService := serviceFriend.NewFriendService(txRepo, friendRepo, personalityVersionService)
+	presenceService := servicePresence.NewPresenceService(txRepo, presenceRepo, deviceService, friendService, apnsClient)
 	onboardingService := serviceOnboarding.NewOnboardingService(
 		txRepo,
 		onboardingResponseRepo,
@@ -181,7 +205,16 @@ func Init() {
 		personalityVersionService,
 		friendService,
 		onboardingService,
+		triggerEventService,
 		openRouterClient,
+	)
+	evolutionService := serviceEvolution.NewEvolutionService(
+		txRepo,
+		friendService,
+		personalityVersionService,
+		personalityService,
+		triggerEventService,
+		pairingCodeService,
 	)
 	userApplicationService := serviceUserApplication.NewUserApplicationService(
 		txRepo,
@@ -209,6 +242,8 @@ func Init() {
 		Log:   logs.Log,
 
 		PersonalityService: personalityService,
+		PresenceService:    presenceService,
+		EvolutionService:   evolutionService,
 
 		UserAuthHandler:     handlerUserAuth.NewUserAuthHandler(authenticationService),
 		UserHandler:         handlerUser.NewUserHandler(userApplicationService),
@@ -217,6 +252,7 @@ func Init() {
 		DeviceHandler:       handlerDevice.NewDeviceHandler(deviceService),
 		PairingHandler:      handlerPairing.NewPairingHandler(pairingCodeService, authenticationService),
 		TriggerEventHandler: handlerTriggerEvent.NewTriggerEventHandler(triggerEventService),
+		PresenceHandler:     handlerPresence.NewPresenceHandler(presenceService),
 
 		MiddlewarePasetoAuth: middlewares.NewMiddlewarePasetoAuth(),
 	}

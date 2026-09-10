@@ -2,6 +2,7 @@ package trigger_event
 
 import (
 	"context"
+	"time"
 
 	"befriend/internal/model"
 	"befriend/pkg/clients/db"
@@ -13,6 +14,9 @@ type TriggerEventRepo interface {
 	DeleteByUser(ctx context.Context, userID string) error
 	// DeleteByApps removes the user's events for these app names (compared lowercased).
 	DeleteByApps(ctx context.Context, userID string, lowerAppNames []string) error
+	// ListRecent returns the user's newest events, newest first.
+	ListRecent(ctx context.Context, userID string, limit int) ([]model.TriggerEvent, error)
+	DeleteOlderThan(ctx context.Context, before time.Time) (int64, error)
 }
 
 type triggerEventRepo struct {

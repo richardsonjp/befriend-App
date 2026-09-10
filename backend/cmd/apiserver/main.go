@@ -37,6 +37,14 @@ var (
 			app.Migrate(args)
 		},
 	}
+
+	evolveCMD = &cobra.Command{
+		Use:   "evolve",
+		Short: "Hourly job: activity retention and weekly friend evolution",
+		Run: func(*cobra.Command, []string) {
+			app.Evolve()
+		},
+	}
 )
 
 // @title           Antartech API
@@ -59,6 +67,7 @@ func main() {
 	rootCMD.AddCommand(configCMD)
 	rootCMD.AddCommand(serverCMD)
 	rootCMD.AddCommand(migrateCMD)
+	rootCMD.AddCommand(evolveCMD)
 	if err := rootCMD.Execute(); err != nil {
 		os.Exit(1)
 	}

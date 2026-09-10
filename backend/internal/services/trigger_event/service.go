@@ -40,6 +40,21 @@ func (s *triggerEventService) Record(ctx context.Context, payload RecordPayload)
 	return &RecordResponse{Accepted: int(accepted)}, nil
 }
 
+func (s *triggerEventService) Recent(ctx context.Context, userID string, limit int) ([]model.TriggerEvent, error) {
+	events, err := s.triggerEventRepo.ListRecent(ctx, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
+		events[i], events[j] = events[j], events[i]
+	}
+	return events, nil
+}
+
+func (s *triggerEventService) DeleteExpired(ctx context.Context, now time.Time) (int64, error) {
+	return s.triggerEventRepo.DeleteOlderThan(ctx, now.Add(-Retention))
+}
+
 func (s *triggerEventService) DeleteAll(ctx context.Context, userID string) error {
 	return s.triggerEventRepo.DeleteByUser(ctx, userID)
 }

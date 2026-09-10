@@ -106,6 +106,10 @@ func (s *pairingCodeService) Claim(ctx context.Context, code, pollSecret string)
 	}
 }
 
+func (s *pairingCodeService) DeleteExpired(ctx context.Context, now time.Time) (int64, error) {
+	return s.pairingCodeRepo.DeleteExpiredBefore(ctx, now.Add(-24*time.Hour))
+}
+
 type claimState int
 
 const (

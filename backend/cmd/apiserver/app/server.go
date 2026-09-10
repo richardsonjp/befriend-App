@@ -40,6 +40,7 @@ func Run() {
 		defer close(workerDone)
 		runPersonalityWorker(workerCtx, store.App.PersonalityService)
 	}()
+	go runPresenceSweeper(workerCtx, store.App.PresenceService)
 
 	// Start fiber
 	app := routes.NewHTTPServer(store.App)

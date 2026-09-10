@@ -2,6 +2,7 @@ package friend
 
 import (
 	"context"
+	"time"
 
 	"befriend/internal/model"
 	repoFriend "befriend/internal/repositories/friend"
@@ -15,6 +16,8 @@ type FriendService interface {
 	GetByUserID(ctx context.Context, userID string) (*model.Friend, error)
 	GetProfile(ctx context.Context, userID string) (*ProfileResponse, error)
 	SetCurrentVersion(ctx context.Context, friendID, versionID string) error
+	ListDueForEvolution(ctx context.Context, now time.Time, limit int) ([]model.Friend, error)
+	SetNextEvolutionAt(ctx context.Context, friendID string, next time.Time) error
 }
 
 type friendService struct {

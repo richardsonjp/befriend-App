@@ -26,4 +26,8 @@ func initAppRoute(api fiber.Router, appStore *store.Store) {
 	api.Post("/pairing/:code/confirm", codeLimit, auth, appStore.PairingHandler.Confirm)
 	api.Post("/trigger-events", auth, appStore.TriggerEventHandler.Record)
 	api.Delete("/trigger-events", auth, appStore.TriggerEventHandler.DeleteAll)
+	api.Get("/presence", auth, appStore.PresenceHandler.Get)
+	api.Post("/presence/claim", auth, appStore.PresenceHandler.Claim)
+	api.Post("/presence/release", auth, appStore.PresenceHandler.Release)
+	api.Get("/presence/ws", auth, appStore.PresenceHandler.RequireUpgrade, appStore.PresenceHandler.Socket())
 }

@@ -37,6 +37,11 @@ func (r *pairingCodeRepo) Confirm(ctx context.Context, id, userID string, at tim
 		Updates(map[string]interface{}{"user_id": userID, "confirmed_at": at}).Error
 }
 
+func (r *pairingCodeRepo) DeleteExpiredBefore(ctx context.Context, before time.Time) (int64, error) {
+	q := r.dbdget.Get(ctx).Where("expires_at < ?", before).Delete(&model.PairingCode{})
+	return q.RowsAffected, q.Error
+}
+
 func (r *pairingCodeRepo) MarkConsumed(ctx context.Context, id string, at time.Time) error {
 	return r.dbdget.Get(ctx).
 		Model(&model.PairingCode{}).

@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"strings"
+	"time"
 
 	"befriend/internal/model"
 	"befriend/pkg/utils/astro"
@@ -47,6 +48,14 @@ func (s *friendService) GetByUserID(ctx context.Context, userID string) (*model.
 
 func (s *friendService) SetCurrentVersion(ctx context.Context, friendID, versionID string) error {
 	return s.friendRepo.SetCurrentVersion(ctx, friendID, versionID)
+}
+
+func (s *friendService) ListDueForEvolution(ctx context.Context, now time.Time, limit int) ([]model.Friend, error) {
+	return s.friendRepo.ListDueForEvolution(ctx, now, limit)
+}
+
+func (s *friendService) SetNextEvolutionAt(ctx context.Context, friendID string, next time.Time) error {
+	return s.friendRepo.SetNextEvolutionAt(ctx, friendID, next)
 }
 
 // GetProfile is the friend as the apps see it: the latest personality version's status, plus the

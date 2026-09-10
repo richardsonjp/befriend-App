@@ -46,6 +46,21 @@ func (s *deviceService) UpdatePushTokens(ctx context.Context, payload PushTokens
 	return s.deviceRepo.UpdatePushTokens(ctx, payload.DeviceID, payload.UserID, fields)
 }
 
+func (s *deviceService) ListPushTargets(ctx context.Context, userID string) ([]model.Device, error) {
+	return s.deviceRepo.ListPushTargets(ctx, userID)
+}
+
+func (s *deviceService) ClearPushToken(ctx context.Context, deviceID, column string) error {
+	switch column {
+	case "la_push_token":
+		return s.deviceRepo.ClearColumns(ctx, deviceID, "la_push_token", "la_started_at")
+	case "la_push_to_start_token", "widget_push_token":
+		return s.deviceRepo.ClearColumns(ctx, deviceID, column)
+	default:
+		return errors.From("BAD_REQUEST").WithDetail("unknown push token column " + column)
+	}
+}
+
 // setToken adds a token column to fields: nil leaves it out, "" clears it, anything else must be hex.
 // (Checked here rather than with a validate tag: omitempty doesn't skip a pointer to "".)
 func setToken(fields map[string]interface{}, column string, token *string) error {
