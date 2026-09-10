@@ -65,6 +65,25 @@ var Config = struct {
 		ResendCooldownSec int `env:"VERIFICATION_RESEND_COOLDOWN_SECONDS" envDefault:"60"`
 	}
 
+	// Sign in with Apple. BundleIDs are the accepted token audiences; empty disables Apple sign-in.
+	// TeamID/KeyID/PrivateKey (.p8) enable exchanging codes for Apple refresh tokens (needed to revoke on
+	// account deletion). JWKSURL/Issuers only change for local end-to-end tests.
+	Apple struct {
+		BundleIDs  []string `env:"APPLE_BUNDLE_IDS" envSeparator:","`
+		TeamID     string   `env:"APPLE_TEAM_ID" envDefault:""`
+		KeyID      string   `env:"APPLE_KEY_ID" envDefault:""`
+		PrivateKey string   `env:"APPLE_PRIVATE_KEY" envDefault:""`
+		JWKSURL    string   `env:"APPLE_JWKS_URL" envDefault:"https://appleid.apple.com/auth/keys"`
+		Issuers    []string `env:"APPLE_ISSUERS" envSeparator:"," envDefault:"https://appleid.apple.com"`
+	}
+
+	// Google sign-in. ClientIDs are the accepted token audiences (iOS and macOS OAuth clients); empty disables it.
+	Google struct {
+		ClientIDs []string `env:"GOOGLE_CLIENT_IDS" envSeparator:","`
+		JWKSURL   string   `env:"GOOGLE_JWKS_URL" envDefault:"https://www.googleapis.com/oauth2/v3/certs"`
+		Issuers   []string `env:"GOOGLE_ISSUERS" envSeparator:"," envDefault:"https://accounts.google.com,accounts.google.com"`
+	}
+
 	PASETO struct {
 		AccessSecret         string `env:"PASETO_ACCESS_SECRET" envDefault:""`
 		RefreshSecret        string `env:"PASETO_REFRESH_SECRET" envDefault:""`

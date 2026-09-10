@@ -27,8 +27,10 @@ require (
 
 require (
 	aidanwoods.dev/go-paseto v1.5.0
+	github.com/MicahParks/keyfunc/v3 v3.8.2
 	github.com/gofiber/fiber/v2 v2.52.10
 	github.com/gofiber/fiber/v3 v3.0.0-rc.2
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/swaggo/swag v1.16.6
@@ -39,6 +41,7 @@ require (
 require (
 	aidanwoods.dev/go-result v0.1.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
+	github.com/MicahParks/jwkset v0.11.3 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
@@ -82,6 +85,7 @@ require (
 	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.36.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

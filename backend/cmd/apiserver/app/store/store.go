@@ -1,9 +1,13 @@
 package store
 
 import (
+	"context"
+
 	"befriend/config"
+	"befriend/pkg/clients/apple"
 	"befriend/pkg/clients/db"
 	"befriend/pkg/clients/email"
+	"befriend/pkg/clients/idtoken"
 	"befriend/pkg/clients/redis"
 	"befriend/pkg/utils/logs"
 
@@ -12,6 +16,7 @@ import (
 	reposRefreshToken "befriend/internal/repositories/refresh_token"
 	reposTx "befriend/internal/repositories/tx"
 	reposUser "befriend/internal/repositories/user"
+	reposUserIdentity "befriend/internal/repositories/user_identity"
 	reposVerificationCode "befriend/internal/repositories/verification_code"
 
 	// Services
@@ -20,6 +25,7 @@ import (
 	serviceRefreshToken "befriend/internal/services/refresh_token"
 	serviceUser "befriend/internal/services/user"
 	serviceUserApplication "befriend/internal/services/user_application"
+	serviceUserIdentity "befriend/internal/services/user_identity"
 	serviceVerificationCode "befriend/internal/services/verification_code"
 
 	// Handlers
@@ -69,20 +75,59 @@ func Init() {
 		From:     config.Config.SMTP.From,
 	})
 
+	// Sign in with Apple / Google: nil verifiers when no audiences are configured (the endpoints then
+	// answer "not configured"). Key sets refresh in the background for the life of the process.
+	appleVerifier, err := idtoken.New(context.Background(), idtoken.Config{
+		JWKSURL:   config.Config.Apple.JWKSURL,
+		Issuers:   config.Config.Apple.Issuers,
+		Audiences: config.Config.Apple.BundleIDs,
+		HashNonce: true,
+	})
+	if err != nil {
+		panic("init apple identity verifier: " + err.Error())
+	}
+	googleVerifier, err := idtoken.New(context.Background(), idtoken.Config{
+		JWKSURL:   config.Config.Google.JWKSURL,
+		Issuers:   config.Config.Google.Issuers,
+		Audiences: config.Config.Google.ClientIDs,
+	})
+	if err != nil {
+		panic("init google identity verifier: " + err.Error())
+	}
+	appleClient, err := apple.New(apple.Config{
+		TeamID:        config.Config.Apple.TeamID,
+		KeyID:         config.Config.Apple.KeyID,
+		PrivateKeyPEM: config.Config.Apple.PrivateKey,
+	})
+	if err != nil {
+		panic("init apple client: " + err.Error())
+	}
+
 	// Repos
 	txRepo := reposTx.NewTxRepo(db)
 	userRepo := reposUser.NewUserRepo(db)
+	userIdentityRepo := reposUserIdentity.NewUserIdentityRepo(db)
 	deviceRepo := reposDevice.NewDeviceRepo(db)
 	refreshTokenRepo := reposRefreshToken.NewRefreshTokenRepo(db)
 	verificationCodeRepo := reposVerificationCode.NewVerificationCodeRepo(db)
 
 	// Services
 	userService := serviceUser.NewUserService(txRepo, userRepo)
+	userIdentityService := serviceUserIdentity.NewUserIdentityService(txRepo, userIdentityRepo)
 	deviceService := serviceDevice.NewDeviceService(txRepo, deviceRepo)
 	refreshTokenService := serviceRefreshToken.NewRefreshTokenService(txRepo, refreshTokenRepo)
 	verificationCodeService := serviceVerificationCode.NewVerificationCodeService(txRepo, verificationCodeRepo, smtpClient)
 	userApplicationService := serviceUserApplication.NewUserApplicationService(txRepo, userService, verificationCodeService)
-	authenticationService := serviceAuthentication.NewAuthenticationService(txRepo, userService, deviceService, refreshTokenService)
+	authenticationService := serviceAuthentication.NewAuthenticationService(
+		txRepo,
+		userService,
+		userIdentityService,
+		deviceService,
+		refreshTokenService,
+		appleVerifier,
+		googleVerifier,
+		appleClient,
+	)
 
 	App = &Store{
 		DB:    db,

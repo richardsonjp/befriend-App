@@ -18,6 +18,8 @@ func initAuthenticationRoute(group fiber.Router, appStore *store.Store) {
 	group.Post("/verify-email", limit, appStore.UserHandler.VerifyEmail)
 	group.Post("/resend-code", limit, appStore.UserHandler.ResendCode)
 	group.Post("/login", limit, appStore.UserAuthHandler.Login)
+	group.Post("/apple", limit, appStore.UserAuthHandler.LoginApple)
+	group.Post("/google", limit, appStore.UserAuthHandler.LoginGoogle)
 	group.Post("/refresh", limit, appStore.UserAuthHandler.Refresh)
 
 	// protected

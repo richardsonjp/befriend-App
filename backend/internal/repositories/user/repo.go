@@ -2,21 +2,17 @@ package user
 
 import (
 	"context"
-	stderrors "errors"
 
 	"befriend/internal/model"
+	"befriend/pkg/clients/db"
 	"befriend/pkg/utils/errors"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
-const pgUniqueViolation = "23505"
-
 func (r *userRepo) Create(ctx context.Context, m *model.User) (*model.User, error) {
 	if err := r.dbdget.Get(ctx).Create(m).Error; err != nil {
-		var pgErr *pgconn.PgError
-		if stderrors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		if db.IsUniqueViolation(err) {
 			return nil, errors.From("DATA_CONFLICT")
 		}
 		return nil, err
