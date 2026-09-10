@@ -2,10 +2,10 @@ package verification_code
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/repositories/tx"
-	"go-skeleton/internal/repositories/verification_code"
-	"go-skeleton/pkg/clients/email"
+	"befriend/internal/model"
+	"befriend/internal/repositories/tx"
+	"befriend/internal/repositories/verification_code"
+	"befriend/pkg/clients/email"
 )
 
 type VerificationCodeService interface {

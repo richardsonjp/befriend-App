@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go-skeleton/cmd/apiserver/app"
-	"go-skeleton/config"
+	"befriend/cmd/apiserver/app"
+	"befriend/config"
 )
 
 var (

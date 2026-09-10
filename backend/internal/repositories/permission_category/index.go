@@ -2,9 +2,9 @@ package permission_category
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/model/enum"
-	"go-skeleton/pkg/clients/db"
+	"befriend/internal/model"
+	"befriend/internal/model/enum"
+	"befriend/pkg/clients/db"
 )
 
 type PermissionCategoryRepo interface {

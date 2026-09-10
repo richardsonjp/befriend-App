@@ -10,7 +10,7 @@ alwaysApply: false
 
 - `index.go`: `{Domain}Handler` + `New{Domain}Handler(...)`
 - One HTTP method per file: `registration.go`, `login.go`, `list_widgets.go`
-- Alias service import when needed: `userAppService "go-skeleton/internal/services/user_application"`
+- Alias service import when needed: `userAppService "befriend/internal/services/user_application"`
 
 ## Mandatory flow
 

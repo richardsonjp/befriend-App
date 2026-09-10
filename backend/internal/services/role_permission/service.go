@@ -2,8 +2,8 @@ package role_permission
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/model/enum"
+	"befriend/internal/model"
+	"befriend/internal/model/enum"
 )
 
 func (s *rolePermissionService) Create(ctx context.Context, payload CreatePayload) error {

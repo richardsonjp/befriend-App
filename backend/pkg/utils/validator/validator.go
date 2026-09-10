@@ -2,7 +2,7 @@ package validator
 
 import (
 	"fmt"
-	"go-skeleton/pkg/utils/wording"
+	"befriend/pkg/utils/wording"
 	"reflect"
 	"strings"
 

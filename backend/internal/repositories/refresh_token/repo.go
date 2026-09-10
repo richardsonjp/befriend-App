@@ -2,7 +2,7 @@ package refresh_token
 
 import (
 	"context"
-	"go-skeleton/internal/model"
+	"befriend/internal/model"
 )
 
 func (r *refreshTokenRepo) Create(ctx context.Context, m *model.RefreshToken) error {

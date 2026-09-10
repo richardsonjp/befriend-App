@@ -2,7 +2,7 @@ package tx
 
 import (
 	"context"
-	"go-skeleton/pkg/clients/db"
+	"befriend/pkg/clients/db"
 )
 
 type TxRepo interface {

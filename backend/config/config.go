@@ -6,8 +6,8 @@ import (
 	"github.com/caarlos0/env/v6"
 	"github.com/joho/godotenv"
 
-	"go-skeleton/pkg/utils/file"
-	"go-skeleton/pkg/utils/json"
+	"befriend/pkg/utils/file"
+	"befriend/pkg/utils/json"
 )
 
 // Config global setting
@@ -43,7 +43,7 @@ var Config = struct {
 	}
 
 	System struct {
-		AppName   string `env:"SYSTEM_APP_NAME" envDefault:"go-skeleton"`
+		AppName   string `env:"SYSTEM_APP_NAME" envDefault:"befriend"`
 		AppServer string `env:"SYSTEM_SERVER" envDefault:"127.0.0.1"`
 		AppAddr   string `env:"SYSTEM_ADDR" envDefault:":7000"`
 		Mode      string `env:"SYSTEM_MODE" envDefault:"debug"`

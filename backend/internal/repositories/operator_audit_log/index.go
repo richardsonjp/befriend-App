@@ -2,8 +2,8 @@ package operator_audit_log
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/pkg/clients/db"
+	"befriend/internal/model"
+	"befriend/pkg/clients/db"
 )
 
 type OperatorAuditLogRepo interface {

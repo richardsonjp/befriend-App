@@ -1,7 +1,7 @@
 package user
 
 import (
-	"go-skeleton/internal/services/user_application"
+	"befriend/internal/services/user_application"
 )
 
 type UserHandler struct {

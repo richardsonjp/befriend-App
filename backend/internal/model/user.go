@@ -1,7 +1,7 @@
 package model
 
 import (
-	"go-skeleton/internal/model/enum"
+	"befriend/internal/model/enum"
 	"time"
 )
 

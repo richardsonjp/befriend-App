@@ -2,8 +2,8 @@ package permission_category
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/model/enum"
+	"befriend/internal/model"
+	"befriend/internal/model/enum"
 )
 
 func (s *permissionCategoryService) Create(ctx context.Context, payload CreatePayload) error {

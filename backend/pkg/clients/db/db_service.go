@@ -10,8 +10,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"gorm.io/gorm/clause"
 
-	"go-skeleton/config"
-	"go-skeleton/pkg/utils/logs"
+	"befriend/config"
+	"befriend/pkg/utils/logs"
 
 	"github.com/DATA-DOG/go-sqlmock"
 

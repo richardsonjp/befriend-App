@@ -1,14 +1,14 @@
 package routes
 
 import (
-	"go-skeleton/cmd/apiserver/app/store"
-	"go-skeleton/config"
-	"go-skeleton/internal/middlewares"
+	"befriend/cmd/apiserver/app/store"
+	"befriend/config"
+	"befriend/internal/middlewares"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger" // Add this import
 	//fiberSwagger "github.com/gofiber/swagger"
-	//_ "go-skeleton/docs"
+	//_ "befriend/docs"
 )
 
 func Ping(c *fiber.Ctx) error {

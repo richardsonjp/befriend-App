@@ -2,8 +2,8 @@ package role
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/pkg/utils/errors"
+	"befriend/internal/model"
+	"befriend/pkg/utils/errors"
 	"math"
 
 	"gorm.io/gorm"

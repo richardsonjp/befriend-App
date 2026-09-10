@@ -2,7 +2,7 @@ package kyc_request
 
 import (
 	"context"
-	"go-skeleton/internal/model"
+	"befriend/internal/model"
 )
 
 func (r *kycRequestRepo) Create(ctx context.Context, m *model.KycRequest) error {

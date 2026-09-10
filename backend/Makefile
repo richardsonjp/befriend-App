@@ -1,5 +1,5 @@
 # Variables
-SERVICE_NAME := go-skeleton
+SERVICE_NAME := befriend
 BINARY_NAME := bin/$(SERVICE_NAME)
 MAIN_PACKAGE := ./cmd/apiserver
 

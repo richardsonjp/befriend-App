@@ -3,10 +3,10 @@ package verification_code
 import (
 	"context"
 	"fmt"
-	"go-skeleton/internal/model"
-	"go-skeleton/pkg/clients/email"
-	"go-skeleton/pkg/utils/errors"
-	customStr "go-skeleton/pkg/utils/strings"
+	"befriend/internal/model"
+	"befriend/pkg/clients/email"
+	"befriend/pkg/utils/errors"
+	customStr "befriend/pkg/utils/strings"
 	"time"
 )
 

@@ -1,7 +1,7 @@
 package model
 
 import (
-	ct "go-skeleton/internal/model/custom_type"
+	ct "befriend/internal/model/custom_type"
 
 	"github.com/shopspring/decimal"
 )

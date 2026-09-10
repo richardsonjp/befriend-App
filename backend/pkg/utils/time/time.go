@@ -1,8 +1,8 @@
 package timeutil
 
 import (
-	"go-skeleton/pkg/utils/errors"
-	"go-skeleton/pkg/utils/null"
+	"befriend/pkg/utils/errors"
+	"befriend/pkg/utils/null"
 	"time"
 )
 

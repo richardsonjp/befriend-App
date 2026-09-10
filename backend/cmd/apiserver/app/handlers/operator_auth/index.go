@@ -1,7 +1,7 @@
 package operator_auth
 
 import (
-	"go-skeleton/internal/services/authentication"
+	"befriend/internal/services/authentication"
 )
 
 type OperatorAuthHandler struct {

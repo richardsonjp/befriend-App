@@ -2,9 +2,9 @@ package middlewares
 
 import (
 	"fmt"
-	"go-skeleton/internal/services/app_resource"
-	"go-skeleton/internal/services/role_permission"
-	"go-skeleton/pkg/utils/errors"
+	"befriend/internal/services/app_resource"
+	"befriend/internal/services/role_permission"
+	"befriend/pkg/utils/errors"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"

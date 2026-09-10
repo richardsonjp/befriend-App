@@ -2,9 +2,9 @@ package operator
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/repositories/operator"
-	"go-skeleton/internal/repositories/tx"
+	"befriend/internal/model"
+	"befriend/internal/repositories/operator"
+	"befriend/internal/repositories/tx"
 )
 
 type OperatorService interface {

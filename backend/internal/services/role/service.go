@@ -3,9 +3,9 @@ package role
 import (
 	"context"
 	"fmt"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/model/enum"
-	"go-skeleton/pkg/utils/errors"
+	"befriend/internal/model"
+	"befriend/internal/model/enum"
+	"befriend/pkg/utils/errors"
 )
 
 func (s *roleService) CreateRole(ctx context.Context, payloadRole CreatePayload) (*model.Role, error) {

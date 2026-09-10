@@ -1,10 +1,10 @@
 package user
 
 import (
-	"go-skeleton/internal/services/user_application"
-	"go-skeleton/pkg/utils/api"
-	"go-skeleton/pkg/utils/errors"
-	"go-skeleton/pkg/utils/validator"
+	"befriend/internal/services/user_application"
+	"befriend/pkg/utils/api"
+	"befriend/pkg/utils/errors"
+	"befriend/pkg/utils/validator"
 
 	"github.com/gofiber/fiber/v2"
 )

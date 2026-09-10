@@ -2,7 +2,7 @@ package validator
 
 import (
 	"github.com/stretchr/testify/assert"
-	"go-skeleton/internal/model/enum"
+	"befriend/internal/model/enum"
 	"testing"
 )
 

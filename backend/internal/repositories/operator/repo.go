@@ -2,7 +2,7 @@ package operator
 
 import (
 	"context"
-	"go-skeleton/internal/model"
+	"befriend/internal/model"
 )
 
 func (r *operatorRepo) Create(ctx context.Context, m *model.Operator) error {

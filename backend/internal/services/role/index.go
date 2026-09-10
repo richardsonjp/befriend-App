@@ -2,14 +2,14 @@ package role
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/model/enum"
-	"go-skeleton/internal/repositories/role"
-	"go-skeleton/internal/repositories/tx"
-	"go-skeleton/internal/services/account"
-	"go-skeleton/internal/services/permission"
-	"go-skeleton/internal/services/permission_category"
-	"go-skeleton/internal/services/role_permission"
+	"befriend/internal/model"
+	"befriend/internal/model/enum"
+	"befriend/internal/repositories/role"
+	"befriend/internal/repositories/tx"
+	"befriend/internal/services/account"
+	"befriend/internal/services/permission"
+	"befriend/internal/services/permission_category"
+	"befriend/internal/services/role_permission"
 )
 
 type RoleService interface {

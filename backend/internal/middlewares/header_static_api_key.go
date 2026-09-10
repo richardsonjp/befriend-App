@@ -1,8 +1,8 @@
 package middlewares
 
 import (
-	"go-skeleton/config"
-	"go-skeleton/pkg/utils/errors"
+	"befriend/config"
+	"befriend/pkg/utils/errors"
 
 	"github.com/gofiber/fiber/v2"
 )

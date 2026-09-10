@@ -2,7 +2,7 @@ package operator_audit_log
 
 import (
 	"context"
-	"go-skeleton/internal/model"
+	"befriend/internal/model"
 )
 
 func (r *operatorAuditLogRepo) Create(ctx context.Context, m *model.OperatorAuditLog) error {

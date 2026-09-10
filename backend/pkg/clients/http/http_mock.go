@@ -1,7 +1,7 @@
 package http
 
 import (
-	"go-skeleton/pkg/utils/errors"
+	"befriend/pkg/utils/errors"
 	"net/http"
 
 	"github.com/stretchr/testify/mock"

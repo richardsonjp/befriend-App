@@ -2,8 +2,8 @@ package permission
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	repoPermission "go-skeleton/internal/repositories/permission"
+	"befriend/internal/model"
+	repoPermission "befriend/internal/repositories/permission"
 )
 
 func (s *permissionService) Create(ctx context.Context, payload CreatePayload) error {

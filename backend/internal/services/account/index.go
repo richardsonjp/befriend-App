@@ -2,9 +2,9 @@ package account
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/repositories/account"
-	"go-skeleton/internal/repositories/tx"
+	"befriend/internal/model"
+	"befriend/internal/repositories/account"
+	"befriend/internal/repositories/tx"
 )
 
 type AccountService interface {

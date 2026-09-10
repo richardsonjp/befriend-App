@@ -2,7 +2,7 @@ package permission
 
 import (
 	"context"
-	"go-skeleton/internal/model"
+	"befriend/internal/model"
 )
 
 func (r *permissionRepo) Create(ctx context.Context, m *model.Permission) error {

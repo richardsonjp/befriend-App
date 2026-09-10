@@ -2,9 +2,9 @@ package permission
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	repoPermission "go-skeleton/internal/repositories/permission"
-	"go-skeleton/internal/repositories/tx"
+	"befriend/internal/model"
+	repoPermission "befriend/internal/repositories/permission"
+	"befriend/internal/repositories/tx"
 )
 
 type PermissionService interface {

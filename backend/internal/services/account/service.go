@@ -2,8 +2,8 @@ package account
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/model/enum"
+	"befriend/internal/model"
+	"befriend/internal/model/enum"
 )
 
 func (s *accountService) CreateAccount(ctx context.Context, payload CreatePayload) (*model.Account, error) {

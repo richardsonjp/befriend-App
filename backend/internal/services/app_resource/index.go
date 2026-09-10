@@ -2,9 +2,9 @@ package app_resource
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/repositories/app_resource"
-	"go-skeleton/internal/repositories/tx"
+	"befriend/internal/model"
+	"befriend/internal/repositories/app_resource"
+	"befriend/internal/repositories/tx"
 )
 
 type AppResourceService interface {

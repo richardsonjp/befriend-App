@@ -3,7 +3,7 @@ package role_permission
 import (
 	"context"
 	"fmt"
-	"go-skeleton/internal/model"
+	"befriend/internal/model"
 )
 
 func (r *rolePermissionRepo) Create(ctx context.Context, m *model.RolePermission) error {

@@ -2,7 +2,7 @@ package app_resource
 
 import (
 	"context"
-	"go-skeleton/internal/model"
+	"befriend/internal/model"
 )
 
 func (r *appResourceRepo) Create(ctx context.Context, m *model.AppResource) error {

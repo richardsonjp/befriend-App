@@ -7,10 +7,10 @@ import (
 	"syscall"
 	"time"
 
-	"go-skeleton/cmd/apiserver/app/routes"
-	"go-skeleton/cmd/apiserver/app/store"
-	"go-skeleton/config"
-	"go-skeleton/pkg/utils/logs"
+	"befriend/cmd/apiserver/app/routes"
+	"befriend/cmd/apiserver/app/store"
+	"befriend/config"
+	"befriend/pkg/utils/logs"
 
 	"github.com/shopspring/decimal"
 )

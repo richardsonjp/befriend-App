@@ -1,7 +1,7 @@
 package operator_auth
 
 import (
-	"go-skeleton/pkg/utils/api"
+	"befriend/pkg/utils/api"
 
 	"github.com/gofiber/fiber/v2"
 )

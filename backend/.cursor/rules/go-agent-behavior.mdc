@@ -11,13 +11,13 @@ alwaysApply: true
 - Do **not** search or read the codebase to discover conventions.
 - Read repo files only for business logic, signatures you must implement, or files you are editing.
 
-## Stack (go-skeleton / fiber-app-skeleton / platform-api-core)
+## Stack (befriend / fiber-app-skeleton / platform-api-core)
 
 - **HTTP:** Fiber v2 — handlers return `error`
 - **Errors:** `AppError` — `errors.From("CODE")`, `errors.Respond(c, err)`, `errors.Is(err, "CODE")`
 - **DB:** GORM + PostgreSQL via `dbdget.Get(ctx)`
 - **Tx:** `txRepo.Run(ctx, fn)` from service only
-- **Module:** use `go.mod` module path (e.g. `go-skeleton/...`, `platform-api-core/...`)
+- **Module:** use `go.mod` module path (e.g. `befriend/...`, `platform-api-core/...`)
 
 ## Folder layout
 

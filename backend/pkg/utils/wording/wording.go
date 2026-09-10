@@ -2,7 +2,7 @@ package wording
 
 import (
 	"fmt"
-	"go-skeleton/pkg/utils/array"
+	"befriend/pkg/utils/array"
 	"math"
 	"math/big"
 	"regexp"

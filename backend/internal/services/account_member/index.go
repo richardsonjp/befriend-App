@@ -2,8 +2,8 @@ package account_member
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/repositories/account_member"
+	"befriend/internal/model"
+	"befriend/internal/repositories/account_member"
 )
 
 type AccountMemberService interface {

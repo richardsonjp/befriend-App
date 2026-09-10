@@ -2,12 +2,12 @@ package user_application
 
 import (
 	"context"
-	"go-skeleton/internal/repositories/tx"
-	"go-skeleton/internal/services/account"
-	"go-skeleton/internal/services/account_member"
-	"go-skeleton/internal/services/role"
-	"go-skeleton/internal/services/user"
-	"go-skeleton/internal/services/verification_code"
+	"befriend/internal/repositories/tx"
+	"befriend/internal/services/account"
+	"befriend/internal/services/account_member"
+	"befriend/internal/services/role"
+	"befriend/internal/services/user"
+	"befriend/internal/services/verification_code"
 )
 
 type UserApplicationService interface {

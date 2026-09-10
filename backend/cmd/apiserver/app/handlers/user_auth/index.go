@@ -1,7 +1,7 @@
 package user_auth
 
 import (
-	"go-skeleton/internal/services/authentication"
+	"befriend/internal/services/authentication"
 )
 
 type UserAuthHandler struct {

@@ -2,9 +2,9 @@ package authentication
 
 import (
 	"context"
-	"go-skeleton/internal/model/enum"
-	"go-skeleton/pkg/utils/errors"
-	"go-skeleton/pkg/utils/paseto"
+	"befriend/internal/model/enum"
+	"befriend/pkg/utils/errors"
+	"befriend/pkg/utils/paseto"
 
 	"golang.org/x/crypto/bcrypt"
 )

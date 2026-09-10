@@ -1,7 +1,7 @@
 package role
 
 import (
-	"go-skeleton/internal/services/role"
+	"befriend/internal/services/role"
 )
 
 type RoleHandler struct {

@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"go-skeleton/cmd/apiserver/app/store"
+	"befriend/cmd/apiserver/app/store"
 
 	"github.com/gofiber/fiber/v2"
 )

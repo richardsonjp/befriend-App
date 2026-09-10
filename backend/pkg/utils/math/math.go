@@ -2,7 +2,7 @@ package math
 
 import (
 	"fmt"
-	"go-skeleton/pkg/utils/null"
+	"befriend/pkg/utils/null"
 	"math"
 	"math/rand"
 	"strconv"

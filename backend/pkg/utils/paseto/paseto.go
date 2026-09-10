@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"go-skeleton/config"
+	"befriend/config"
 
 	"aidanwoods.dev/go-paseto"
 )

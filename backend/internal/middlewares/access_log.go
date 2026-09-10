@@ -2,9 +2,9 @@ package middlewares
 
 import (
 	"encoding/json"
-	"go-skeleton/config"
-	"go-skeleton/pkg/utils/logs"
-	stringer "go-skeleton/pkg/utils/strings"
+	"befriend/config"
+	"befriend/pkg/utils/logs"
+	stringer "befriend/pkg/utils/strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"

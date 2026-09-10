@@ -2,9 +2,9 @@ package user
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/repositories/tx"
-	"go-skeleton/internal/repositories/user"
+	"befriend/internal/model"
+	"befriend/internal/repositories/tx"
+	"befriend/internal/repositories/user"
 )
 
 type UserService interface {

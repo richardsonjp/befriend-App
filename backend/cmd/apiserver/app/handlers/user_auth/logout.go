@@ -1,9 +1,9 @@
 package user_auth
 
 import (
-	"go-skeleton/internal/services/authentication"
-	"go-skeleton/pkg/utils/api"
-	"go-skeleton/pkg/utils/errors"
+	"befriend/internal/services/authentication"
+	"befriend/pkg/utils/api"
+	"befriend/pkg/utils/errors"
 
 	"github.com/gofiber/fiber/v2"
 )

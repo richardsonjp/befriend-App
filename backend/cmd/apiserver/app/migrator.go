@@ -2,7 +2,7 @@ package app
 
 import (
 	"fmt"
-	"go-skeleton/config"
+	"befriend/config"
 	"os"
 
 	"github.com/golang-migrate/migrate/v4"

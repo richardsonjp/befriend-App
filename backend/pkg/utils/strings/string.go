@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"go-skeleton/pkg/utils/null"
+	"befriend/pkg/utils/null"
 	"math/big"
 	"strings"
 )

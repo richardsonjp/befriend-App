@@ -1,6 +1,6 @@
 package model
 
-import "go-skeleton/internal/model/enum"
+import "befriend/internal/model/enum"
 
 // TableName overrides the table name used by PermissionCategory to `permission_category`
 func (PermissionCategory) TableName() string {

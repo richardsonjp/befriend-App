@@ -1,4 +1,4 @@
-module go-skeleton
+module befriend
 
 go 1.25.0
 

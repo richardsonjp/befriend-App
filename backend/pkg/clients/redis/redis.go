@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"go-skeleton/config"
+	"befriend/config"
 	"sync"
 	"time"
 

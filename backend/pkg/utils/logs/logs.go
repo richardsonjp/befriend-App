@@ -1,7 +1,7 @@
 package logs
 
 import (
-	"go-skeleton/pkg/clients/http"
+	"befriend/pkg/clients/http"
 	"os"
 	"runtime/debug"
 	"time"

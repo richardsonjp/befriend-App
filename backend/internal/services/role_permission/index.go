@@ -2,10 +2,10 @@ package role_permission
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/model/enum"
-	"go-skeleton/internal/repositories/role_permission"
-	"go-skeleton/internal/repositories/tx"
+	"befriend/internal/model"
+	"befriend/internal/model/enum"
+	"befriend/internal/repositories/role_permission"
+	"befriend/internal/repositories/tx"
 )
 
 type RolePermissionService interface {

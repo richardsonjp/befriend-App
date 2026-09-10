@@ -2,7 +2,7 @@ package account_member
 
 import (
 	"context"
-	"go-skeleton/internal/model"
+	"befriend/internal/model"
 	"time"
 )
 

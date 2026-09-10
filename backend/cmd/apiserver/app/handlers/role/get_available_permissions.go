@@ -1,8 +1,8 @@
 package role
 
 import (
-	"go-skeleton/pkg/utils/api"
-	"go-skeleton/pkg/utils/errors"
+	"befriend/pkg/utils/api"
+	"befriend/pkg/utils/errors"
 
 	"github.com/gofiber/fiber/v2"
 )

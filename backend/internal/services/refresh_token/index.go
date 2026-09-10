@@ -2,8 +2,8 @@ package refresh_token
 
 import (
 	"context"
-	"go-skeleton/internal/repositories/refresh_token"
-	"go-skeleton/internal/repositories/tx"
+	"befriend/internal/repositories/refresh_token"
+	"befriend/internal/repositories/tx"
 )
 
 type RefreshTokenService interface {

@@ -2,7 +2,7 @@ package app_resource
 
 import (
 	"context"
-	"go-skeleton/internal/model"
+	"befriend/internal/model"
 )
 
 func (s *appResourceService) GetBackendResource(ctx context.Context, method string, pathPattern string) (*model.AppResource, error) {

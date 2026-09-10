@@ -2,13 +2,13 @@ package authentication
 
 import (
 	"context"
-	"go-skeleton/internal/repositories/tx"
-	"go-skeleton/internal/services/account"
-	"go-skeleton/internal/services/account_member"
-	"go-skeleton/internal/services/app_resource"
-	"go-skeleton/internal/services/operator"
-	"go-skeleton/internal/services/role"
-	"go-skeleton/internal/services/user"
+	"befriend/internal/repositories/tx"
+	"befriend/internal/services/account"
+	"befriend/internal/services/account_member"
+	"befriend/internal/services/app_resource"
+	"befriend/internal/services/operator"
+	"befriend/internal/services/role"
+	"befriend/internal/services/user"
 )
 
 type AuthenticationService interface {

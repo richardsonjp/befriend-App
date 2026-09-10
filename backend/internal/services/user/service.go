@@ -2,8 +2,8 @@ package user
 
 import (
 	"context"
-	"go-skeleton/internal/model"
-	"go-skeleton/internal/model/enum"
+	"befriend/internal/model"
+	"befriend/internal/model/enum"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"

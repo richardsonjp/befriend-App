@@ -2,7 +2,7 @@
 package validator
 
 import (
-	timeutil "go-skeleton/pkg/utils/time"
+	timeutil "befriend/pkg/utils/time"
 
 	"regexp"
 	"strings"

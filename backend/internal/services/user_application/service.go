@@ -3,12 +3,12 @@ package user_application
 import (
 	"context"
 	"fmt"
-	"go-skeleton/internal/model/enum"
-	"go-skeleton/internal/services/account"
-	"go-skeleton/internal/services/account_member"
-	"go-skeleton/internal/services/user"
-	"go-skeleton/internal/services/verification_code"
-	"go-skeleton/pkg/utils/errors"
+	"befriend/internal/model/enum"
+	"befriend/internal/services/account"
+	"befriend/internal/services/account_member"
+	"befriend/internal/services/user"
+	"befriend/internal/services/verification_code"
+	"befriend/pkg/utils/errors"
 	"time"
 )
 
