@@ -32,6 +32,15 @@ func Run() {
 	// Initialize Store (DB, Redis, Repos, Services, Middleware)
 	store.Init()
 
+	// Generate personalities in the background (queue: personality_version)
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	defer stopWorker()
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		runPersonalityWorker(workerCtx, store.App.PersonalityService)
+	}()
+
 	// Start fiber
 	app := routes.NewHTTPServer(store.App)
 
@@ -56,6 +65,14 @@ func Run() {
 
 	if err := app.ShutdownWithContext(ctx); err != nil {
 		logs.Log.Errorf("Graceful shutdown error: %v", err)
+	}
+
+	// Let an in-flight personality job record its outcome (it is deferred, not failed).
+	stopWorker()
+	select {
+	case <-workerDone:
+	case <-ctx.Done():
+		logs.Log.Warn("Personality worker did not stop in time; its job unlocks after the claim expires")
 	}
 
 	logs.Log.Warn("Server gracefully stopped.")

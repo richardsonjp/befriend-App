@@ -13,6 +13,7 @@ import (
 type OnboardingService interface {
 	GetQuestions(ctx context.Context) (*QuestionsResponse, error)
 	Complete(ctx context.Context, userID string, payload CompletePayload) (*friend.ProfileResponse, error)
+	GetAnsweredQuestions(ctx context.Context, userID string) ([]AnsweredQuestion, error)
 }
 
 type onboardingService struct {

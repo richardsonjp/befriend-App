@@ -2,12 +2,18 @@ package personality_version
 
 import (
 	"context"
+	"encoding/json"
+	"time"
+	"unicode/utf8"
 
 	"befriend/internal/model"
 	"befriend/internal/model/enum"
+	repoPersonalityVersion "befriend/internal/repositories/personality_version"
 )
 
-// CreateInitial queues version 1 for generation; the pipeline picks up pending rows.
+const maxErrorLength = 500
+
+// CreateInitial queues version 1 for generation; the worker picks up pending rows.
 func (s *personalityVersionService) CreateInitial(ctx context.Context, friendID string) (*model.PersonalityVersion, error) {
 	return s.personalityVersionRepo.Create(ctx, &model.PersonalityVersion{
 		FriendID: friendID,
@@ -17,6 +23,46 @@ func (s *personalityVersionService) CreateInitial(ctx context.Context, friendID 
 	})
 }
 
+func (s *personalityVersionService) GetByID(ctx context.Context, id string) (*model.PersonalityVersion, error) {
+	return s.personalityVersionRepo.GetByID(ctx, id)
+}
+
 func (s *personalityVersionService) GetLatestByFriend(ctx context.Context, friendID string) (*model.PersonalityVersion, error) {
 	return s.personalityVersionRepo.GetLatestByFriend(ctx, friendID)
+}
+
+// ClaimDue takes up to limit due jobs and locks them for lockFor.
+func (s *personalityVersionService) ClaimDue(ctx context.Context, limit int, lockFor time.Duration) ([]model.PersonalityVersion, error) {
+	now := time.Now()
+	return s.personalityVersionRepo.ClaimDue(ctx, now, limit, now.Add(lockFor))
+}
+
+func (s *personalityVersionService) MarkReady(ctx context.Context, job *model.PersonalityVersion, llmModel string, vocabularyVersion int, personality, phrasebook json.RawMessage) error {
+	return s.personalityVersionRepo.MarkReady(ctx, claimOf(job), llmModel, vocabularyVersion, personality, phrasebook, time.Now())
+}
+
+// Defer puts a claimed job back to pending without counting the attempt (budget or rate limit).
+func (s *personalityVersionService) Defer(ctx context.Context, job *model.PersonalityVersion, until time.Time, reason string) error {
+	return s.personalityVersionRepo.Reschedule(ctx, claimOf(job), enum.PERSONALITY_PENDING, until, truncate(reason), false, time.Now())
+}
+
+// Fail marks a claimed job failed; it is retried at retryAt.
+func (s *personalityVersionService) Fail(ctx context.Context, job *model.PersonalityVersion, retryAt time.Time, reason string) error {
+	return s.personalityVersionRepo.Reschedule(ctx, claimOf(job), enum.PERSONALITY_FAILED, retryAt, truncate(reason), true, time.Now())
+}
+
+// claimOf reads the claim ClaimDue returned; a job without a lock never matches a row.
+func claimOf(job *model.PersonalityVersion) repoPersonalityVersion.Claim {
+	claim := repoPersonalityVersion.Claim{ID: job.ID}
+	if job.LockedUntil != nil {
+		claim.LockedUntil = *job.LockedUntil
+	}
+	return claim
+}
+
+func truncate(s string) string {
+	if utf8.RuneCountInString(s) <= maxErrorLength {
+		return s
+	}
+	return string([]rune(s)[:maxErrorLength])
 }

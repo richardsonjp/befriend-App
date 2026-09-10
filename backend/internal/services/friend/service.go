@@ -37,11 +37,20 @@ func (s *friendService) Create(ctx context.Context, payload CreatePayload) (*mod
 	return s.friendRepo.Create(ctx, m)
 }
 
+func (s *friendService) GetByID(ctx context.Context, id string) (*model.Friend, error) {
+	return s.friendRepo.GetByID(ctx, id)
+}
+
 func (s *friendService) GetByUserID(ctx context.Context, userID string) (*model.Friend, error) {
 	return s.friendRepo.GetByUserID(ctx, userID)
 }
 
-// GetProfile is the friend as the apps see it, with the state of its latest personality version.
+func (s *friendService) SetCurrentVersion(ctx context.Context, friendID, versionID string) error {
+	return s.friendRepo.SetCurrentVersion(ctx, friendID, versionID)
+}
+
+// GetProfile is the friend as the apps see it: the latest personality version's status, plus the
+// content and phrasebook of the current ready version once one exists.
 func (s *friendService) GetProfile(ctx context.Context, userID string) (*ProfileResponse, error) {
 	f, err := s.friendRepo.GetByUserID(ctx, userID)
 	if err != nil {
@@ -74,6 +83,20 @@ func (s *friendService) GetProfile(ctx context.Context, userID string) (*Profile
 		}
 		if f.BirthCountry != nil {
 			profile.Birthplace.CountryCode = *f.BirthCountry
+		}
+	}
+
+	if f.CurrentVersionID != nil {
+		current, err := s.personalityVersionService.GetByID(ctx, *f.CurrentVersionID)
+		if err != nil {
+			return nil, err
+		}
+		if current.Personality != nil && current.Phrasebook != nil {
+			profile.Personality.Content = current.Personality.Data
+			profile.Phrasebook = current.Phrasebook.Data
+		}
+		if current.VocabularyVersion != nil {
+			profile.Personality.VocabularyVersion = *current.VocabularyVersion
 		}
 	}
 	return profile, nil

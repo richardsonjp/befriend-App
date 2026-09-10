@@ -9,6 +9,7 @@ import (
 
 type QuestionSetRepo interface {
 	GetActive(ctx context.Context) (*model.QuestionSet, error)
+	GetByID(ctx context.Context, id string) (*model.QuestionSet, error)
 }
 
 type questionSetRepo struct {

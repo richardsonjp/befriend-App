@@ -10,6 +10,7 @@ import (
 
 type QuestionSetService interface {
 	GetActive(ctx context.Context) (*model.QuestionSet, error)
+	GetByID(ctx context.Context, id string) (*model.QuestionSet, error)
 }
 
 type questionSetService struct {

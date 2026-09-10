@@ -8,12 +8,14 @@ import (
 	"befriend/pkg/clients/db"
 	"befriend/pkg/clients/email"
 	"befriend/pkg/clients/idtoken"
+	"befriend/pkg/clients/openrouter"
 	"befriend/pkg/clients/redis"
 	"befriend/pkg/utils/logs"
 
 	// Repositories
 	reposDevice "befriend/internal/repositories/device"
 	reposFriend "befriend/internal/repositories/friend"
+	reposLLMBudget "befriend/internal/repositories/llm_budget"
 	reposOnboardingResponse "befriend/internal/repositories/onboarding_response"
 	reposPersonalityVersion "befriend/internal/repositories/personality_version"
 	reposQuestionSet "befriend/internal/repositories/question_set"
@@ -28,6 +30,7 @@ import (
 	serviceDevice "befriend/internal/services/device"
 	serviceFriend "befriend/internal/services/friend"
 	serviceOnboarding "befriend/internal/services/onboarding"
+	servicePersonality "befriend/internal/services/personality"
 	servicePersonalityVersion "befriend/internal/services/personality_version"
 	serviceQuestionSet "befriend/internal/services/question_set"
 	serviceRefreshToken "befriend/internal/services/refresh_token"
@@ -51,6 +54,9 @@ type Store struct {
 	Redis redis.RedisDelegate
 	Email email.EmailSender
 	Log   *logs.Logger
+
+	// Background work
+	PersonalityService servicePersonality.PersonalityService
 
 	// Handlers
 	UserAuthHandler   *handlerUserAuth.UserAuthHandler
@@ -115,6 +121,17 @@ func Init() {
 		panic("init apple client: " + err.Error())
 	}
 
+	// Personality generation: nil client without an API key, so friends wait with a pending personality.
+	openRouterClient := openrouter.New(openrouter.Config{
+		BaseURL: config.Config.OpenRouter.BaseURL,
+		APIKey:  config.Config.OpenRouter.APIKey,
+		Models:  config.Config.OpenRouter.Models,
+		AppName: config.Config.System.AppName,
+	})
+	if openRouterClient == nil {
+		logs.Log.Warn("OPENROUTER_API_KEY is not set: personalities stay pending until it is")
+	}
+
 	// Repos
 	txRepo := reposTx.NewTxRepo(db)
 	userRepo := reposUser.NewUserRepo(db)
@@ -126,6 +143,7 @@ func Init() {
 	onboardingResponseRepo := reposOnboardingResponse.NewOnboardingResponseRepo(db)
 	friendRepo := reposFriend.NewFriendRepo(db)
 	personalityVersionRepo := reposPersonalityVersion.NewPersonalityVersionRepo(db)
+	llmBudgetRepo := reposLLMBudget.NewLLMBudgetRepo(redis)
 
 	// Services
 	userService := serviceUser.NewUserService(txRepo, userRepo)
@@ -142,6 +160,14 @@ func Init() {
 		questionSetService,
 		friendService,
 		personalityVersionService,
+	)
+	personalityService := servicePersonality.NewPersonalityService(
+		txRepo,
+		llmBudgetRepo,
+		personalityVersionService,
+		friendService,
+		onboardingService,
+		openRouterClient,
 	)
 	userApplicationService := serviceUserApplication.NewUserApplicationService(txRepo, userService, verificationCodeService, friendService)
 	authenticationService := serviceAuthentication.NewAuthenticationService(
@@ -160,6 +186,8 @@ func Init() {
 		Redis: redis,
 		Email: smtpClient,
 		Log:   logs.Log,
+
+		PersonalityService: personalityService,
 
 		UserAuthHandler:   handlerUserAuth.NewUserAuthHandler(authenticationService),
 		UserHandler:       handlerUser.NewUserHandler(userApplicationService),

@@ -11,8 +11,10 @@ import (
 
 type FriendService interface {
 	Create(ctx context.Context, payload CreatePayload) (*model.Friend, error)
+	GetByID(ctx context.Context, id string) (*model.Friend, error)
 	GetByUserID(ctx context.Context, userID string) (*model.Friend, error)
 	GetProfile(ctx context.Context, userID string) (*ProfileResponse, error)
+	SetCurrentVersion(ctx context.Context, friendID, versionID string) error
 }
 
 type friendService struct {

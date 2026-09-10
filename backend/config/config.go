@@ -84,6 +84,23 @@ var Config = struct {
 		Issuers   []string `env:"GOOGLE_ISSUERS" envSeparator:"," envDefault:"https://accounts.google.com,accounts.google.com"`
 	}
 
+	// OpenRouter generates personalities. Without an API key the generation queue simply waits.
+	// BaseURL only changes for local end-to-end tests.
+	OpenRouter struct {
+		APIKey  string   `env:"OPENROUTER_API_KEY" envDefault:""`
+		Models  []string `env:"OPENROUTER_MODELS" envSeparator:"," envDefault:"google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free"`
+		BaseURL string   `env:"OPENROUTER_BASE_URL" envDefault:"https://openrouter.ai/api/v1"`
+	}
+
+	// LLM request budget and generation worker. Caps sit under OpenRouter's free-tier limits (about
+	// 20/minute and 50/day without purchased credits; check your account) and count every request.
+	LLM struct {
+		MinuteCap         int `env:"LLM_MINUTE_CAP" envDefault:"16"`
+		DailyCap          int `env:"LLM_DAILY_CAP" envDefault:"45"`
+		WorkerIntervalSec int `env:"LLM_WORKER_INTERVAL_SECONDS" envDefault:"10"`
+		BatchSize         int `env:"LLM_WORKER_BATCH_SIZE" envDefault:"2"`
+	}
+
 	PASETO struct {
 		AccessSecret         string `env:"PASETO_ACCESS_SECRET" envDefault:""`
 		RefreshSecret        string `env:"PASETO_REFRESH_SECRET" envDefault:""`

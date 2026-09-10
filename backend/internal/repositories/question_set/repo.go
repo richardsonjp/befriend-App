@@ -10,8 +10,16 @@ import (
 )
 
 func (r *questionSetRepo) GetActive(ctx context.Context) (*model.QuestionSet, error) {
+	return r.take(ctx, "is_active")
+}
+
+func (r *questionSetRepo) GetByID(ctx context.Context, id string) (*model.QuestionSet, error) {
+	return r.take(ctx, "id = ?", id)
+}
+
+func (r *questionSetRepo) take(ctx context.Context, where string, args ...interface{}) (*model.QuestionSet, error) {
 	m := &model.QuestionSet{}
-	q := r.dbdget.Get(ctx).Where("is_active").Take(m)
+	q := r.dbdget.Get(ctx).Where(where, args...).Take(m)
 	if q.Error != nil {
 		if q.Error == gorm.ErrRecordNotFound {
 			return nil, errors.From("DATA_NOT_FOUND")

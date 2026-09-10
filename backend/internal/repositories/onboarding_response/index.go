@@ -9,6 +9,7 @@ import (
 
 type OnboardingResponseRepo interface {
 	Create(ctx context.Context, m *model.OnboardingResponse) error
+	GetByUserID(ctx context.Context, userID string) (*model.OnboardingResponse, error)
 }
 
 type onboardingResponseRepo struct {

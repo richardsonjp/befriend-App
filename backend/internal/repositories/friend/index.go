@@ -9,7 +9,9 @@ import (
 
 type FriendRepo interface {
 	Create(ctx context.Context, m *model.Friend) (*model.Friend, error)
+	GetByID(ctx context.Context, id string) (*model.Friend, error)
 	GetByUserID(ctx context.Context, userID string) (*model.Friend, error)
+	SetCurrentVersion(ctx context.Context, friendID, versionID string) error
 }
 
 type friendRepo struct {
