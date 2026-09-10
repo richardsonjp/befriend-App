@@ -5,6 +5,8 @@
 //  Created by Richardson Jayaputra on 10/09/26.
 //
 
+import AppKit
+import PetCore
 import SwiftUI
 
 @main

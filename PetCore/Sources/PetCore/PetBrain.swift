@@ -1,6 +1,6 @@
 //
 //  PetBrain.swift
-//  befriend
+//  PetCore
 //
 
 import Foundation
@@ -9,25 +9,21 @@ import os
 
 /// Turns triggers into reactions: the on-device model when it's available, canned fallbacks otherwise.
 /// One request at a time. Triggers that arrive mid-request still land in memory; only the latest one waits its turn.
-final class PetBrain {
+public final class PetBrain {
     private static let log = Logger(subsystem: "com.richardsonjp.befriend", category: "brain")
 
-    // ponytail: in-memory log for this launch only; the Phase 4 backend owns the durable event log.
+    // ponytail: in-memory log for this launch only; the backend owns the durable event log.
     nonisolated static let memoryLimit = 6
 
     /// Static block: never interpolated, so it stays byte-identical across calls.
     nonisolated static let instructions = """
-        You are a small, friendly pet who lives in the corner of the user's Mac screen.
-        You notice what the user is doing and react briefly, like a playful companion.
+        You are a small, friendly companion who lives on the user's devices.
+        You notice what the user is doing and react briefly, like a playful friend.
 
-        Actions:
-        - idle: nothing worth reacting to
-        - wave: greet the user, especially when they come back
-        - nudge: show interest in what the user just switched to
-        - sleep: the user has gone idle, so doze off and say something sleepy
-        - celebrate: something good or exciting happened
-
-        Moods: content, curious, concerned, excited. Pick the mood that matches the dialogue.
+        Pick one action: idle, wave, nudge, sleep, celebrate, dance, laugh, cry, yawn, stretch, think, peek, hide, \
+        shrug, facepalm, cheer, jump, spin, sit, love. Use sleep only when the user has gone idle.
+        Pick the mood that matches the dialogue: content, curious, concerned, excited, sleepy, bored, playful, \
+        proud, shy, grumpy, calm, lonely.
 
         Rules:
         - Dialogue is one short sentence, at most 12 words, spoken to the user.
@@ -37,7 +33,7 @@ final class PetBrain {
         - Never mention being an AI or a language model.
         """
 
-    var onReaction: (PetReaction) -> Void = { _ in }
+    public var onReaction: (PetReaction) -> Void = { _ in }
 
     private let model = SystemLanguageModel.default
     private let forceFallback: Bool
@@ -49,7 +45,7 @@ final class PetBrain {
     private var nextSession: LanguageModelSession?
     private var hasExplainedFallback = false
 
-    init(
+    public init(
         forceFallback: Bool = ProcessInfo.processInfo.environment["PET_FORCE_FALLBACK"] == "1",
         appSwitchCooldown: TimeInterval = 20
     ) {
@@ -59,7 +55,7 @@ final class PetBrain {
         prepareNextSession()
     }
 
-    func handle(_ trigger: Trigger) {
+    public func handle(_ trigger: Trigger) {
         let record = TriggerRecord(trigger: trigger.sanitized, at: .now)
         memory = Array((memory + [record]).suffix(Self.memoryLimit))
         if isBusy { pending = record } else { start(record) }
@@ -80,7 +76,7 @@ final class PetBrain {
         }
     }
 
-    /// App switches are rate-limited so the pet isn't chatty; going idle and coming back always get through.
+    /// App switches are rate-limited so the friend isn't chatty; everything else always gets through.
     private func claimCooldown(for trigger: Trigger) -> Bool {
         guard case .appSwitched = trigger else { return true }
         let now = Date.now
@@ -112,7 +108,7 @@ final class PetBrain {
             let prompt = Self.dynamicBlock(for: record, memory: memory)
             return try await session.respond(to: prompt, generating: PetReaction.self).content
         } catch {
-            // guardrailViolation, exceededContextWindowSize, unsupportedLanguageOrLocale, … all degrade the same way.
+            // guardrailViolation, exceededContextWindowSize, rateLimited, … all degrade the same way.
             Self.log.error("Generation failed, using fallback: \(String(describing: error), privacy: .public)")
             return .fallback(for: record.trigger)
         }
@@ -142,7 +138,7 @@ final class PetBrain {
         return history + "\nNow: " + current.trigger.promptLine
     }
 
-    /// The first unavailable fallback tells the user why the pet is in simple mode; later ones stay quiet.
+    /// The first unavailable fallback tells the user why the friend is in simple mode; later ones stay quiet.
     private func explainOnce(_ reason: SystemLanguageModel.Availability.UnavailableReason, over reaction: PetReaction) -> PetReaction {
         guard !hasExplainedFallback else { return reaction }
         hasExplainedFallback = true
@@ -152,53 +148,10 @@ final class PetBrain {
 
     private static func explanation(for reason: SystemLanguageModel.Availability.UnavailableReason) -> String {
         switch reason {
-        case .deviceNotEligible: "This Mac can't run Apple Intelligence, so I'll keep it simple."
+        case .deviceNotEligible: "This device can't run Apple Intelligence, so I'll keep it simple."
         case .appleIntelligenceNotEnabled: "Apple Intelligence is off, so I'll keep it simple."
         case .modelNotReady: "My brain is still downloading. Simple mode for now!"
         @unknown default: "My brain isn't available, so I'll keep it simple."
         }
-    }
-}
-
-nonisolated struct TriggerRecord: Equatable {
-    let trigger: Trigger
-    let at: Date
-}
-
-nonisolated extension Trigger {
-    static let maxAppNameLength = 40
-    private static let promptLocale = Locale(identifier: "en_US") // the prompt is English regardless of system locale
-
-    /// Full sentence for the "Now:" line.
-    var promptLine: String {
-        switch self {
-        // App names are quoted so the model reads them as data, not as more instructions.
-        case .appSwitched(let name): "The user switched to the app \"\(name)\"."
-        case .wentIdle(let seconds): "The user has been away from the keyboard for \(Self.format(seconds, width: .wide))."
-        case .returned(let seconds): "The user came back after \(Self.format(seconds, width: .wide)) away."
-        }
-    }
-
-    /// Short form for the recent-events list.
-    var memoryLine: String {
-        switch self {
-        case .appSwitched(let name): "switched to \"\(name)\""
-        case .wentIdle: "went idle"
-        case .returned(let seconds): "came back after \(Self.format(seconds, width: .wide))"
-        }
-    }
-
-    /// App names are external input going into the prompt: flatten whitespace (no forged prompt lines),
-    /// swap double quotes (can't break out of the quoting), and cap length.
-    var sanitized: Trigger {
-        guard case .appSwitched(let name) = self else { return self }
-        let flat = name.split(whereSeparator: \.isWhitespace).joined(separator: " ").replacingOccurrences(of: "\"", with: "'")
-        return .appSwitched(name: flat.isEmpty ? "Unknown" : String(flat.prefix(Self.maxAppNameLength)))
-    }
-
-    static func format(_ seconds: TimeInterval, width: Duration.UnitsFormatStyle.UnitWidth) -> String {
-        Duration.seconds(seconds).formatted(
-            .units(allowed: [.hours, .minutes, .seconds], width: width, maximumUnitCount: 1).locale(promptLocale)
-        )
     }
 }

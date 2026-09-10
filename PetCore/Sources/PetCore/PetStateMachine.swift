@@ -1,30 +1,30 @@
 //
 //  PetStateMachine.swift
-//  befriend
+//  PetCore
 //
 
 import Foundation
 import Observation
 
-/// What the pet is doing right now. One-shot actions play, then settle back to idle;
+/// What the friend is doing right now. One-shot actions play, then settle back to idle;
 /// dialogue clears on its own timer. Any new reaction cancels pending resets.
 @Observable
-final class PetStateMachine {
-    private(set) var action: PetAction = .idle
-    private(set) var mood: PetMood = .content
-    private(set) var dialogue: String?
+public final class PetStateMachine {
+    public private(set) var action: PetAction = .idle
+    public private(set) var mood: PetMood = .content
+    public private(set) var dialogue: String?
 
     @ObservationIgnored private let oneShotDuration: Duration
     @ObservationIgnored private let dialogueDuration: Duration
     @ObservationIgnored private var actionReset: Task<Void, Never>?
     @ObservationIgnored private var dialogueReset: Task<Void, Never>?
 
-    init(oneShotDuration: Duration = .seconds(2.5), dialogueDuration: Duration = .seconds(6)) {
+    public init(oneShotDuration: Duration = .seconds(2.5), dialogueDuration: Duration = .seconds(6)) {
         self.oneShotDuration = oneShotDuration
         self.dialogueDuration = dialogueDuration
     }
 
-    func apply(_ reaction: PetReaction) {
+    public func apply(_ reaction: PetReaction) {
         action = reaction.action
         mood = reaction.mood
         dialogue = reaction.dialogue.isEmpty ? nil : reaction.dialogue

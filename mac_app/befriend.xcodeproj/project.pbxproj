@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		E553DBE03053070000756D2F /* PetCore in Frameworks */ = {isa = PBXBuildFile; productRef = E553DBE13053070000756D2F /* PetCore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		E553DBCE3053068F00756D2F /* befriend.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = befriend.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E553DBE03053070000756D2F /* PetCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = befriend;
 			packageProductDependencies = (
+				E553DBE13053070000756D2F /* PetCore */,
 			);
 			productName = befriend;
 			productReference = E553DBCE3053068F00756D2F /* befriend.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = E553DBC53053068F00756D2F;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E553DBE23053070000756D2F /* XCLocalSwiftPackageReference "../PetCore" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E553DBCF3053068F00756D2F /* Products */;
 			projectDirPath = "";
@@ -333,6 +342,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		E553DBE23053070000756D2F /* XCLocalSwiftPackageReference "../PetCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../PetCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E553DBE13053070000756D2F /* PetCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PetCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E553DBC63053068F00756D2F /* Project object */;
 }

@@ -5,13 +5,7 @@
 
 import AppKit
 import CoreGraphics
-
-/// Something the user did that the pet may react to.
-nonisolated enum Trigger: Equatable {
-    case appSwitched(name: String)
-    case wentIdle(seconds: TimeInterval)
-    case returned(afterSeconds: TimeInterval)
-}
+import PetCore
 
 /// Watches app switches (NSWorkspace) and system-wide idle time, and reports them as triggers.
 final class TriggerMonitor {
