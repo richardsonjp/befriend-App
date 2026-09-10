@@ -18,6 +18,7 @@ type AuthenticationService interface {
 	AuthenticateWithGoogle(ctx context.Context, payload GoogleLogin) (*AuthenticateSessionResponse, error)
 	RefreshSession(ctx context.Context, payload RefreshPayload) (*AuthenticateSessionResponse, error)
 	AuthenticateLogout(ctx context.Context, payload LogoutPayload) error
+	DeleteAccount(ctx context.Context, userID string) error
 }
 
 type authenticationService struct {

@@ -51,6 +51,18 @@ func (r *userRepo) GetByID(ctx context.Context, id string) (*model.User, error) 
 	return user, nil
 }
 
+// Delete removes the account; foreign keys cascade to its identities, devices, tokens, onboarding and friend.
+func (r *userRepo) Delete(ctx context.Context, id string) error {
+	q := r.dbdget.Get(ctx).Where("id = ?", id).Delete(&model.User{})
+	if q.Error != nil {
+		return q.Error
+	}
+	if q.RowsAffected == 0 {
+		return errors.From("DATA_NOT_FOUND")
+	}
+	return nil
+}
+
 func (r *userRepo) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	user := &model.User{}
 	q := r.dbdget.Get(ctx).Where("lower(email) = lower(?)", email).First(user)

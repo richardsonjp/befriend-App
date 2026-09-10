@@ -14,6 +14,7 @@ func (s *userIdentityService) Create(ctx context.Context, payload CreatePayload)
 		Subject:           payload.Subject,
 		EmailVerified:     payload.EmailVerified,
 		AppleRefreshToken: payload.AppleRefreshToken,
+		AppleClientID:     payload.AppleClientID,
 	}
 	if payload.Email != "" {
 		email := payload.Email
@@ -26,6 +27,10 @@ func (s *userIdentityService) GetByProviderSubject(ctx context.Context, provider
 	return s.userIdentityRepo.GetByProviderSubject(ctx, provider, subject)
 }
 
-func (s *userIdentityService) UpdateAppleRefreshToken(ctx context.Context, id, token string) error {
-	return s.userIdentityRepo.UpdateAppleRefreshToken(ctx, id, token)
+func (s *userIdentityService) UpdateAppleRefreshToken(ctx context.Context, id, token, clientID string) error {
+	return s.userIdentityRepo.UpdateAppleRefreshToken(ctx, id, token, clientID)
+}
+
+func (s *userIdentityService) ListAppleTokens(ctx context.Context, userID string) ([]model.UserIdentity, error) {
+	return s.userIdentityRepo.ListAppleTokens(ctx, userID)
 }

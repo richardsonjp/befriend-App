@@ -20,6 +20,7 @@ type UserIdentity struct {
 	Email             *string          `gorm:"column:email"`
 	EmailVerified     bool             `gorm:"column:email_verified"`
 	AppleRefreshToken *string          `gorm:"column:apple_refresh_token"`
+	AppleClientID     *string          `gorm:"column:apple_client_id"` // bundle ID the refresh token was issued to
 	CreatedAt         time.Time        `gorm:"column:created_at;default:now()"`
 	UpdatedAt         time.Time        `gorm:"column:updated_at;default:now()"`
 }

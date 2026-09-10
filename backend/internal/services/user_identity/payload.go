@@ -9,4 +9,5 @@ type CreatePayload struct {
 	Email             string // empty when the provider sent none
 	EmailVerified     bool
 	AppleRefreshToken *string
+	AppleClientID     *string // set together with AppleRefreshToken
 }

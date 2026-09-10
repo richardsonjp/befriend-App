@@ -33,9 +33,18 @@ func (r *userIdentityRepo) GetByProviderSubject(ctx context.Context, provider en
 	return m, nil
 }
 
-func (r *userIdentityRepo) UpdateAppleRefreshToken(ctx context.Context, id, token string) error {
+func (r *userIdentityRepo) UpdateAppleRefreshToken(ctx context.Context, id, token, clientID string) error {
 	return r.dbdget.Get(ctx).
 		Model(&model.UserIdentity{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{"apple_refresh_token": token, "updated_at": gorm.Expr("NOW()")}).Error
+		Updates(map[string]interface{}{"apple_refresh_token": token, "apple_client_id": clientID, "updated_at": gorm.Expr("NOW()")}).Error
+}
+
+// ListAppleTokens returns the user's Apple identities that hold a refresh token.
+func (r *userIdentityRepo) ListAppleTokens(ctx context.Context, userID string) ([]model.UserIdentity, error) {
+	var identities []model.UserIdentity
+	err := r.dbdget.Get(ctx).
+		Where("user_id = ? AND provider = ? AND apple_refresh_token IS NOT NULL", userID, enum.APPLE).
+		Find(&identities).Error
+	return identities, err
 }

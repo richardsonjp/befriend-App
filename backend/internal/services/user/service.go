@@ -71,3 +71,7 @@ func (s *userService) ClaimForProvider(ctx context.Context, id string) error {
 	}, "password_hash", "status", "email_verified_at")
 	return err
 }
+
+func (s *userService) DeleteUser(ctx context.Context, id string) error {
+	return s.userRepo.Delete(ctx, id)
+}

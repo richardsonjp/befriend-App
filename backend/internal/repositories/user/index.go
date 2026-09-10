@@ -12,6 +12,7 @@ type UserRepo interface {
 	Update(ctx context.Context, m model.User, updatedFields ...string) (int64, error)
 	GetByID(ctx context.Context, id string) (*model.User, error)
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type userRepo struct {

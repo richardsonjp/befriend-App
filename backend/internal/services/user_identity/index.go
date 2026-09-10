@@ -12,7 +12,8 @@ import (
 type UserIdentityService interface {
 	Create(ctx context.Context, payload CreatePayload) (*model.UserIdentity, error)
 	GetByProviderSubject(ctx context.Context, provider enum.IdentityProvider, subject string) (*model.UserIdentity, error)
-	UpdateAppleRefreshToken(ctx context.Context, id, token string) error
+	UpdateAppleRefreshToken(ctx context.Context, id, token, clientID string) error
+	ListAppleTokens(ctx context.Context, userID string) ([]model.UserIdentity, error)
 }
 
 type userIdentityService struct {

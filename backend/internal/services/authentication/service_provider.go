@@ -83,6 +83,7 @@ func (s *authenticationService) signInWithIdentity(
 }
 
 // resolveIdentityUser returns the account for an identity, linking or creating it per decideLink.
+// An Apple refresh token is stored with the audience (bundle ID) it was issued to, which revoking requires.
 func (s *authenticationService) resolveIdentityUser(
 	ctx context.Context,
 	provider enum.IdentityProvider,
@@ -107,7 +108,7 @@ func (s *authenticationService) resolveIdentityUser(
 	switch decideLink(linked != nil, emailUser, usableEmail) {
 	case linkSignIn:
 		if appleRefreshToken != nil {
-			if err := s.userIdentityService.UpdateAppleRefreshToken(ctx, linked.ID, *appleRefreshToken); err != nil {
+			if err := s.userIdentityService.UpdateAppleRefreshToken(ctx, linked.ID, *appleRefreshToken, identity.Audience); err != nil {
 				return nil, err
 			}
 		}
@@ -134,6 +135,10 @@ func (s *authenticationService) resolveIdentityUser(
 		}
 	}
 
+	var appleClientID *string
+	if appleRefreshToken != nil {
+		appleClientID = &identity.Audience
+	}
 	_, err = s.userIdentityService.Create(ctx, user_identity.CreatePayload{
 		UserID:            userData.ID,
 		Provider:          provider,
@@ -141,6 +146,7 @@ func (s *authenticationService) resolveIdentityUser(
 		Email:             identity.Email,
 		EmailVerified:     identity.EmailVerified,
 		AppleRefreshToken: appleRefreshToken,
+		AppleClientID:     appleClientID,
 	})
 	if err != nil {
 		return nil, err
