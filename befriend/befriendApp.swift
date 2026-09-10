@@ -6,27 +6,31 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct befriendApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-        .modelContainer(sharedModelContainer)
+        // ponytail: agent app (LSUIElement) — the pet lives in PetPanel, no SwiftUI windows.
+        Settings { EmptyView() }
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let pet = PetStateMachine()
+    private let brain = PetBrain()
+    private var panel: PetPanel?
+    private var monitor: TriggerMonitor?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        brain.onReaction = { [pet] in pet.apply($0) }
+        let panel = PetPanel(rootView: PetView(pet: pet, simulate: { [brain] in brain.handle($0) }))
+        panel.orderFrontRegardless()
+        self.panel = panel
+
+        let monitor = TriggerMonitor { [brain] in brain.handle($0) }
+        monitor.start()
+        self.monitor = monitor
     }
 }
