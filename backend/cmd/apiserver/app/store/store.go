@@ -40,6 +40,7 @@ import (
 	serviceVerificationCode "befriend/internal/services/verification_code"
 
 	// Handlers
+	handlerDevice "befriend/cmd/apiserver/app/handlers/device"
 	handlerFriend "befriend/cmd/apiserver/app/handlers/friend"
 	handlerOnboarding "befriend/cmd/apiserver/app/handlers/onboarding"
 	handlerUser "befriend/cmd/apiserver/app/handlers/user"
@@ -63,6 +64,7 @@ type Store struct {
 	UserHandler       *handlerUser.UserHandler
 	OnboardingHandler *handlerOnboarding.OnboardingHandler
 	FriendHandler     *handlerFriend.FriendHandler
+	DeviceHandler     *handlerDevice.DeviceHandler
 
 	// Middleware
 	MiddlewarePasetoAuth middlewares.MiddlewarePasetoAuth
@@ -193,6 +195,7 @@ func Init() {
 		UserHandler:       handlerUser.NewUserHandler(userApplicationService),
 		OnboardingHandler: handlerOnboarding.NewOnboardingHandler(onboardingService),
 		FriendHandler:     handlerFriend.NewFriendHandler(friendService),
+		DeviceHandler:     handlerDevice.NewDeviceHandler(deviceService),
 
 		MiddlewarePasetoAuth: middlewares.NewMiddlewarePasetoAuth(),
 	}

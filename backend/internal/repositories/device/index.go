@@ -9,6 +9,7 @@ import (
 
 type DeviceRepo interface {
 	Create(ctx context.Context, m *model.Device) (*model.Device, error)
+	UpdatePushTokens(ctx context.Context, id, userID string, fields map[string]interface{}) error
 }
 
 type deviceRepo struct {

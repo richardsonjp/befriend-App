@@ -12,6 +12,7 @@ func initAppRoute(api fiber.Router, appStore *store.Store) {
 
 	api.Get("/me", auth, appStore.UserHandler.GetMe)
 	api.Delete("/me", auth, appStore.UserAuthHandler.DeleteAccount)
+	api.Put("/devices/me/push-tokens", auth, appStore.DeviceHandler.UpdatePushTokens)
 	api.Get("/onboarding/questions", auth, appStore.OnboardingHandler.GetQuestions)
 	api.Post("/onboarding/complete", auth, appStore.OnboardingHandler.Complete)
 	api.Get("/friend", auth, appStore.FriendHandler.GetFriend)

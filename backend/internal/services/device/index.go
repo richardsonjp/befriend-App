@@ -10,6 +10,7 @@ import (
 
 type DeviceService interface {
 	Create(ctx context.Context, payload CreatePayload) (*model.Device, error)
+	UpdatePushTokens(ctx context.Context, payload PushTokensPayload) error
 }
 
 type deviceService struct {
