@@ -1,0 +1,71 @@
+---
+description: Strict layer boundaries for Fiber Go APIs (handler/service/repo/model/enum)
+alwaysApply: true
+---
+
+# Layer Boundaries (Authoritative)
+
+Follow these call rules on every change. Violations are bugs.
+
+## Call graph
+
+```
+Handler → Service(s) → Repo → Model → enum (type alias)
+              ↑ txRepo.Run only in Service
+```
+
+| Layer | May call | Must NOT call |
+|-------|----------|---------------|
+| **Handler** | Own domain Service; extra Services only if contextually related to this handler | Repo, GORM, business logic |
+| **Service** | Own domain Repo(s); `txRepo.Run`; other domain **Service** for cross-domain data | Other domain Repo; Fiber/HTTP |
+| **Repo** | GORM via `dbdget.Get(ctx)` | Handler, other Service, other Repo, business rules |
+| **Model** | `enum` via type alias | Queries, logic, inline enum constants |
+| **Enum** | — (defined in `internal/model/enum/`) | Used by model via alias only |
+
+## Handler
+
+- HTTP only: parse body/query/params, validate, call service, respond.
+- **Validate every input** (`BodyParser`/`QueryParser`/`ParamsParser` + `validator.Validate`).
+- Default: one primary Service in `{Domain}Handler`.
+- Multiple Services allowed when **related to this handler** (e.g. `UserHandler` → `userApplicationService` for registration).
+
+## Service
+
+- Business logic. DRY, but **no helper functions unless they clearly reduce duplication**.
+- **Transactions:** `txRepo.Run(ctx, fn)` — never in handler or repo.
+- **Own repo only** for DB within this domain.
+- **Cross-domain:** inject and call `{Other}Service`, never `{Other}Repo` (see `roleService` → `accountService`).
+
+```go
+// ✅ roleService
+accountData, err := s.accountService.GetAccountByID(ctx, roleData.AccountID)
+
+// ❌ never
+accountData, err := s.accountRepo.GetByID(ctx, id)
+```
+
+## Repo
+
+- DB/GORM only. Map `gorm.ErrRecordNotFound` → `errors.From("DATA_NOT_FOUND")`.
+- Callable **only** by its matching Service.
+
+## Model
+
+- Table entity + `TableName()`. No business logic.
+- Enum columns: **type alias** to `internal/model/enum` — never inline const enums on model.
+
+```go
+type UserStatus = enum.UserStatus
+```
+
+## Enum
+
+- Package: `internal/model/enum/` — iota, key map, `String()`, `Scan()`.
+
+## New domain checklist
+
+1. `internal/model/enum/` (if needed) → `internal/model/` → `internal/repositories/{domain}/`
+2. `internal/services/{domain}/` → `cmd/apiserver/app/handlers/{domain}/`
+3. Wire in `store/store.go` (`Init()` → global `store.App`)
+4. Register routes in `cmd/apiserver/app/routes/`
+5. Add codes to `pkg/utils/errors/registry.go` if needed

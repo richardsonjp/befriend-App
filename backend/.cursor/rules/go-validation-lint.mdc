@@ -1,0 +1,39 @@
+---
+description: Request validation, i18n keys, lint and test commands
+alwaysApply: true
+---
+
+# Validation, i18n & Quality
+
+## Validation (handler)
+
+1. Parse failure → `errors.From("BAD_REQUEST")`
+2. `validator.Validate(payload)` → `VALIDATION_FAILED.WithDetail(firstErrorOnly)`
+
+Payload tags live in `internal/services/{domain}/payload.go`:
+
+```go
+Name string `json:"name" validate:"required"`
+```
+
+Custom validators: `pkg/utils/validator/custom_validator.go`
+
+## i18n
+
+- `cmd/apiserver/app/locale/id.json`, `en-US.json`
+- Validation message keys: **`ERR_{field}`**
+
+## Commands (Makefile)
+
+```bash
+make lint   # go vet ./...
+make test   # go test -v -race ./...
+make run    # go run ./cmd/apiserver server
+make tidy
+```
+
+Run `make lint` before finishing.
+
+## Goroutines
+
+No raw `go func()` without panic recovery.

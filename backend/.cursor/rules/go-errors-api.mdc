@@ -1,0 +1,40 @@
+---
+description: AppError registry, HTTP responses, pagination wrapper
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# AppError & API Responses
+
+## AppError (pkg/utils/errors/code.go + registry.go)
+
+```go
+errors.From("DATA_NOT_FOUND")
+errors.From("VALIDATION_FAILED").WithDetail("email required")
+errors.From("USER").WithMessage("custom message")
+errors.New("CUSTOM", 400, "message")
+
+errors.Is(err, "DATA_NOT_FOUND")   // string code, uses errors.As internally
+errors.Respond(c, err)             // Fiber handler
+```
+
+**Registry codes** (add to `registry.go` before use):
+
+`BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `VALIDATION_FAILED`, `INTERNAL_SERVER_ERROR`, `DATA_NOT_FOUND`, `USER`, `ROLE`, `ACCOUNT`, `ACCOUNT_MEMBER`, `VERIFICATION_CODE`
+
+**Error JSON:** `{ "code", "message", "status", "details" }` — no wrapper.
+
+## Success
+
+```go
+api.Base{Data: result}
+api.Base{Message: "success"}
+```
+
+## Pagination
+
+Service returns `*transformer.Pagination`; handler wraps with `api.Base{Data: result}`.
+
+```json
+{ "data": [], "meta": { "pagination": { "limit", "page", "sort", "total_rows", "total_pages" } } }
+```
