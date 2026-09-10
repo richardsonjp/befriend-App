@@ -301,7 +301,11 @@ struct SettingsView: View {
     }
 
     private func updateSync(_ change: () async throws -> SyncSettings) async {
-        await perform { sync = try await change() }
+        await perform {
+            let updated = try await change()
+            sync = updated
+            model.syncSettingsChanged(updated)
+        }
     }
 
     private func perform(_ action: () async throws -> Void) async {

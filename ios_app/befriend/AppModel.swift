@@ -33,6 +33,7 @@ final class AppModel {
     @ObservationIgnored let api = AppConfig.makeAPIClient()
     @ObservationIgnored private var brain = PetBrain()
     @ObservationIgnored private var surfaces: SurfaceController!
+    @ObservationIgnored private var uploader: TriggerLogUploader!
     @ObservationIgnored private var hatchPoll: Task<Void, Never>?
     @ObservationIgnored private var backgroundedAt: Date?
     @ObservationIgnored private var isForeground = false
@@ -41,6 +42,9 @@ final class AppModel {
 
     init() {
         surfaces = SurfaceController(api: api)
+        let queueURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroup)
+            ?? URL.applicationSupportDirectory
+        uploader = TriggerLogUploader(api: api, fileURL: queueURL.appending(path: "trigger-queue.json"))
         PokeIntent.handler = { [weak self] in await self?.poke() }
     }
 
@@ -102,7 +106,14 @@ final class AppModel {
         signedOut()
     }
 
+    /// SettingsView changed the sync settings on the server; record accordingly from now on.
+    func syncSettingsChanged(_ settings: SyncSettings) {
+        uploader.settings = settings
+    }
+
     private func signedOut() {
+        uploader.stop()
+        uploader.clear()
         hatchPoll?.cancel()
         presenceClaim?.cancel()
         presenceClaim = nil
@@ -153,6 +164,11 @@ final class AppModel {
     private func startClaiming() {
         peer?.start()
         peer?.send(.claim)
+        uploader.start()
+        Task { [weak self] in
+            guard let self, let settings = try? await self.api.syncSettings() else { return }
+            self.uploader.settings = settings
+        }
         guard presenceClaim == nil else { return }
         presenceClaim = Task { [weak self] in
             while !Task.isCancelled {
@@ -164,11 +180,12 @@ final class AppModel {
         }
     }
 
-    /// Leaving the app hands the friend back (to an active Mac); finish the request in the background.
+    /// Leaving the app hands the friend back (to an active Mac) and uploads queued activity, in the background.
     private func stopClaiming() {
         presenceClaim?.cancel()
         presenceClaim = nil
         peer?.send(.release)
+        uploader.stop()
         let app = UIApplication.shared
         var taskID = UIBackgroundTaskIdentifier.invalid
         taskID = app.beginBackgroundTask(withName: "presence-release") {
@@ -176,6 +193,7 @@ final class AppModel {
         }
         Task { [weak self] in
             _ = try? await self?.api.releasePresence()
+            await self?.uploader.flush()
             self?.peer?.stop()
             app.endBackgroundTask(taskID)
         }
@@ -199,6 +217,7 @@ final class AppModel {
     func poke() async {
         adoptSavedFriendIfNeeded() // a Dynamic Island tap can launch the app without its window
         guard friend != nil else { return }
+        uploader.record(.poked)
         show(brain.quickReaction(to: .poked, mood: pet.mood))
         show(await brain.react(to: .poked))
     }
@@ -216,6 +235,7 @@ final class AppModel {
             let away = backgroundedAt.map { Date.now.timeIntervalSince($0) } ?? 0
             backgroundedAt = nil
             brain.handle(.returned(afterSeconds: away))
+            uploader.record(.returned(afterSeconds: away))
             startClaiming()
             Task {
                 if let latest = try? await api.friend(), latest.isReady, latest.personality.version != current.personality.version {
@@ -224,6 +244,7 @@ final class AppModel {
             }
         case .background:
             backgroundedAt = .now
+            uploader.record(.leftApp)
             show(brain.quickReaction(to: .leftApp, mood: pet.mood))
             stopClaiming()
             CheckIn.schedule()
@@ -237,7 +258,9 @@ final class AppModel {
         defer { CheckIn.schedule() }
         adoptSavedFriendIfNeeded() // launched in the background
         guard friend != nil else { return }
+        uploader.record(.checkIn)
         show(await brain.react(to: .checkIn))
+        await uploader.flush()
     }
 
     /// Background launches (refresh, intents) skip the window's start(): bring back the saved friend.

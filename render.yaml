@@ -1,0 +1,127 @@
+# Render Blueprint for the befriend backend (Dashboard → New → Blueprint, pick this repo).
+# Secrets marked `sync: false` are asked for when the Blueprint is created.
+#
+# The API runs on a paid instance: free web services sleep after 15 minutes idle, which would drop the Mac's
+# presence WebSocket and stop the presence sweeper and personality worker.
+
+envVarGroups:
+  - name: befriend-shared
+    envVars:
+      - key: SYSTEM_MODE
+        value: release
+      - key: SYSTEM_TIME_ZONE
+        value: Asia/Jakarta
+      - key: DB_SSLMODE
+        value: disable # internal Render network
+      - key: DB_DEBUG
+        value: "false"
+      - key: STATIC_API_KEY
+        sync: false
+      - key: PASETO_ACCESS_SECRET
+        generateValue: true # any random string; the server hashes it into the key
+      - key: PASETO_REFRESH_SECRET
+        generateValue: true # any random string; the server hashes it into the key
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: LLM_MINUTE_CAP
+        value: "16"
+      - key: LLM_DAILY_CAP
+        value: "45" # raise after buying OpenRouter credits
+      - key: LLM_ONBOARDING_RESERVE
+        value: "10"
+      - key: APPLE_BUNDLE_IDS
+        value: com.richardsonjp.befriend
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_IDS
+        sync: false # iOS and macOS OAuth client IDs, comma-separated
+      - key: APNS_TEAM_ID
+        sync: false
+      - key: APNS_KEY_ID
+        sync: false
+      - key: APNS_PRIVATE_KEY
+        sync: false
+      - key: APNS_BUNDLE_ID
+        value: com.richardsonjp.befriend
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+services:
+  - type: web
+    name: befriend-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /ping
+    preDeployCommand: ./apiserver migrate up
+    envVars:
+      - fromGroup: befriend-shared
+      - key: SYSTEM_ADDR
+        value: ":10000" # Render routes to port 10000 by default
+      - key: PORT
+        value: "10000"
+      # Client IPs (for rate limits) come from X-Forwarded-For set by Render's proxy. Its first entry can be
+      # forged by a client; put Cloudflare in front and use CF-Connecting-IP if brute-force limits matter.
+      - key: SYSTEM_PROXY_HEADER
+        value: X-Forwarded-For
+      - key: SYSTEM_TRUSTED_PROXIES
+        value: 10.0.0.0/8
+      - key: DB_HOST
+        fromDatabase: { name: befriend-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: befriend-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: befriend-db, property: database }
+      - key: DB_USERNAME
+        fromDatabase: { name: befriend-db, property: user }
+      - key: DB_PASSWORD
+        fromDatabase: { name: befriend-db, property: password }
+      - key: REDIS_ADDRESS
+        fromService: { type: keyvalue, name: befriend-redis, property: hostport }
+
+  # Hourly: activity retention, pairing-code cleanup and weekly friend evolution.
+  - type: cron
+    name: befriend-evolve
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    schedule: "0 * * * *"
+    dockerCommand: ./apiserver evolve
+    envVars:
+      - fromGroup: befriend-shared
+      - key: DB_HOST
+        fromDatabase: { name: befriend-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: befriend-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: befriend-db, property: database }
+      - key: DB_USERNAME
+        fromDatabase: { name: befriend-db, property: user }
+      - key: DB_PASSWORD
+        fromDatabase: { name: befriend-db, property: password }
+      - key: REDIS_ADDRESS
+        fromService: { type: keyvalue, name: befriend-redis, property: hostport }
+
+  - type: keyvalue
+    name: befriend-redis
+    plan: starter
+    ipAllowList: [] # internal connections only
+
+databases:
+  - name: befriend-db
+    databaseName: befriend
+    user: befriend
+    plan: basic-256mb
