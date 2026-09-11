@@ -29,7 +29,7 @@ func Run() {
 	// Init global logger
 	logs.Init("")
 
-	// Initialize Store (DB, Redis, Repos, Services, Middleware)
+	// Initialize Store (DB, Repos, Services, Middleware)
 	store.Init()
 
 	// Generate personalities in the background (queue: personality_version)

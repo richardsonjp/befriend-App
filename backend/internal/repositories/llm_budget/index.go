@@ -4,23 +4,24 @@ import (
 	"context"
 	"time"
 
-	"befriend/pkg/clients/redis"
+	"befriend/pkg/clients/db"
 )
 
-// LLMBudgetRepo counts LLM requests per minute and per UTC day in Redis, so the worker stays under the
+// LLMBudgetRepo counts LLM requests per window (a UTC minute or day) in Postgres, so the worker stays under the
 // provider's request caps.
 type LLMBudgetRepo interface {
-	// TryConsume reserves one request in the current minute and day. When a cap is reached it reserves
-	// nothing and returns when the next window opens.
-	TryConsume(ctx context.Context, now time.Time, minuteCap, dailyCap int) (ok bool, retryAt time.Time, err error)
+	// Increment adds one request to the window unless it already holds limit; false means the window is full.
+	// The upsert locks the window's row, so concurrent workers can't overshoot.
+	Increment(ctx context.Context, windowKey string, limit int, expiresAt time.Time) (bool, error)
+	DeleteExpired(ctx context.Context, now time.Time) error
 }
 
 type llmBudgetRepo struct {
-	redis redis.RedisDelegate
+	dbdget db.DBGormDelegate
 }
 
-func NewLLMBudgetRepo(redis redis.RedisDelegate) LLMBudgetRepo {
+func NewLLMBudgetRepo(dbdget db.DBGormDelegate) LLMBudgetRepo {
 	return &llmBudgetRepo{
-		redis: redis,
+		dbdget: dbdget,
 	}
 }

@@ -1,5 +1,5 @@
 # Local dev stack (credentials below are local-only).
-#   Infra:       docker compose up -d                      -> postgres, redis, mailpit (inbox UI: http://localhost:8025)
+#   Infra:       docker compose up -d                      -> postgres, mailpit (inbox UI: http://localhost:8025)
 #   Host API:    make migration-up && make run               (reads .env)
 #   Full stack:  docker compose --profile api up -d --build
 #                docker compose --profile api run --rm api migrate up
@@ -20,16 +20,6 @@ services:
       timeout: 3s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   mailpit:
     image: axllent/mailpit
     ports:
@@ -45,7 +35,6 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: "5432"
-      REDIS_ADDRESS: redis:6379
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       SYSTEM_ADDR: ":8305"
@@ -53,8 +42,6 @@ services:
       - "8305:8305"
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       mailpit:
         condition: service_started

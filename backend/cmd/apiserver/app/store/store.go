@@ -10,7 +10,6 @@ import (
 	"befriend/pkg/clients/email"
 	"befriend/pkg/clients/idtoken"
 	"befriend/pkg/clients/openrouter"
-	"befriend/pkg/clients/redis"
 	"befriend/pkg/utils/logs"
 
 	// Repositories
@@ -63,7 +62,6 @@ import (
 
 type Store struct {
 	DB    db.DBGormDelegate
-	Redis redis.RedisDelegate
 	Email email.EmailSender
 	Log   *logs.Logger
 
@@ -101,8 +99,6 @@ func Init() {
 	// Core dependencies
 	db := db.NewDBdelegate(config.Config.DB.Debug)
 	db.Init()
-	redis := redis.NewRedisDel()
-	redis.Init()
 	smtpClient := email.NewSMTPSender(email.SMTPConfig{
 		Host:     config.Config.SMTP.Host,
 		Port:     config.Config.SMTP.Port,
@@ -178,7 +174,7 @@ func Init() {
 	pairingCodeRepo := reposPairingCode.NewPairingCodeRepo(db)
 	triggerEventRepo := reposTriggerEvent.NewTriggerEventRepo(db)
 	presenceRepo := reposPresence.NewPresenceRepo(db)
-	llmBudgetRepo := reposLLMBudget.NewLLMBudgetRepo(redis)
+	llmBudgetRepo := reposLLMBudget.NewLLMBudgetRepo(db)
 
 	// Services
 	userService := serviceUser.NewUserService(txRepo, userRepo)
@@ -237,7 +233,6 @@ func Init() {
 
 	App = &Store{
 		DB:    db,
-		Redis: redis,
 		Email: smtpClient,
 		Log:   logs.Log,
 

@@ -45,7 +45,7 @@
   - middlewares: web application middlewares
   - services: apps business logic
   - repositories: data access or call some third party services
-  - models: define the struct like table column, redis data struct, convenience data struct etc.
+  - models: define the struct like table column, convenience data struct etc.
   - transformers: output data format to client
   - utils: utility functions to apps
   - lang: i18n translations

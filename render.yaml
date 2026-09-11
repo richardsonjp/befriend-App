@@ -89,8 +89,6 @@ services:
         fromDatabase: { name: befriend-db, property: user }
       - key: DB_PASSWORD
         fromDatabase: { name: befriend-db, property: password }
-      - key: REDIS_ADDRESS
-        fromService: { type: keyvalue, name: befriend-redis, property: hostport }
 
   # Hourly: activity retention, pairing-code cleanup and weekly friend evolution.
   - type: cron
@@ -112,13 +110,6 @@ services:
         fromDatabase: { name: befriend-db, property: user }
       - key: DB_PASSWORD
         fromDatabase: { name: befriend-db, property: password }
-      - key: REDIS_ADDRESS
-        fromService: { type: keyvalue, name: befriend-redis, property: hostport }
-
-  - type: keyvalue
-    name: befriend-redis
-    plan: starter
-    ipAllowList: [] # internal connections only
 
 databases:
   - name: befriend-db

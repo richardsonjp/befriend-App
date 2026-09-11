@@ -56,7 +56,7 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 	if job.Reason == enum.REASON_EVOLUTION {
 		dailyCap -= config.Config.LLM.OnboardingReserve
 	}
-	ok, retryAt, err := s.llmBudgetRepo.TryConsume(ctx, now, config.Config.LLM.MinuteCap, dailyCap)
+	ok, retryAt, err := s.consumeBudget(ctx, now, config.Config.LLM.MinuteCap, dailyCap)
 	if err != nil {
 		s.fail(ctx, job, fmt.Errorf("check LLM budget: %w", err))
 		return

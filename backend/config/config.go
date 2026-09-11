@@ -27,13 +27,6 @@ var Config = struct {
 		TimeZone     string `env:"DB_TIMEZONE" envDefault:"Asia/Jakarta"`
 	}
 
-	Redis struct {
-		Address    string `env:"REDIS_ADDRESS" envDefault:"127.0.0.1:6379"`
-		Password   string `env:"REDIS_PASSWORD" envDefault:""`
-		DB         int    `env:"REDIS_DB" envDefault:"0"`
-		TLSEnabled bool   `env:"REDIS_TLS_ENABLED" envDefault:"false"`
-	}
-
 	SMTP struct {
 		Host     string `env:"SMTP_HOST" envDefault:"localhost"`
 		Port     string `env:"SMTP_PORT" envDefault:"1025"` // Mailpit

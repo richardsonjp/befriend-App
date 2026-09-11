@@ -12,7 +12,7 @@ import (
 // RateLimit allows max requests per minute per client IP, counted separately for each route.
 // Routes are keyed by their pattern (/api/pairing/:code), so varying a path parameter doesn't reset the count.
 // Client IP honours SYSTEM_PROXY_HEADER (set it only behind a proxy that overwrites that header).
-// ponytail: in-memory counters assume one API instance; switch to Redis storage when scaling out.
+// ponytail: in-memory counters assume one API instance; move them to a shared store (e.g. a Postgres table) when scaling out.
 func RateLimit(max int) fiber.Handler {
 	return limiter.New(limiter.Config{
 		Max:        max,

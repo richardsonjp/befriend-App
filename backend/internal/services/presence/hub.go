@@ -3,7 +3,7 @@ package presence
 import "sync"
 
 // hub fans owner changes out to the user's open Mac connections.
-// ponytail: in memory, so one API instance; move to Redis pub/sub when running several.
+// ponytail: in memory, so one API instance; fan out with Postgres LISTEN/NOTIFY when running several.
 type hub struct {
 	mu   sync.Mutex
 	subs map[string]map[chan Owner]struct{}
