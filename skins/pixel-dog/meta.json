@@ -181,5 +181,15 @@
       ],
       "still": 1
     }
+  },
+  "motions": {
+    "walk": {
+      "frames": [
+        "walk/0",
+        "walk/1",
+        "walk/2",
+        "walk/3"
+      ]
+    }
   }
 }

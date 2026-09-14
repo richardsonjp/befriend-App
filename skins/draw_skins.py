@@ -247,6 +247,28 @@ def sitting(sp, dx=0, dy=0, head_dy=0, face=True, paws=True, tail=True, body=Non
     return c
 
 
+def walking(sp, step):
+    """One frame of the walk cycle, heading right (the Mac mirrors it for left): the legs trade places, the body
+    bobs a pixel on the passing frames, the tail trails behind."""
+    bob = step % 2
+    c = Canvas()
+    c.draw(mirrored(tail_part(sp)), 0, bob - 3)
+    for i, x in enumerate((11, 20)):
+        lifted = int(bob == 0 and i == step // 2)  # frame 0 lifts the back leg, frame 2 the front one
+        bottom = 28 - lifted
+        leg = {}
+        rect(leg, x + lifted, 24, x + 2 + lifted, bottom - 1, "o")
+        rect(leg, x + lifted, bottom, x + 2 + lifted, bottom, "w")
+        c.draw(leg)
+    c.draw(body_part(paws=False, halves=(6, 7, 8, 8, 7), y0=20), 1, bob)
+    c.draw(head_part(sp), 1, bob)
+    if sp == "dog":
+        c.draw(dog_ears(), 1, bob)
+        c.draw(mirrored(dog_ears()), 1, bob)
+    c.face = (11, 11 + bob)
+    return c
+
+
 def actions(sp):
     """action → (frame names in play order, still index, {frame name: canvas})."""
     out = {}
@@ -454,12 +476,16 @@ def write_skin(root, sp, skin_id, name):
         meta_actions[action] = {"frames": order, "still": still}
         for frame_name, canvas in frames.items():
             write(os.path.join(folder, "body", frame_name + ".txt"), canvas.grid())
+    walk = [walking(sp, step) for step in range(4)]
+    for step, canvas in enumerate(walk):
+        write(os.path.join(folder, "body", f"walk/{step}.txt"), canvas.grid())
     for mood in MOODS:
         write(os.path.join(folder, "face", mood + ".txt"), "".join(line + "\n" for line in FACES[mood]))
         write(os.path.join(folder, "mini", mood + ".txt"), mini(sp, mood).grid())
-    meta = {"id": skin_id, "name": name, "fps": 8, "face_base": "o", "palette": PALETTES[sp], "actions": meta_actions}
+    meta = {"id": skin_id, "name": name, "fps": 8, "face_base": "o", "palette": PALETTES[sp], "actions": meta_actions,
+            "motions": {"walk": {"frames": [f"walk/{step}" for step in range(4)]}}}
     write(os.path.join(folder, "meta.json"), json.dumps(meta, indent=2) + "\n")
-    return acts
+    return acts, walk
 
 
 def write(path, text):
@@ -506,14 +532,13 @@ def main():
     root, preview = sys.argv[1], sys.argv[2]
     os.makedirs(preview, exist_ok=True)
     for sp, skin_id, name in (("cat", "pixel-cat", "Pixel Cat"), ("dog", "pixel-dog", "Pixel Dog")):
-        acts = write_skin(root, sp, skin_id, name)
+        acts, walk = write_skin(root, sp, skin_id, name)
         palette = PALETTES[sp]
-        # every distinct frame of every action with the content face, 8 per row
+        # every distinct frame of every action with the content face, 8 per row, then the walk cycle
         cells = []
-        for action in ACTIONS:
-            order, _, frames = acts[action]
-            distinct = list(dict.fromkeys(order))
-            row = [frames[n].resolved("content") for n in distinct]
+        rows_of_frames = [[acts[a][2][n] for n in dict.fromkeys(acts[a][0])] for a in ACTIONS] + [walk]
+        for frames in rows_of_frames:
+            row = [frame.resolved("content") for frame in frames]
             row += [[["."] * 32 for _ in range(32)]] * (8 - len(row))
             cells += row
         sheet(os.path.join(preview, f"{skin_id}-actions.png"), cells, palette, cols=8)

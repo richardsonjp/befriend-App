@@ -14,20 +14,20 @@ func FaceLayerName(mood string) string {
 	return "face_" + mood
 }
 
-// lottie builds the animation: a marker per action in vocabulary order, one shape layer per timeline frame, and a
-// face layer per mood on top. Faces follow each frame's '@' with hold keyframes and scale to nothing on frames
-// without one. Only the content face is opaque in the file, so previews show a face; apps set all twelve.
+// lottie builds the animation: a marker per action in vocabulary order then per motion, one shape layer per
+// timeline frame, and a face layer per mood on top. Faces follow each frame's '@' with hold keyframes and scale to
+// nothing on frames without one. Only the content face is opaque in the file, so previews show a face; apps set all
+// twelve.
 func (s *source) lottie() map[string]any {
 	var markers []any
 	var bodyLayers []map[string]any
 	var positions, scales [][]int
 	frame := 0
-	for _, action := range vocabulary.Actions {
-		frames := s.meta.Actions[action].Frames
-		markers = append(markers, map[string]any{"cm": action, "tm": frame, "dr": len(frames)})
-		for i, name := range frames {
+	for _, c := range s.meta.timeline() {
+		markers = append(markers, map[string]any{"cm": c.name, "tm": frame, "dr": len(c.frames)})
+		for i, name := range c.frames {
 			body := s.bodies[name]
-			bodyLayers = append(bodyLayers, s.shapeLayer(fmt.Sprintf("%s %d", action, i), body, frame, frame+1))
+			bodyLayers = append(bodyLayers, s.shapeLayer(fmt.Sprintf("%s %d", c.name, i), body, frame, frame+1))
 			if body.faceX >= 0 {
 				positions = append(positions, []int{body.faceX, body.faceY, 0})
 				scales = append(scales, []int{100, 100, 100})

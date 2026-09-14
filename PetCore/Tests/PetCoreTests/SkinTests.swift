@@ -77,6 +77,11 @@ struct SkinInstallerTests {
                     lottie["markers"] = (lottie["markers"] as? [[String: Any]])?.filter { $0["cm"] as? String != "love" }
                 }
             }, .missingMarker("love")),
+            ("a missing walk", {
+                $0["skin.json"] = try editJSON($0["skin.json"]) { lottie in
+                    lottie["markers"] = (lottie["markers"] as? [[String: Any]])?.filter { $0["cm"] as? String != "walk" }
+                }
+            }, .missingMarker("walk")),
             ("a missing mood face", {
                 $0["skin.json"] = try editJSON($0["skin.json"]) { lottie in
                     lottie["layers"] = (lottie["layers"] as? [[String: Any]])?.filter { $0["nm"] as? String != "face_shy" }

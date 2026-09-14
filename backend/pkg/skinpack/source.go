@@ -5,7 +5,8 @@
 //
 // Folder layout:
 //
-//	meta.json             id, name, fps, face_base, palette, actions (frames + still per vocabulary action)
+//	meta.json             id, name, fps, face_base, palette, actions (frames + still per vocabulary action),
+//	                      motions (frames per Motions entry: app-only moves like walking, never picked by the AI)
 //	body/<frame>.txt      32×32 grid: '.' transparent, palette keys, one '@' where the face's top-left goes
 //	face/<mood>.txt       any size up to 32×32, '.' transparent
 //	mini/<mood>.txt       16×16 head for the Dynamic Island
@@ -19,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -35,6 +37,10 @@ const (
 	faceOrigin  = '@' // top-left of the mood face on a body frame; the pixel itself is painted with face_base
 )
 
+// Motions are played by the apps themselves (the Mac walks the friend around); they get a marker after the actions
+// and no stills, since widgets never move.
+var Motions = []string{"walk"}
+
 var (
 	idPattern        = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
 	frameNamePattern = regexp.MustCompile(`^[a-z0-9_-]+(/[a-z0-9_-]+)?$`)
@@ -48,6 +54,29 @@ type meta struct {
 	FaceBase string                `json:"face_base"` // palette key painted under '@'
 	Palette  map[string]string     `json:"palette"`   // one character → "#rrggbb"
 	Actions  map[string]actionMeta `json:"actions"`
+	Motions  map[string]motionMeta `json:"motions"`
+}
+
+type motionMeta struct {
+	Frames []string `json:"frames"`
+}
+
+// clip is one marker's worth of timeline.
+type clip struct {
+	name   string
+	frames []string
+}
+
+// timeline lists every marker in play order: the vocabulary actions, then the motions.
+func (m *meta) timeline() []clip {
+	var clips []clip
+	for _, action := range vocabulary.Actions {
+		clips = append(clips, clip{action, m.Actions[action].Frames})
+	}
+	for _, motion := range Motions {
+		clips = append(clips, clip{motion, m.Motions[motion].Frames})
+	}
+	return clips
 }
 
 type actionMeta struct {
@@ -122,6 +151,11 @@ func readMeta(path string) (*meta, error) {
 			return nil, fmt.Errorf("meta.json: %q is not a vocabulary v%d action", action, vocabulary.Version)
 		}
 	}
+	for motion := range m.Motions {
+		if !slices.Contains(Motions, motion) {
+			return nil, fmt.Errorf("meta.json: %q is not a motion (%s)", motion, strings.Join(Motions, ", "))
+		}
+	}
 	return &m, nil
 }
 
@@ -143,19 +177,27 @@ func parsePalette(raw map[string]string) (map[byte]color.NRGBA, error) {
 	return palette, nil
 }
 
-// loadBodies reads every frame the actions use, in vocabulary order; frames shared between actions load once.
+// loadBodies reads every frame the timeline uses, in play order; frames shared between clips load once.
 func (s *source) loadBodies(dir string) error {
 	for _, action := range vocabulary.Actions {
 		a, ok := s.meta.Actions[action]
 		switch {
 		case !ok:
 			return fmt.Errorf("meta.json: action %q is missing", action)
-		case len(a.Frames) == 0:
-			return fmt.Errorf("meta.json: action %q has no frames", action)
-		case a.Still < 0 || a.Still >= len(a.Frames):
+		case a.Still < 0 || a.Still >= max(len(a.Frames), 1):
 			return fmt.Errorf("meta.json: action %q still %d is not a frame index", action, a.Still)
 		}
-		for _, name := range a.Frames {
+	}
+	for _, motion := range Motions {
+		if _, ok := s.meta.Motions[motion]; !ok {
+			return fmt.Errorf("meta.json: motion %q is missing", motion)
+		}
+	}
+	for _, c := range s.meta.timeline() {
+		if len(c.frames) == 0 {
+			return fmt.Errorf("meta.json: %q has no frames", c.name)
+		}
+		for _, name := range c.frames {
 			if s.bodies[name] != nil {
 				continue
 			}
@@ -166,8 +208,8 @@ func (s *source) loadBodies(dir string) error {
 			if err != nil {
 				return err
 			}
-			for i, c := range g.cells {
-				if c == faceOrigin {
+			for i, cell := range g.cells {
+				if cell == faceOrigin {
 					g.cells[i] = s.meta.FaceBase[0]
 				}
 			}

@@ -15,7 +15,7 @@ public nonisolated enum SkinInstallError: Error, Equatable {
     case unexpectedEntry(String)
     case missingFile(String)
     case invalidManifest
-    /// skin.json lacks a marker for this vocabulary action.
+    /// skin.json lacks a marker for this vocabulary action or motion.
     case missingMarker(String)
     /// skin.json lacks the face layer for this mood.
     case missingFaceLayer(String)
@@ -148,12 +148,13 @@ public nonisolated enum SkinInstaller {
         return manifest
     }
 
-    /// The animation must play every action and show every mood.
+    /// The animation must play every action and motion, and show every mood.
     private static func checkAnimation(_ lottie: URL) throws {
         let animation = try JSONDecoder().decode(Animation.self, from: Data(contentsOf: lottie))
         let markers = Set(animation.markers.map(\.cm))
-        if let missing = PetAction.allCases.first(where: { !markers.contains($0.rawValue) }) {
-            throw SkinInstallError.missingMarker(missing.rawValue)
+        let required = PetAction.allCases.map(\.rawValue) + [InstalledSkin.walkMarker]
+        if let missing = required.first(where: { !markers.contains($0) }) {
+            throw SkinInstallError.missingMarker(missing)
         }
         let layers = Set(animation.layers.compactMap(\.nm))
         if let missing = PetMood.allCases.first(where: { !layers.contains(InstalledSkin.faceLayer($0)) }) {

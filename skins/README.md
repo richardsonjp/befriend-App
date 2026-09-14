@@ -1,8 +1,8 @@
 # Skins
 
 Each folder is one character skin as text pixel grids; the format is documented in
-`backend/pkg/skinpack/source.go`. Every skin draws all 20 vocabulary actions, a face per mood, and a 16×16 head
-per mood for the Dynamic Island.
+`backend/pkg/skinpack/source.go`. Every skin draws all 20 vocabulary actions, a `walk` cycle heading right (the Mac
+mirrors it to walk left), a face per mood, and a 16×16 head per mood for the Dynamic Island and the menu bar.
 
 - `pixel-cat` ships inside the apps (PetCore's `Resources/pixel-cat.zip`); everyone has it.
 - `pixel-dog` and later skins are published to the backend and granted per account.

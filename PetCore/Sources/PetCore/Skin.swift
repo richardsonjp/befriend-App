@@ -32,6 +32,8 @@ public nonisolated struct SkinManifest: Codable, Equatable, Sendable {
 /// A skin unpacked on disk: skin.json (Lottie, one marker per action), stills/<action>/<mood>.png, mini/<mood>.png.
 public nonisolated struct InstalledSkin: Equatable, Sendable {
     public static let builtInID = "pixel-cat"
+    /// The walk cycle's marker: a motion the Mac plays while moving the friend, outside the AI's vocabulary.
+    public static let walkMarker = "walk"
 
     public let manifest: SkinManifest
     public let sha256: String

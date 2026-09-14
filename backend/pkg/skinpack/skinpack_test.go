@@ -43,6 +43,8 @@ func fixture(t *testing.T, edit func(meta map[string]any, files map[string]strin
 		files["body/"+action+"/1.txt"] = body
 	}
 	files["body/sleep/1.txt"] = strings.ReplaceAll(body, "@", "o")
+	files["body/walk/0.txt"] = body
+	files["body/walk/1.txt"] = body
 	for _, mood := range vocabulary.Moods {
 		files["face/"+mood+".txt"] = gridText(6, 3, func(_, y int) byte { return map[bool]byte{true: 'k', false: '.'}[y == 1] })
 		files["mini/"+mood+".txt"] = gridText(MiniSize, MiniSize, func(int, int) byte { return 'o' })
@@ -50,6 +52,7 @@ func fixture(t *testing.T, edit func(meta map[string]any, files map[string]strin
 	meta := map[string]any{
 		"id": "test-cat", "name": "Test Cat", "fps": 8, "face_base": "o",
 		"palette": map[string]any{"o": "#f4a340", "k": "#1b1b1b"}, "actions": actions,
+		"motions": map[string]any{"walk": map[string]any{"frames": []string{"walk/0", "walk/1"}}},
 	}
 	if edit != nil {
 		edit(meta, files)
@@ -122,12 +125,13 @@ func TestBuild(t *testing.T) {
 	if err := json.Unmarshal(files["skin.json"], &animation); err != nil {
 		t.Fatal(err)
 	}
-	// two frames per action plus the frame lottie-ios lands on at a marker's end
-	if animation.Op != 60 || animation.W != 32 || len(animation.Markers) != 20 || len(animation.Layers) != 12+40 {
+	// two frames per action and for walk, plus the frame lottie-ios lands on at a marker's end
+	if animation.Op != 63 || animation.W != 32 || len(animation.Markers) != 21 || len(animation.Layers) != 12+42 {
 		t.Fatalf("op %d, w %d, %d markers, %d layers", animation.Op, animation.W, len(animation.Markers), len(animation.Layers))
 	}
+	names := slices.Concat(vocabulary.Actions, Motions)
 	for i, m := range animation.Markers {
-		if m.Cm != vocabulary.Actions[i] || m.Tm != 3*i || m.Dr != 2 {
+		if m.Cm != names[i] || m.Tm != 3*i || m.Dr != 2 {
 			t.Errorf("marker %d = %+v", i, m)
 		}
 	}
@@ -195,6 +199,12 @@ func TestBuildRejects(t *testing.T) {
 		{"unknown action", setAction("moonwalk", []string{"wave/0"}, 0), "moonwalk"},
 		{"still index", setAction("wave", []string{"wave/0"}, 1), "still 1"},
 		{"frame name", setAction("wave", []string{"../wave/0"}, 0), "frame name"},
+		{"no frames", setAction("wave", []string{}, 0), `"wave" has no frames`},
+		{"missing motion", func(m meta, _ files) { delete(m["motions"].(map[string]any), "walk") }, `motion "walk" is missing`},
+		{"empty motion", func(m meta, _ files) { m["motions"] = map[string]any{"walk": map[string]any{"frames": []string{}}} }, `"walk" has no frames`},
+		{"unknown motion", func(m meta, _ files) {
+			m["motions"].(map[string]any)["fly"] = map[string]any{"frames": []string{"walk/0"}}
+		}, "not a motion"},
 		{"ragged grid", func(_ meta, f files) { f["body/wave/0.txt"] = strings.Replace(f["body/wave/0.txt"], "..", ".", 1) }, "wide"},
 		{"unknown key", func(_ meta, f files) { f["body/wave/0.txt"] = strings.Replace(f["body/wave/0.txt"], ".", "x", 1) }, "not in the palette"},
 		{"two origins", func(_ meta, f files) { f["body/wave/0.txt"] = strings.Replace(f["body/wave/0.txt"], ".", "@", 1) }, "more than one '@'"},
