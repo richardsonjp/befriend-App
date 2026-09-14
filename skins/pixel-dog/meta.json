@@ -1,0 +1,185 @@
+{
+  "id": "pixel-dog",
+  "name": "Pixel Dog",
+  "fps": 8,
+  "face_base": "o",
+  "palette": {
+    "k": "#2b1d14",
+    "o": "#d9a066",
+    "d": "#8f5a33",
+    "w": "#fff4e0",
+    "p": "#f28fa0",
+    "b": "#6ec6ff",
+    "y": "#ffd84d",
+    "r": "#e5484d"
+  },
+  "actions": {
+    "idle": {
+      "frames": [
+        "idle/0",
+        "idle/0",
+        "idle/0",
+        "idle/1",
+        "idle/1",
+        "idle/0",
+        "idle/0",
+        "idle/2"
+      ],
+      "still": 0
+    },
+    "wave": {
+      "frames": [
+        "wave/0",
+        "wave/1",
+        "wave/0",
+        "wave/1"
+      ],
+      "still": 1
+    },
+    "nudge": {
+      "frames": [
+        "nudge/0",
+        "nudge/1",
+        "nudge/0",
+        "nudge/1"
+      ],
+      "still": 0
+    },
+    "sleep": {
+      "frames": [
+        "sleep/0",
+        "sleep/0",
+        "sleep/1",
+        "sleep/1"
+      ],
+      "still": 0
+    },
+    "celebrate": {
+      "frames": [
+        "celebrate/0",
+        "celebrate/1",
+        "celebrate/0",
+        "celebrate/1"
+      ],
+      "still": 1
+    },
+    "dance": {
+      "frames": [
+        "dance/0",
+        "dance/1",
+        "dance/0",
+        "dance/1"
+      ],
+      "still": 0
+    },
+    "laugh": {
+      "frames": [
+        "laugh/0",
+        "laugh/1",
+        "laugh/0",
+        "laugh/1"
+      ],
+      "still": 0
+    },
+    "cry": {
+      "frames": [
+        "cry/0",
+        "cry/1"
+      ],
+      "still": 1
+    },
+    "yawn": {
+      "frames": [
+        "yawn/0",
+        "yawn/1",
+        "yawn/1",
+        "yawn/1",
+        "yawn/0"
+      ],
+      "still": 1
+    },
+    "stretch": {
+      "frames": [
+        "stretch/0",
+        "stretch/1"
+      ],
+      "still": 0
+    },
+    "think": {
+      "frames": [
+        "think/0",
+        "think/1"
+      ],
+      "still": 0
+    },
+    "peek": {
+      "frames": [
+        "peek/0",
+        "peek/1"
+      ],
+      "still": 1
+    },
+    "hide": {
+      "frames": [
+        "hide/0",
+        "hide/0",
+        "hide/1",
+        "hide/0"
+      ],
+      "still": 0
+    },
+    "shrug": {
+      "frames": [
+        "shrug/0",
+        "shrug/1"
+      ],
+      "still": 1
+    },
+    "facepalm": {
+      "frames": [
+        "facepalm/0",
+        "facepalm/1"
+      ],
+      "still": 0
+    },
+    "cheer": {
+      "frames": [
+        "cheer/0",
+        "cheer/1"
+      ],
+      "still": 0
+    },
+    "jump": {
+      "frames": [
+        "jump/0",
+        "jump/1",
+        "jump/2",
+        "jump/1",
+        "jump/0"
+      ],
+      "still": 2
+    },
+    "spin": {
+      "frames": [
+        "spin/0",
+        "spin/1",
+        "spin/0",
+        "spin/1"
+      ],
+      "still": 0
+    },
+    "sit": {
+      "frames": [
+        "sit/0"
+      ],
+      "still": 0
+    },
+    "love": {
+      "frames": [
+        "love/0",
+        "love/1"
+      ],
+      "still": 1
+    }
+  }
+}
