@@ -5,6 +5,7 @@ import (
 
 	"befriend/internal/repositories/tx"
 	"befriend/internal/services/friend"
+	"befriend/internal/services/skin"
 	"befriend/internal/services/trigger_event"
 	"befriend/internal/services/user"
 	"befriend/internal/services/verification_code"
@@ -25,6 +26,7 @@ type userApplicationService struct {
 	verificationCodeService verification_code.VerificationCodeService
 	friendService           friend.FriendService
 	triggerEventService     trigger_event.TriggerEventService
+	skinService             skin.SkinService
 }
 
 func NewUserApplicationService(
@@ -33,6 +35,7 @@ func NewUserApplicationService(
 	verificationCodeService verification_code.VerificationCodeService,
 	friendService friend.FriendService,
 	triggerEventService trigger_event.TriggerEventService,
+	skinService skin.SkinService,
 ) UserApplicationService {
 	return &userApplicationService{
 		txRepo:                  txRepo,
@@ -40,5 +43,6 @@ func NewUserApplicationService(
 		verificationCodeService: verificationCodeService,
 		friendService:           friendService,
 		triggerEventService:     triggerEventService,
+		skinService:             skinService,
 	}
 }

@@ -22,6 +22,7 @@ import (
 	reposPresence "befriend/internal/repositories/presence"
 	reposQuestionSet "befriend/internal/repositories/question_set"
 	reposRefreshToken "befriend/internal/repositories/refresh_token"
+	reposSkin "befriend/internal/repositories/skin"
 	reposTriggerEvent "befriend/internal/repositories/trigger_event"
 	reposTx "befriend/internal/repositories/tx"
 	reposUser "befriend/internal/repositories/user"
@@ -40,6 +41,7 @@ import (
 	servicePresence "befriend/internal/services/presence"
 	serviceQuestionSet "befriend/internal/services/question_set"
 	serviceRefreshToken "befriend/internal/services/refresh_token"
+	serviceSkin "befriend/internal/services/skin"
 	serviceTriggerEvent "befriend/internal/services/trigger_event"
 	serviceUser "befriend/internal/services/user"
 	serviceUserApplication "befriend/internal/services/user_application"
@@ -52,6 +54,7 @@ import (
 	handlerOnboarding "befriend/cmd/apiserver/app/handlers/onboarding"
 	handlerPairing "befriend/cmd/apiserver/app/handlers/pairing"
 	handlerPresence "befriend/cmd/apiserver/app/handlers/presence"
+	handlerSkin "befriend/cmd/apiserver/app/handlers/skin"
 	handlerTriggerEvent "befriend/cmd/apiserver/app/handlers/trigger_event"
 	handlerUser "befriend/cmd/apiserver/app/handlers/user"
 	handlerUserAuth "befriend/cmd/apiserver/app/handlers/user_auth"
@@ -70,6 +73,9 @@ type Store struct {
 	PresenceService    servicePresence.PresenceService
 	EvolutionService   serviceEvolution.EvolutionService
 
+	// CLI (apiserver skin …)
+	SkinService serviceSkin.SkinService
+
 	// Handlers
 	UserAuthHandler     *handlerUserAuth.UserAuthHandler
 	UserHandler         *handlerUser.UserHandler
@@ -79,6 +85,7 @@ type Store struct {
 	PairingHandler      *handlerPairing.PairingHandler
 	TriggerEventHandler *handlerTriggerEvent.TriggerEventHandler
 	PresenceHandler     *handlerPresence.PresenceHandler
+	SkinHandler         *handlerSkin.SkinHandler
 
 	// Middleware
 	MiddlewarePasetoAuth middlewares.MiddlewarePasetoAuth
@@ -175,6 +182,7 @@ func Init() {
 	triggerEventRepo := reposTriggerEvent.NewTriggerEventRepo(db)
 	presenceRepo := reposPresence.NewPresenceRepo(db)
 	llmBudgetRepo := reposLLMBudget.NewLLMBudgetRepo(db)
+	skinRepo := reposSkin.NewSkinRepo(db)
 
 	// Services
 	userService := serviceUser.NewUserService(txRepo, userRepo)
@@ -188,6 +196,7 @@ func Init() {
 	triggerEventService := serviceTriggerEvent.NewTriggerEventService(txRepo, triggerEventRepo, userService)
 	friendService := serviceFriend.NewFriendService(txRepo, friendRepo, personalityVersionService)
 	presenceService := servicePresence.NewPresenceService(txRepo, presenceRepo, deviceService, friendService, apnsClient)
+	skinService := serviceSkin.NewSkinService(txRepo, skinRepo, userService)
 	onboardingService := serviceOnboarding.NewOnboardingService(
 		txRepo,
 		onboardingResponseRepo,
@@ -218,6 +227,7 @@ func Init() {
 		verificationCodeService,
 		friendService,
 		triggerEventService,
+		skinService,
 	)
 	authenticationService := serviceAuthentication.NewAuthenticationService(
 		txRepo,
@@ -240,6 +250,8 @@ func Init() {
 		PresenceService:    presenceService,
 		EvolutionService:   evolutionService,
 
+		SkinService: skinService,
+
 		UserAuthHandler:     handlerUserAuth.NewUserAuthHandler(authenticationService),
 		UserHandler:         handlerUser.NewUserHandler(userApplicationService),
 		OnboardingHandler:   handlerOnboarding.NewOnboardingHandler(onboardingService),
@@ -248,6 +260,7 @@ func Init() {
 		PairingHandler:      handlerPairing.NewPairingHandler(pairingCodeService, authenticationService),
 		TriggerEventHandler: handlerTriggerEvent.NewTriggerEventHandler(triggerEventService),
 		PresenceHandler:     handlerPresence.NewPresenceHandler(presenceService),
+		SkinHandler:         handlerSkin.NewSkinHandler(skinService),
 
 		MiddlewarePasetoAuth: middlewares.NewMiddlewarePasetoAuth(),
 	}

@@ -89,10 +89,21 @@ func TestHubDeliversLatestAndCountsConnections(t *testing.T) {
 	updates, unsubscribe := h.subscribe("u1")
 	_, unsubscribeOther := h.subscribe("u1")
 
-	h.publish("u1", OwnerMac)
-	h.publish("u1", OwnerPhone) // replaces the unread value instead of blocking
-	if got := <-updates; got != OwnerPhone {
-		t.Errorf("got %s; want the latest owner", got)
+	h.publish("u1", Message{Owner: OwnerMac})
+	h.publish("u1", Message{Owner: OwnerPhone}) // replaces the unread value instead of blocking
+	if got := <-updates; got != (Message{Owner: OwnerPhone}) {
+		t.Errorf("got %+v; want the latest owner", got)
+	}
+
+	// An unread skin change survives a later owner change, and the owner survives a later skin change.
+	h.publish("u1", Message{SkinChanged: true})
+	h.publish("u1", Message{Owner: OwnerMac})
+	h.publish("u1", Message{SkinChanged: true})
+	if got := <-updates; got != (Message{Owner: OwnerMac, SkinChanged: true}) {
+		t.Errorf("got %+v; want the merged owner and skin change", got)
+	}
+	if encoded, _ := json.Marshal(Message{SkinChanged: true}); string(encoded) != `{"skin_changed":true}` {
+		t.Errorf("skin message = %s", encoded)
 	}
 	if unsubscribe() {
 		t.Error("first unsubscribe reported the last connection")

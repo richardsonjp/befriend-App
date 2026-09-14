@@ -67,8 +67,16 @@ func (s *presenceService) Sweep(ctx context.Context) error {
 	return nil
 }
 
-func (s *presenceService) Subscribe(userID string) (<-chan Owner, func() bool) {
+func (s *presenceService) Subscribe(userID string) (<-chan Message, func() bool) {
 	return s.hub.subscribe(userID)
+}
+
+// NotifySkinChanged returns at once; the widget push runs in the background like presence pushes.
+func (s *presenceService) NotifySkinChanged(userID string) {
+	s.hub.publish(userID, Message{SkinChanged: true})
+	if s.apns != nil {
+		go s.pushWidgets(context.Background(), userID)
+	}
 }
 
 // update applies a change under the row lock and re-decides the owner. After the commit it tells the user's Macs
@@ -106,7 +114,7 @@ func (s *presenceService) update(ctx context.Context, userID string, change func
 	}
 
 	if ownerChanged {
-		s.hub.publish(userID, state.Owner)
+		s.hub.publish(userID, Message{Owner: state.Owner})
 	}
 	if pushNow && s.apns != nil {
 		go s.push(context.Background(), userID, state.Owner)

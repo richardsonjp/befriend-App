@@ -16,6 +16,7 @@ type UserService interface {
 	MarkEmailVerified(ctx context.Context, id string) error
 	ClaimForProvider(ctx context.Context, id string) error
 	UpdateSyncSettings(ctx context.Context, m model.User) error
+	UpdateSkin(ctx context.Context, id string, skinID *string) error
 	DeleteUser(ctx context.Context, id string) error
 }
 

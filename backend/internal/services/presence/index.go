@@ -23,8 +23,10 @@ type PresenceService interface {
 	ReleasePhone(ctx context.Context, userID string) (*StateResponse, error)
 	// Sweep re-decides owners that may have gone stale and sends pushes that were debounced.
 	Sweep(ctx context.Context) error
-	// Subscribe streams owner changes for one user's Mac connection; unsubscribe reports whether it was the last.
-	Subscribe(userID string) (updates <-chan Owner, unsubscribe func() (last bool))
+	// Subscribe streams messages for one user's Mac connection; unsubscribe reports whether it was the last.
+	Subscribe(userID string) (updates <-chan Message, unsubscribe func() (last bool))
+	// NotifySkinChanged tells the user's Macs and iPhone widgets to fetch the account's skin again.
+	NotifySkinChanged(userID string)
 }
 
 type presenceService struct {

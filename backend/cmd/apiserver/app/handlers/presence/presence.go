@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	servicePresence "befriend/internal/services/presence"
 	"befriend/pkg/utils/api"
 	"befriend/pkg/utils/errors"
 	"befriend/pkg/utils/logs"
@@ -68,12 +69,9 @@ type socketMessage struct {
 	Active bool `json:"active"`
 }
 
-type ownerMessage struct {
-	Owner string `json:"owner"`
-}
-
-// Socket is the Mac's presence connection: it sends {"active": bool} on change and every 30 seconds, and receives
-// {"owner": "phone"|"mac"} now and whenever the owner changes.
+// Socket is the Mac's presence connection: it sends {"active": bool} on change and every 30 seconds. It receives
+// {"owner": "phone"|"mac"} now and whenever the owner changes, and {"skin_changed": true} when the account's skin
+// changes (both keys can arrive in one message).
 func (h *PresenceHandler) Socket() fiber.Handler {
 	return websocket.New(func(conn *websocket.Conn) {
 		userID, _ := conn.Locals("user_id").(string)
@@ -86,19 +84,19 @@ func (h *PresenceHandler) Socket() fiber.Handler {
 		// Only this goroutine writes to the connection.
 		done := make(chan struct{})
 		writerDone := make(chan struct{})
-		write := func(owner string) error {
+		write := func(msg servicePresence.Message) error {
 			_ = conn.SetWriteDeadline(time.Now().Add(socketWriteTimeout))
-			return conn.WriteJSON(ownerMessage{Owner: owner})
+			return conn.WriteJSON(msg)
 		}
 		go func() {
 			defer close(writerDone)
-			if state, err := h.presenceService.Get(ctx, userID); err == nil && write(string(state.Owner)) != nil {
+			if state, err := h.presenceService.Get(ctx, userID); err == nil && write(servicePresence.Message{Owner: state.Owner}) != nil {
 				return
 			}
 			for {
 				select {
-				case owner := <-updates:
-					if write(string(owner)) != nil {
+				case msg := <-updates:
+					if write(msg) != nil {
 						return
 					}
 				case <-done:
@@ -114,7 +112,9 @@ func (h *PresenceHandler) Socket() fiber.Handler {
 			if err := conn.ReadJSON(&msg); err != nil {
 				break
 			}
-			if err := h.presenceService.MacHeartbeat(ctx, userID, msg.Active); err != nil {
+			if err := h.presenceService.MacHeartbeat(ctx, userID, msg.Active); errors.Is(err, "DATA_NOT_FOUND") {
+				break // the account was deleted while connected
+			} else if err != nil {
 				logs.Log.Errorf("presence heartbeat %s: %v", userID, err)
 			}
 			// After the write: mac_seen_at is stamped inside it, so only a later connection's beat is newer.
@@ -125,7 +125,7 @@ func (h *PresenceHandler) Socket() fiber.Handler {
 		_ = conn.Close() // unblocks a write stuck on a dead peer
 		<-writerDone
 		if unsubscribe() {
-			if err := h.presenceService.MacDisconnected(ctx, userID, lastHeartbeat); err != nil {
+			if err := h.presenceService.MacDisconnected(ctx, userID, lastHeartbeat); err != nil && !errors.Is(err, "DATA_NOT_FOUND") {
 				logs.Log.Errorf("presence disconnect %s: %v", userID, err)
 			}
 		}

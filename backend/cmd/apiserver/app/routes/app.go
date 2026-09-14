@@ -30,4 +30,6 @@ func initAppRoute(api fiber.Router, appStore *store.Store) {
 	api.Post("/presence/claim", auth, appStore.PresenceHandler.Claim)
 	api.Post("/presence/release", auth, appStore.PresenceHandler.Release)
 	api.Get("/presence/ws", auth, appStore.PresenceHandler.RequireUpgrade, appStore.PresenceHandler.Socket())
+	api.Get("/skins", auth, appStore.SkinHandler.List)
+	api.Get("/skins/:id/archive", auth, appStore.SkinHandler.Archive)
 }

@@ -7,6 +7,8 @@ import (
 	"befriend/config"
 	"befriend/internal/services/personality"
 	"befriend/internal/services/presence"
+	"befriend/internal/services/skin"
+	"befriend/pkg/clients/db"
 	"befriend/pkg/utils/logs"
 )
 
@@ -26,6 +28,19 @@ func runPersonalityWorker(ctx context.Context, service personality.PersonalitySe
 func runPresenceSweeper(ctx context.Context, service presence.PresenceService) {
 	interval := time.Duration(config.Config.Presence.SweepIntervalSec) * time.Second
 	runEvery(ctx, interval, "presence sweeper", service.Sweep)
+}
+
+// runSkinListener relays skin_changed notifications to the user's Macs and iPhone widgets. They come from settings
+// changes here and from `apiserver skin publish|grant|revoke`, which runs as another process.
+func runSkinListener(ctx context.Context, service presence.PresenceService) {
+	db.Listen(ctx, skin.NotifyChannel, func(userID string) {
+		defer func() {
+			if r := recover(); r != nil {
+				logs.Log.Errorf("skin listener panic: %v", r)
+			}
+		}()
+		service.NotifySkinChanged(userID)
+	})
 }
 
 // runEvery calls pass on a ticker until ctx is cancelled. Each pass is panic-safe, so one bad job can't take

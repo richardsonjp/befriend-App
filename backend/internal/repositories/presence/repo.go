@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"befriend/internal/model"
+	"befriend/pkg/clients/db"
 	"befriend/pkg/utils/errors"
 
 	"gorm.io/gorm"
@@ -19,17 +20,20 @@ WHERE (owner = 'mac' AND (NOT mac_active OR mac_seen_at IS NULL OR mac_seen_at <
 LIMIT @limit`
 
 func (r *presenceRepo) GetForUpdate(ctx context.Context, userID string) (*model.Presence, error) {
-	db := r.dbdget.Get(ctx)
+	conn := r.dbdget.Get(ctx)
 	lock := func() (*model.Presence, error) {
 		m := &model.Presence{}
-		return m, db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).Take(m).Error
+		return m, conn.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).Take(m).Error
 	}
 	m, err := lock()
 	if err != gorm.ErrRecordNotFound {
 		return m, err
 	}
 	// First change for this user: create the row (a concurrent first change may win the insert).
-	if err := db.Exec(`INSERT INTO presence (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING`, userID).Error; err != nil {
+	if err := conn.Exec(`INSERT INTO presence (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING`, userID).Error; err != nil {
+		if db.IsForeignKeyViolation(err) {
+			return nil, errors.From("DATA_NOT_FOUND") // the account was deleted
+		}
 		return nil, err
 	}
 	return lock()

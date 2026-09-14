@@ -31,4 +31,6 @@ var Registry = map[string]AppError{
 	"VERIFICATION_CODE": {Code: "VERIFICATION_CODE", Status: http.StatusBadRequest, Message: "Verification Code bad request"},
 	// # pairing: the code expired, was already used, or doesn't match
 	"PAIRING_GONE": {Code: "PAIRING_GONE", Status: http.StatusGone, Message: "Pairing code expired"},
+	// # skins: not published, or not granted to this account (the two look the same)
+	"SKIN_NOT_FOUND": {Code: "SKIN_NOT_FOUND", Status: http.StatusNotFound, Message: "Skin not found"},
 }

@@ -55,16 +55,38 @@ func (s *presenceService) push(ctx context.Context, userID string, owner Owner) 
 	state := surfaceState(owner, phrasebook, now, rand.IntN)
 
 	for _, d := range devices {
-		sandbox := d.APNsEnv != nil && *d.APNsEnv == "sandbox"
+		sandbox := isSandbox(d)
 		switch {
 		case d.LAPushToken != nil && d.LAStartedAt != nil && now.Sub(*d.LAStartedAt) < liveActivityUsableFor:
 			s.send(ctx, d, "la_push_token", apns.Notification{DeviceToken: *d.LAPushToken, Sandbox: sandbox, PushType: apns.PushTypeLiveActivity, Priority: pushPriority, Payload: activityUpdatePayload(state, now)})
 		case d.LAPushToStartToken != nil:
 			s.send(ctx, d, "la_push_to_start_token", apns.Notification{DeviceToken: *d.LAPushToStartToken, Sandbox: sandbox, PushType: apns.PushTypeLiveActivity, Priority: startPriority, Payload: activityStartPayload(state, name, now)})
 		}
-		if d.WidgetPushToken != nil {
-			s.send(ctx, d, "widget_push_token", apns.Notification{DeviceToken: *d.WidgetPushToken, Sandbox: sandbox, PushType: apns.PushTypeWidgets, Priority: pushPriority, Payload: widgetPayload()})
+		s.sendWidget(ctx, d)
+	}
+}
+
+// pushWidgets asks the user's iPhone widgets to reload; they fetch the account's skin themselves.
+func (s *presenceService) pushWidgets(ctx context.Context, userID string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logs.Log.Errorf("widget push %s panic: %v", userID, r)
 		}
+	}()
+
+	devices, err := s.deviceService.ListPushTargets(ctx, userID)
+	if err != nil {
+		logs.Log.Errorf("widget push %s: %v", userID, err)
+		return
+	}
+	for _, d := range devices {
+		s.sendWidget(ctx, d)
+	}
+}
+
+func (s *presenceService) sendWidget(ctx context.Context, d model.Device) {
+	if d.WidgetPushToken != nil {
+		s.send(ctx, d, "widget_push_token", apns.Notification{DeviceToken: *d.WidgetPushToken, Sandbox: isSandbox(d), PushType: apns.PushTypeWidgets, Priority: pushPriority, Payload: widgetPayload()})
 	}
 }
 
@@ -79,6 +101,10 @@ func (s *presenceService) send(ctx context.Context, d model.Device, column strin
 	default:
 		logs.Log.Errorf("presence push to device %s (%s): %v", d.ID, column, err)
 	}
+}
+
+func isSandbox(d model.Device) bool {
+	return d.APNsEnv != nil && *d.APNsEnv == "sandbox"
 }
 
 // surfaceState picks a phrasebook line for the move: "returned" when the friend comes back to the iPhone,

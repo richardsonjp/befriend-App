@@ -116,3 +116,4 @@ databases:
     databaseName: befriend
     user: befriend
     plan: basic-256mb
+    postgresMajorVersion: "17" # skin selection uses ON DELETE SET NULL (column), Postgres 15+

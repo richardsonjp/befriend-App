@@ -23,6 +23,8 @@ type User struct {
 	// Activity sync settings: while paused, uploads are dropped; excluded app names are never stored.
 	LogSyncPaused bool               `gorm:"column:log_sync_paused;default:false"`
 	ExcludedApps  ct.JSONB[[]string] `gorm:"column:excluded_apps;default:'[]'"`
-	CreatedAt     time.Time          `gorm:"column:created_at;default:now()"`
-	UpdatedAt     time.Time          `gorm:"column:updated_at;default:now()"`
+	// SkinID is the granted skin the account picked; nil means the built-in one.
+	SkinID    *string   `gorm:"column:skin_id"`
+	CreatedAt time.Time `gorm:"column:created_at;default:now()"`
+	UpdatedAt time.Time `gorm:"column:updated_at;default:now()"`
 }
