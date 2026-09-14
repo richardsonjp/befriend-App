@@ -31,6 +31,8 @@ final class MacController {
     private(set) var frontmostApp: String?
     var errorMessage: String?
     let pet = PetStateMachine()
+    /// The account's skin; a pick made on the iPhone arrives over the presence socket.
+    let skins = SkinStore(root: MacConfig.skinsRoot)
 
     @ObservationIgnored let api = MacConfig.makeAPIClient()
     @ObservationIgnored private let uploader: TriggerLogUploader
@@ -131,13 +133,14 @@ final class MacController {
         }
         guard panel == nil else { return }
 
-        let panel = PetPanel(rootView: PetView(pet: pet, poke: { [weak self] in self?.handle(.poked) }, simulate: { [weak self] in self?.handle($0) }))
+        let panel = PetPanel(rootView: PetView(pet: pet, skins: skins, poke: { [weak self] in self?.handle(.poked) }, simulate: { [weak self] in self?.handle($0) }))
         panel.orderFrontRegardless()
         self.panel = panel
         friendVisible = true
 
         let presence = PresenceReporter(api: api)
         presence.onChange = { [weak self] in self?.updateVisibility() }
+        presence.onSkinChanged = { [weak self] in self?.syncSkins() }
         presence.start()
         self.presence = presence
         Task { [weak self] in
@@ -156,6 +159,7 @@ final class MacController {
         backgroundRefresh = Task { [weak self] in
             await self?.refreshSettingsUntilLoaded()
             while !Task.isCancelled {
+                if let self { await self.skins.sync(api: self.api) }
                 try? await Task.sleep(for: Self.personalityRefreshInterval)
                 await self?.checkFriend()
                 await self?.refreshSettingsUntilLoaded()
@@ -167,6 +171,13 @@ final class MacController {
         if case .appSwitched(let name) = trigger { frontmostApp = name }
         uploader.record(trigger)
         if friendVisible { brain.handle(trigger) }
+    }
+
+    private func syncSkins() {
+        Task { [weak self] in
+            guard let self else { return }
+            await self.skins.sync(api: self.api)
+        }
     }
 
     // MARK: Presence
@@ -321,6 +332,15 @@ final class MacController {
         await updateSettings { try await self.api.updateSyncSettings(excludedApps: self.settings.excludedApps + [app]) }
     }
 
+    /// Picks the account's skin (nil = the built-in one); the iPhone follows.
+    func selectSkin(_ id: String?) async {
+        do {
+            try await skins.select(id, api: api)
+        } catch {
+            NSSound.beep()
+        }
+    }
+
     func deleteActivity() async {
         do {
             try await api.deleteTriggerEvents()
@@ -367,6 +387,7 @@ final class MacController {
         friend = nil
         brain = PetBrain()
         pet.apply(PetReaction(action: .idle, mood: .content, dialogue: ""))
+        skins.reset()
         apply(SyncSettings())
         MacConfig.saveSettings(nil)
         MacConfig.saveFriend(nil)

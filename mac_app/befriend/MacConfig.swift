@@ -30,6 +30,9 @@ enum MacConfig {
 
     static var triggerQueueURL: URL { supportDirectory.appending(path: "trigger-queue.json") }
 
+    /// Installed skins and the one to draw (see SkinInstaller).
+    static var skinsRoot: URL { supportDirectory.appending(path: "Skins", directoryHint: .isDirectory) }
+
     /// The last friend profile, so the pet appears offline too.
     static func loadFriend() -> FriendProfile? {
         guard let data = try? Data(contentsOf: supportDirectory.appending(path: "friend.json")) else { return nil }

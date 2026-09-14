@@ -33,6 +33,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(stop.targeted(self))
             menu.addItem(NSMenuItem(title: "Delete Synced Activity…", action: #selector(deleteActivity), keyEquivalent: "").targeted(self))
             menu.addItem(.separator())
+            menu.addItem(skinMenu())
+            menu.addItem(.separator())
             menu.addItem(NSMenuItem(title: "Sign Out", action: #selector(signOut), keyEquivalent: "").targeted(self))
         case .waitingForFriend:
             menu.addItem(NSMenuItem(title: "Show Setup…", action: #selector(showWindow), keyEquivalent: "").targeted(self))
@@ -42,6 +44,26 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit befriend", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+    }
+
+    /// The built-in skin plus the skins the account was granted; the account's pick is checked.
+    private func skinMenu() -> NSMenuItem {
+        let submenu = NSMenu()
+        let choices: [(name: String, id: String?)] = [("Pixel Cat", nil)] + controller.skins.granted.map { ($0.name, $0.id) }
+        for choice in choices {
+            let item = NSMenuItem(title: choice.name, action: #selector(selectSkin(_:)), keyEquivalent: "").targeted(self)
+            item.representedObject = choice.id
+            item.state = controller.skins.current?.pickID == choice.id ? .on : .off
+            submenu.addItem(item)
+        }
+        let item = NSMenuItem(title: "Skin", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func selectSkin(_ sender: NSMenuItem) {
+        let id = sender.representedObject as? String
+        Task { await controller.selectSkin(id) }
     }
 
     @objc private func togglePause() {

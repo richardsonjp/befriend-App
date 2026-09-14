@@ -18,6 +18,8 @@ final class PresenceReporter {
 
     /// Called whenever `isActive`, `owner` or `isConnected` changes.
     var onChange: () -> Void = {}
+    /// Called when the backend says the account's skin changed (picked elsewhere, granted, revoked or updated).
+    var onSkinChanged: () -> Void = {}
 
     private(set) var isActive = true
     private(set) var owner: PresenceOwner?
@@ -107,11 +109,12 @@ final class PresenceReporter {
         while true {
             let message = try await socket.receive()
             guard case .string(let text) = message,
-                  let decoded = try? JSONDecoder().decode(OwnerMessage.self, from: Data(text.utf8)) else { continue }
+                  let decoded = try? JSONDecoder().decode(ServerMessage.self, from: Data(text.utf8)) else { continue }
             backoff = .seconds(1)
-            if !isConnected || decoded.owner != owner {
+            if decoded.skinChanged == true { onSkinChanged() }
+            if let newOwner = decoded.owner, !isConnected || newOwner != owner {
                 isConnected = true
-                owner = decoded.owner
+                owner = newOwner
                 onChange()
             }
         }
@@ -121,8 +124,16 @@ final class PresenceReporter {
         socket?.send(.string(isActive ? #"{"active":true}"# : #"{"active":false}"#)) { _ in }
     }
 
-    private struct OwnerMessage: Decodable {
-        let owner: PresenceOwner
+    /// `{"owner": …}` on connect and on every owner change, `{"skin_changed": true}` when the skin changes; both can
+    /// arrive in one message.
+    private struct ServerMessage: Decodable {
+        let owner: PresenceOwner?
+        let skinChanged: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case owner
+            case skinChanged = "skin_changed"
+        }
     }
 
     // MARK: System state

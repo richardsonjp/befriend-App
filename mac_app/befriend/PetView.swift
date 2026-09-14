@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PetView: View {
     let pet: PetStateMachine
+    let skins: SkinStore
     var poke: () -> Void = {}
     var simulate: (Trigger) -> Void = { _ in }
 
@@ -18,7 +19,7 @@ struct PetView: View {
                 SpeechBubble(text: dialogue)
                     .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
             }
-            PlaceholderCharacterView(action: pet.action, mood: pet.mood)
+            CharacterView(skin: skins.current, action: pet.action, mood: pet.mood)
                 .onTapGesture(perform: poke)
         }
         .animation(.snappy, value: pet.dialogue)

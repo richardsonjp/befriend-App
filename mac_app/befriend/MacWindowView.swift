@@ -17,7 +17,7 @@ struct MacWindowView: View {
         VStack(spacing: 20) {
             switch controller.stage {
             case .waitingForFriend:
-                WaitingView()
+                WaitingView(skin: controller.skins.current)
             default:
                 SignInView(controller: controller)
             }
@@ -28,9 +28,11 @@ struct MacWindowView: View {
 }
 
 private struct WaitingView: View {
+    let skin: InstalledSkin?
+
     var body: some View {
         Spacer()
-        PlaceholderCharacterView(action: .sleep, mood: .sleepy)
+        CharacterView(skin: skin, action: .sleep, mood: .sleepy)
         Text("Finish setting up your friend on iPhone").font(.title2.bold()).multilineTextAlignment(.center)
         Text("Answer a few questions in befriend on your iPhone. Your friend appears here once it hatches.")
             .multilineTextAlignment(.center)
