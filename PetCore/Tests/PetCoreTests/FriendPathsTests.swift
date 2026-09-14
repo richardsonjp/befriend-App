@@ -52,6 +52,6 @@ struct FriendPathsTests {
     }
 
     @Test func walkingTakesDistanceOverSpeed() {
-        #expect(FriendPaths.duration(from: .zero, to: CGPoint(x: 54, y: 72)) == 1) // 90 points
+        #expect(FriendPaths.duration(from: .zero, to: CGPoint(x: 84, y: 112)) == 1) // 140 points
     }
 }

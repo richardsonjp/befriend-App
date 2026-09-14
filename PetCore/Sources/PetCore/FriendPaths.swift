@@ -11,7 +11,7 @@ import Foundation
 
 public nonisolated enum FriendPaths {
     /// Points per second.
-    public static let walkSpeed: CGFloat = 90
+    public static let walkSpeed: CGFloat = 140
     /// A wander should look like a trip, not a shuffle.
     public static let minimumWander: CGFloat = 200
     /// How long the friend stays put between wanders.
