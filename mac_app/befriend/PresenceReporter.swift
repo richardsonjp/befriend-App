@@ -24,6 +24,8 @@ final class PresenceReporter {
     private(set) var isActive = true
     private(set) var owner: PresenceOwner?
     private(set) var isConnected = false
+    /// Locked or asleep: nobody would see the friend walk away.
+    var screenUnavailable: Bool { screenLocked || asleep }
 
     private let api: APIClient
     private var idleSeconds: TimeInterval = 0

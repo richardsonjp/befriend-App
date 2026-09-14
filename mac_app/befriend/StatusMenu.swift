@@ -4,20 +4,53 @@
 //
 
 import AppKit
+import Observation
 import PetCore
 
-/// The menu bar item: activity sync controls, sign in/out, quit. Rebuilt each time it opens.
+/// The menu bar item: activity sync controls, sign in/out, quit. Rebuilt each time it opens. It's also the friend's
+/// home: while the friend is inside, the icon is its head in the current mood.
 final class StatusMenu: NSObject, NSMenuDelegate {
+    private static let iconSize = NSSize(width: 16, height: 16)
+
     private let controller: MacController
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
     init(controller: MacController) {
         self.controller = controller
         super.init()
-        item.button?.image = NSImage(systemSymbolName: "cat.fill", accessibilityDescription: "befriend")
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
+        controller.walker.dockFrame = { [weak self] in self?.iconFrame }
+        updateIcon()
+    }
+
+    private var iconFrame: CGRect? {
+        guard let button = item.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
+
+    /// Redraws whenever what it shows changes: the stage, whether the friend is home, its mood, or the skin.
+    private func updateIcon() {
+        withObservationTracking {
+            item.button?.image = icon()
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.updateIcon() }
+        }
+    }
+
+    private func icon() -> NSImage? {
+        let outline = NSImage(systemSymbolName: "cat", accessibilityDescription: "befriend")
+        guard controller.stage == .ready, controller.walker.isInside, let skin = controller.skins.current,
+              let head = NSImage(contentsOf: skin.mini(controller.pet.mood)) else { return outline }
+        // The 16-pixel head at 16 points, pixels kept square.
+        let image = NSImage(size: Self.iconSize, flipped: false) { rect in
+            NSGraphicsContext.current?.imageInterpolation = .none
+            head.draw(in: rect)
+            return true
+        }
+        image.accessibilityDescription = "befriend, your friend is here"
+        return image
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -34,6 +67,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(NSMenuItem(title: "Delete Synced Activity…", action: #selector(deleteActivity), keyEquivalent: "").targeted(self))
             menu.addItem(.separator())
             menu.addItem(skinMenu())
+            #if DEBUG
+            if controller.walker.isInside {
+                menu.addItem(NSMenuItem(title: "Come Out", action: #selector(comeOut), keyEquivalent: "").targeted(self))
+            }
+            #endif
             menu.addItem(.separator())
             menu.addItem(NSMenuItem(title: "Sign Out", action: #selector(signOut), keyEquivalent: "").targeted(self))
         case .waitingForFriend:
@@ -64,6 +102,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func selectSkin(_ sender: NSMenuItem) {
         let id = sender.representedObject as? String
         Task { await controller.selectSkin(id) }
+    }
+
+    @objc private func comeOut() {
+        controller.walker.comeOut()
     }
 
     @objc private func togglePause() {

@@ -33,6 +33,8 @@ final class MacController {
     let pet = PetStateMachine()
     /// The account's skin; a pick made on the iPhone arrives over the presence socket.
     let skins = SkinStore(root: MacConfig.skinsRoot)
+    /// Walks the friend between the menu bar icon and the screen.
+    let walker = FriendWalker()
 
     @ObservationIgnored let api = MacConfig.makeAPIClient()
     @ObservationIgnored private let uploader: TriggerLogUploader
@@ -49,6 +51,8 @@ final class MacController {
     @ObservationIgnored private var peer: PresencePeer?
     @ObservationIgnored private var phoneClaimedNearby = false
     @ObservationIgnored private var friendVisible = true
+    /// The latest reaction that arrived while the friend was walking or away.
+    @ObservationIgnored private var heldReaction: PetReaction?
 
     init() {
         uploader = TriggerLogUploader(api: api, fileURL: MacConfig.triggerQueueURL)
@@ -129,14 +133,24 @@ final class MacController {
 
         if isNewVersion {
             brain = PetBrain(friend: latest)
-            brain.onReaction = { [pet] in pet.apply($0) }
+            brain.onReaction = { [weak self] in self?.show($0) }
         }
         guard panel == nil else { return }
 
-        let panel = PetPanel(rootView: PetView(pet: pet, skins: skins, poke: { [weak self] in self?.handle(.poked) }, simulate: { [weak self] in self?.handle($0) }))
-        panel.orderFrontRegardless()
+        let panel = PetPanel { [pet, skins, walker] panel in
+            PetView(
+                pet: pet, skins: skins, walker: walker,
+                poke: { [weak self] in self?.handle(.poked) },
+                simulate: { [weak self] in self?.handle($0) },
+                reportHitAreas: { [weak panel] in panel?.hitAreas = $0 }
+            )
+        }
         self.panel = panel
+        walker.panel = panel
+        walker.canWander = { [pet] in pet.action == .idle && pet.dialogue == nil }
+        walker.onSettled = { [weak self] in self?.showHeldReaction() }
         friendVisible = true
+        walker.comeOut()
 
         let presence = PresenceReporter(api: api)
         presence.onChange = { [weak self] in self?.updateVisibility() }
@@ -154,7 +168,7 @@ final class MacController {
         monitor.start()
         self.monitor = monitor
         uploader.start()
-        pet.apply(brain.quickReaction(to: .returned(afterSeconds: 0)))
+        show(brain.quickReaction(to: .returned(afterSeconds: 0)))
 
         backgroundRefresh = Task { [weak self] in
             await self?.refreshSettingsUntilLoaded()
@@ -171,6 +185,23 @@ final class MacController {
         if case .appSwitched(let name) = trigger { frontmostApp = name }
         uploader.record(trigger)
         if friendVisible { brain.handle(trigger) }
+    }
+
+    /// Reactions wait while the friend walks or hops, so its bubble never trails half off screen; the latest one
+    /// plays once it stands still.
+    private func show(_ reaction: PetReaction) {
+        guard friendVisible else { return } // finished generating after the friend left: stale by the time it's back
+        if walker.place == .out {
+            pet.apply(reaction)
+        } else {
+            heldReaction = reaction
+        }
+    }
+
+    private func showHeldReaction() {
+        guard let reaction = heldReaction else { return }
+        heldReaction = nil
+        pet.apply(reaction)
     }
 
     private func syncSkins() {
@@ -193,9 +224,10 @@ final class MacController {
         self.peer = peer
     }
 
-    /// Shows the friend only where it is (see PresenceVisibility), fading the panel in or out.
+    /// Shows the friend only where it is (see PresenceVisibility): it comes out of the menu bar icon, or goes back
+    /// in, straight away if the screen is locked or asleep.
     private func updateVisibility() {
-        guard let panel, let presence else { return }
+        guard panel != nil, let presence else { return }
         if presence.owner == .phone { phoneClaimedNearby = false } // the backend caught up with the nearby claim
         let show = PresenceVisibility.macShowsFriend(
             isActive: presence.isActive,
@@ -206,17 +238,11 @@ final class MacController {
         guard show != friendVisible else { return }
         friendVisible = show
         if show {
-            panel.alphaValue = 0
-            panel.orderFrontRegardless()
+            walker.comeOut()
+        } else {
+            heldReaction = nil
+            walker.goHome(instant: presence.screenUnavailable)
         }
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.3
-            panel.animator().alphaValue = show ? 1 : 0
-        }, completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                if self?.friendVisible == false { self?.panel?.orderOut(nil) }
-            }
-        })
     }
 
     // MARK: Pairing
@@ -382,6 +408,8 @@ final class MacController {
         uploader.clear()
         monitor?.stop()
         monitor = nil
+        walker.goHome(instant: true)
+        heldReaction = nil
         panel?.close()
         panel = nil
         friend = nil
