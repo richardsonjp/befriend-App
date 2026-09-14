@@ -5,6 +5,9 @@
       location = "group:PetCore">
    </FileRef>
    <FileRef
+      location = "group:ios_app/befriend.xcodeproj">
+   </FileRef>
+   <FileRef
       location = "group:mac_app/befriend.xcodeproj">
    </FileRef>
 </Workspace>
