@@ -16,8 +16,24 @@ let package = Package(
     products: [
         .library(name: "PetCore", targets: ["PetCore"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/airbnb/lottie-spm.git", from: "4.6.1"),
+        .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.20"),
+    ],
     targets: [
-        .target(name: "PetCore", swiftSettings: settings),
-        .testTarget(name: "PetCoreTests", dependencies: ["PetCore"], swiftSettings: settings),
+        .target(
+            name: "PetCore",
+            dependencies: [
+                .product(name: "Lottie", package: "lottie-spm"),
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+            ],
+            resources: [.copy("Resources/pixel-cat.zip")], // built from skins/pixel-cat
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PetCoreTests",
+            dependencies: ["PetCore", .product(name: "ZIPFoundation", package: "ZIPFoundation")],
+            swiftSettings: settings
+        ),
     ]
 )

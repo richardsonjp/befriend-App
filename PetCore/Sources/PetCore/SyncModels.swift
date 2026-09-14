@@ -32,10 +32,13 @@ public nonisolated enum PairingClaim: Equatable, Sendable {
 public nonisolated struct SyncSettings: Codable, Equatable, Sendable {
     public var logSyncPaused: Bool
     public var excludedApps: [String]
+    /// The account's skin; nil is the built-in one.
+    public var skinId: String?
 
-    public init(logSyncPaused: Bool = false, excludedApps: [String] = []) {
+    public init(logSyncPaused: Bool = false, excludedApps: [String] = [], skinId: String? = nil) {
         self.logSyncPaused = logSyncPaused
         self.excludedApps = excludedApps
+        self.skinId = skinId
     }
 
     public func excludes(appName: String) -> Bool {

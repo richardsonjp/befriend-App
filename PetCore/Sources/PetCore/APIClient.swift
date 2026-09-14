@@ -122,7 +122,7 @@ public final class APIClient {
         _ = try await sendRaw(method, path, body: body, authorized: authorized)
     }
 
-    private func sendRaw(_ method: String, _ path: String, body: (any Encodable)?, authorized: Bool) async throws -> Data {
+    func sendRaw(_ method: String, _ path: String, body: (any Encodable)?, authorized: Bool) async throws -> Data {
         var request = URLRequest(url: baseURL.appending(path: "api/" + path))
         request.httpMethod = method
         request.setValue(staticAPIKey, forHTTPHeaderField: "STATIC-API-KEY")

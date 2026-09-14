@@ -8,18 +8,27 @@ nonisolated final class StubServer: @unchecked Sendable {
     private let lock = NSLock()
     private var handler: (URLRequest) -> (Int, String) = { _ in (500, "") }
     private var log: [URLRequest] = []
+    private var files: [String: Data] = [:]
 
     func reset(_ handler: @escaping (URLRequest) -> (Int, String)) {
         lock.withLock {
             self.handler = handler
             log = []
+            files = [:]
         }
     }
 
-    func respond(to request: URLRequest) -> (Int, String) {
+    /// Answers requests for `path` with these bytes (status 200) instead of the handler.
+    func serve(_ data: Data, at path: String) {
+        lock.withLock { files[path] = data }
+    }
+
+    func respond(to request: URLRequest) -> (Int, Data) {
         lock.withLock {
             log.append(request)
-            return handler(request)
+            if let data = files[request.url?.path ?? ""] { return (200, data) }
+            let (status, body) = handler(request)
+            return (status, Data(body.utf8))
         }
     }
 
@@ -36,7 +45,7 @@ nonisolated final class StubProtocol: URLProtocol {
         let (status, body) = StubServer.shared.respond(to: request)
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
     }
 
