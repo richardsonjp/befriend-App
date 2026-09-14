@@ -20,7 +20,7 @@ struct SignInView: View {
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            PlaceholderCharacterView(action: .wave, mood: .excited)
+            CharacterView(skin: model.skins.current, action: .wave, mood: .excited)
             Text("befriend").font(.largeTitle.bold())
             Text("A small friend who lives on your iPhone and your Mac.")
                 .multilineTextAlignment(.center)

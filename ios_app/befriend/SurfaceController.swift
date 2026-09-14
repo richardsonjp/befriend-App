@@ -60,6 +60,17 @@ final class SurfaceController {
         }
     }
 
+    /// The account's skin changed: the widget and Live Activity draw their stills from disk, so redraw them. The
+    /// activity gets a fresh timestamp, since an update with identical content may not redraw it.
+    func skinChanged() {
+        WidgetCenter.shared.reloadAllTimelines()
+        for activity in Activity<FriendActivityAttributes>.activities {
+            let old = activity.content.state
+            let state = FriendSurfaceState(presence: old.presence, mood: old.mood, action: old.action, line: old.line)
+            Task { await activity.update(ActivityContent(state: state, staleDate: activity.content.staleDate)) }
+        }
+    }
+
     func signedOut() {
         tokenTasks.forEach { $0.cancel() }
         tokenTasks = []

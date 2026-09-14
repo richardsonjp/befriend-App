@@ -17,6 +17,11 @@ nonisolated enum SharedStore {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroup)
     }
 
+    /// Installed skins and the one to draw (see SkinInstaller), shared so the widget draws what the app picked.
+    static var skinsRoot: URL {
+        (container ?? URL.applicationSupportDirectory).appending(path: "Skins", directoryHint: .isDirectory)
+    }
+
     static func loadFriend() -> FriendProfile? {
         guard let data = read(friendFile) else { return nil }
         return try? Wire.decoder.decode(FriendProfile.self, from: data)

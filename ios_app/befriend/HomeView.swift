@@ -11,7 +11,7 @@ struct HatchingView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            PlaceholderCharacterView(action: .sleep, mood: .sleepy)
+            CharacterView(skin: SkinInstaller.current(in: SharedStore.skinsRoot), action: .sleep, mood: .sleepy)
             Text("\(name) is hatching…").font(.title2.bold())
             Text("Your friend's personality is being written. This can take a minute.")
                 .multilineTextAlignment(.center)
@@ -41,7 +41,7 @@ struct HomeView: View {
                             SpeechBubble(text: dialogue)
                                 .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
                         }
-                        PlaceholderCharacterView(action: model.pet.action, mood: model.pet.mood)
+                        CharacterView(skin: model.skins.current, action: model.pet.action, mood: model.pet.mood)
                             .contentShape(Rectangle())
                             .onTapGesture { Task { await model.poke() } }
                             .accessibilityAddTraits(.isButton)
@@ -219,6 +219,17 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    skinRow("Pixel Cat", id: nil)
+                    ForEach(model.skins.granted) { skin in
+                        skinRow(skin.name, id: skin.id)
+                    }
+                } header: {
+                    Text("Look")
+                } footer: {
+                    Text("Your friend looks the same on your iPhone and Mac. Skins you're given show up here.")
+                }
+
+                Section {
                     if let sync {
                         Toggle("Pause activity sync", isOn: Binding(
                             get: { sync.logSyncPaused },
@@ -280,6 +291,7 @@ struct SettingsView: View {
                     self.error = AppModel.message(for: error)
                 }
             }
+            .task { await model.skins.sync(api: model.api) }
             .confirmationDialog("Delete your synced activity?", isPresented: $confirmDeleteActivity, titleVisibility: .visible) {
                 Button("Delete activity", role: .destructive) {
                     Task { await perform { try await model.api.deleteTriggerEvents() } }
@@ -296,6 +308,21 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("Your friend will be gone for good.")
+            }
+        }
+    }
+
+    /// A skin choice; picking one saves it for the whole account and downloads it if needed.
+    private func skinRow(_ name: String, id: String?) -> some View {
+        Button {
+            Task { await perform { try await model.skins.select(id, api: model.api) } }
+        } label: {
+            HStack {
+                Text(name).foregroundStyle(.primary)
+                Spacer()
+                if model.skins.current?.pickID == id {
+                    Image(systemName: "checkmark").foregroundStyle(.tint)
+                }
             }
         }
     }

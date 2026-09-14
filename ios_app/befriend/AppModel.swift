@@ -29,6 +29,8 @@ final class AppModel {
     /// A Mac pairing code from a scanned QR, shown once the friend is ready.
     var pendingPairingCode: String?
     let pet = PetStateMachine()
+    /// The account's skin, shared with the widget through the App Group.
+    let skins = SkinStore(root: SharedStore.skinsRoot)
 
     @ObservationIgnored let api = AppConfig.makeAPIClient()
     @ObservationIgnored private var brain = PetBrain()
@@ -46,6 +48,7 @@ final class AppModel {
             ?? URL.applicationSupportDirectory
         uploader = TriggerLogUploader(api: api, fileURL: queueURL.appending(path: "trigger-queue.json"))
         PokeIntent.handler = { [weak self] in await self?.poke() }
+        skins.onChange = { [weak self] in self?.surfaces.skinChanged() }
     }
 
     var friend: FriendProfile? {
@@ -86,6 +89,7 @@ final class AppModel {
         do {
             try await action()
             await refresh()
+            await skins.sync(api: api)
         } catch {
             errorMessage = Self.message(for: error)
         }
@@ -121,6 +125,7 @@ final class AppModel {
         peer = nil
         SharedStore.saveFriend(nil)
         surfaces.signedOut()
+        skins.reset()
         brain = PetBrain()
         phase = .signedOut
     }
@@ -229,6 +234,9 @@ final class AppModel {
 
     func scenePhaseChanged(_ scenePhase: ScenePhase) {
         if scenePhase != .inactive { isForeground = scenePhase == .active }
+        if scenePhase == .active, api.isSignedIn {
+            Task { await skins.sync(api: api) } // a skin picked on the Mac, granted, or revoked meanwhile
+        }
         guard let current = friend else { return }
         switch scenePhase {
         case .active:
@@ -261,6 +269,7 @@ final class AppModel {
         uploader.record(.checkIn)
         show(await brain.react(to: .checkIn))
         await uploader.flush()
+        await skins.sync(api: api)
     }
 
     /// Background launches (refresh, intents) skip the window's start(): bring back the saved friend.

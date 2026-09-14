@@ -13,8 +13,7 @@ struct FriendLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FriendActivityAttributes.self) { context in
             HStack(spacing: 16) {
-                FriendPose(state: context.state, size: 44)
-                    .frame(width: 64, height: 64)
+                FriendPose(state: context.state, size: 64)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(context.attributes.friendName).font(.headline)
                     Text(context.state.displayLine).font(.subheadline).lineLimit(2)
@@ -30,7 +29,7 @@ struct FriendLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    FriendPose(state: context.state, size: 36)
+                    FriendPose(state: context.state, size: 48, head: true)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text(context.attributes.friendName).font(.headline)
@@ -46,33 +45,39 @@ struct FriendLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                FriendPose(state: context.state, size: 16)
+                FriendPose(state: context.state, size: 32, head: true)
             } compactTrailing: {
                 Circle()
                     .fill(context.state.mood.tint)
                     .frame(width: 10, height: 10)
             } minimal: {
-                FriendPose(state: context.state, size: 14)
+                FriendPose(state: context.state, size: 32, head: true)
             }
         }
     }
 }
 
-/// A still pose that fits any size: the friend tinted by mood, or a laptop while it's on the Mac.
+/// A still of the friend in the account's skin, or a laptop while it's on the Mac. `head` draws the 16-pixel
+/// head made for the Dynamic Island. Sizes are whole multiples of the pixels, so they stay crisp.
 struct FriendPose: View {
     let state: FriendSurfaceState
     let size: CGFloat
+    var head = false
 
     var body: some View {
-        if state.presence == .onMac {
-            Image(systemName: "laptopcomputer")
-                .font(.system(size: size))
-        } else {
-            Image(systemName: "cat.fill")
-                .font(.system(size: size))
-                .foregroundStyle(state.mood.tint)
-                .opacity(state.action == .sleep ? 0.6 : 1)
+        Group {
+            if state.presence == .onMac {
+                Image(systemName: "laptopcomputer")
+                    .font(.system(size: size * 0.6))
+            } else if let skin = SkinInstaller.current(in: SharedStore.skinsRoot) {
+                PixelImage(url: head ? skin.mini(state.mood) : skin.still(state.action, state.mood))
+            } else {
+                Image(systemName: "cat.fill")
+                    .font(.system(size: size * 0.6))
+                    .foregroundStyle(state.mood.tint)
+            }
         }
+        .frame(width: size, height: size)
     }
 }
 
