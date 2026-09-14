@@ -21,13 +21,19 @@ public struct CharacterView: View {
     let skin: InstalledSkin?
     let action: PetAction
     let mood: PetMood
+    /// Plays the walk cycle instead of the action (the Mac moving the friend around).
+    let walking: Bool
+    /// Mirrors the friend; skins draw it heading right.
+    let facingLeft: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(skin: InstalledSkin?, action: PetAction, mood: PetMood) {
+    public init(skin: InstalledSkin?, action: PetAction, mood: PetMood, walking: Bool = false, facingLeft: Bool = false) {
         self.skin = skin
         self.action = action
         self.mood = mood
+        self.walking = walking
+        self.facingLeft = facingLeft
     }
 
     public var body: some View {
@@ -42,13 +48,15 @@ public struct CharacterView: View {
             }
         }
         .frame(width: Self.size, height: Self.size)
+        .scaleEffect(x: facingLeft ? -1 : 1)
     }
 
     private func animation(_ skin: InstalledSkin) -> some View {
+        let marker = walking ? InstalledSkin.walkMarker : action.rawValue
         var view = LottieView { LottieAnimation.filepath(skin.lottieURL.path) }
             .configuration(LottieConfiguration(renderingEngine: .coreAnimation))
             .resizable()
-            .playbackMode(.playing(.marker(action.rawValue, loopMode: action.isOneShot ? .playOnce : .loop)))
+            .playbackMode(.playing(.marker(marker, loopMode: !walking && action.isOneShot ? .playOnce : .loop)))
         for face in PetMood.allCases {
             view = view.valueProvider(
                 FloatValueProvider(face == mood ? 100 : 0),
