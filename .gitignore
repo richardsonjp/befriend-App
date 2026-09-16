@@ -22,3 +22,4 @@ mac_app/Config/Local.xcconfig
 harvest/
 training/data/
 training/out/
+__pycache__/
