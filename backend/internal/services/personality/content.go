@@ -24,6 +24,12 @@ const (
 	minLinesPerSlot = phrasetable.MinLines
 	maxLinesPerSlot = phrasetable.MaxLines
 	appPlaceholder  = "{app}"
+
+	minSummary      = phrasetable.MinSummaryRunes
+	minVoice        = phrasetable.MinVoiceRunes
+	minInstructions = phrasetable.MinInstructionsRunes
+	minTrait        = phrasetable.MinTraitRunes
+	minLineText     = phrasetable.MinTextRunes
 )
 
 // Personality is the friend's character, shown in the apps and fed to the on-device model.
@@ -72,14 +78,14 @@ func Validate(g *Generated) (*Personality, Phrasebook, error) {
 		Voice:        clean(g.Voice),
 		Instructions: clean(g.Instructions),
 	}
-	if err := checkText("summary", p.Summary, maxSummary, true); err != nil {
+	if err := checkText("summary", p.Summary, minSummary, maxSummary, true); err != nil {
 		return nil, nil, err
 	}
-	if err := checkText("voice", p.Voice, maxVoice, true); err != nil {
+	if err := checkText("voice", p.Voice, minVoice, maxVoice, true); err != nil {
 		return nil, nil, err
 	}
 	// Instructions may legitimately say "never mention being an AI", so they skip the character check.
-	if err := checkText("instructions", p.Instructions, maxInstructions, false); err != nil {
+	if err := checkText("instructions", p.Instructions, minInstructions, maxInstructions, false); err != nil {
 		return nil, nil, err
 	}
 	if len(g.Traits) < minTraits || len(g.Traits) > maxTraits {
@@ -87,7 +93,7 @@ func Validate(g *Generated) (*Personality, Phrasebook, error) {
 	}
 	for _, trait := range g.Traits {
 		trait = clean(trait)
-		if err := checkText("trait", trait, maxTrait, true); err != nil {
+		if err := checkText("trait", trait, minTrait, maxTrait, true); err != nil {
 			return nil, nil, err
 		}
 		p.Traits = append(p.Traits, trait)
@@ -108,7 +114,7 @@ func Validate(g *Generated) (*Personality, Phrasebook, error) {
 		lines := make([]PhraseLine, 0, len(entry.Lines))
 		for _, line := range entry.Lines {
 			text := clean(line.Text)
-			if err := checkText("phrasebook "+slot, text, maxLineText, true); err != nil {
+			if err := checkText("phrasebook "+slot, text, minLineText, maxLineText, true); err != nil {
 				return nil, nil, err
 			}
 			if !vocabulary.IsAction(line.Action) {
@@ -148,12 +154,18 @@ func clean(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-func checkText(field, s string, max int, userFacing bool) error {
+// checkText runs after clean, which is the only place a minimum can be trusted: a grammar can cap length but
+// cannot stop a model padding to it with zero-width characters, and clean strips those. "Hi" followed by 18
+// zero-width spaces satisfies a 20-character floor until it doesn't.
+func checkText(field, s string, min, max int, userFacing bool) error {
 	if s == "" {
 		return fmt.Errorf("%s: empty", field)
 	}
-	if n := utf8.RuneCountInString(s); n > max {
+	switch n := utf8.RuneCountInString(s); {
+	case n > max:
 		return fmt.Errorf("%s: %d characters, max %d", field, n, max)
+	case n < min:
+		return fmt.Errorf("%s: %d characters, min %d", field, n, min)
 	}
 	if userFacing && breaksCharacter.MatchString(s) {
 		return fmt.Errorf("%s: mentions being an AI", field)

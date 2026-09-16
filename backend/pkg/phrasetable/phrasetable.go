@@ -198,7 +198,9 @@ func bounds(key string) (min, max int) {
 		return MinVoiceRunes, MaxVoiceRunes
 	case "instructions":
 		return MinInstructionsRunes, MaxInstructionsRunes
-	default: // traits, checked per trait once split
+	default:
+		// traits, as one joined string. Deliberately looser than the grammar — the real check is per trait,
+		// once split — so don't "tighten" this to match: it would start rejecting valid comma spacing.
 		return MinTraits * MinTraitRunes, MaxTraits * (MaxTraitRunes + 1)
 	}
 }

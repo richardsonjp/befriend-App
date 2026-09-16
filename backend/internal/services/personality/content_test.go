@@ -42,10 +42,20 @@ func TestValidate(t *testing.T) {
 		{name: "valid output", mutate: func(g *Generated) {}},
 		{name: "instructions may say never mention being an AI", mutate: func(g *Generated) {}},
 		{name: "whitespace, control and invisible characters are cleaned, not rejected", mutate: func(g *Generated) {
-			g.Summary = "  A sleepy\n\tcat  "
-			g.Voice = "Soft\u202e and \u200bplayful"
+			g.Summary = "  A sleepy\n\tcat who judges your tab habits  "
+			g.Voice = "Soft\u202e and \u200bplayful, never naggy"
 			g.Phrasebook[0].Lines[0].Text = "Hi\x00 there"
 		}},
+		// A grammar can cap length but cannot stop a model padding to the floor with zero-width characters.
+		// clean strips them, so the floor is only real if it is checked after cleaning.
+		{name: "a summary padded to length with zero-width spaces", mutate: func(g *Generated) {
+			g.Summary = "Hi" + strings.Repeat("\u200b", minSummary)
+		}, wantErr: "summary: 2 characters, min 20"},
+		{name: "summary too short", mutate: func(g *Generated) { g.Summary = "A cat." }, wantErr: "min 20"},
+		{name: "voice too short", mutate: func(g *Generated) { g.Voice = "Warm." }, wantErr: "min 20"},
+		{name: "instructions too short", mutate: func(g *Generated) { g.Instructions = "You are Miso." }, wantErr: "min 40"},
+		{name: "trait too short", mutate: func(g *Generated) { g.Traits[0] = "x" }, wantErr: "trait: 1 characters, min 3"},
+		{name: "line too short", mutate: func(g *Generated) { g.Phrasebook[0].Lines[0].Text = "hi" }, wantErr: "min 4"},
 		{name: "empty summary", mutate: func(g *Generated) { g.Summary = " \n " }, wantErr: "summary: empty"},
 		{name: "summary too long", mutate: func(g *Generated) { g.Summary = strings.Repeat("a", maxSummary+1) }, wantErr: "summary"},
 		{name: "instructions too long", mutate: func(g *Generated) { g.Instructions = strings.Repeat("é", maxInstructions+1) }, wantErr: "instructions"},
