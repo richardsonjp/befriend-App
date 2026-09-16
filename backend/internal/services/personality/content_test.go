@@ -70,6 +70,14 @@ func TestValidate(t *testing.T) {
 		}},
 		{name: "trait too short", mutate: func(g *Generated) { g.Traits[0] = "x" }, wantErr: "trait: 1 characters, min 3"},
 		{name: "line too short", mutate: func(g *Generated) { g.Phrasebook[0].Lines[0].Text = "hi" }, wantErr: "min 4"},
+		// A slot's lines are picked from at random, so a repeat means the friend always says the same thing.
+		{name: "a slot that repeats itself", mutate: func(g *Generated) {
+			g.Phrasebook[0].Lines[1].Text = g.Phrasebook[0].Lines[0].Text
+		}, wantErr: "more than once"},
+		{name: "a repeat differing only in case", mutate: func(g *Generated) {
+			g.Phrasebook[0].Lines[0].Text = "Back again already?"
+			g.Phrasebook[0].Lines[1].Text = "BACK AGAIN ALREADY?"
+		}, wantErr: "more than once"},
 		{name: "empty summary", mutate: func(g *Generated) { g.Summary = " \n " }, wantErr: "summary: empty"},
 		{name: "summary too long", mutate: func(g *Generated) { g.Summary = strings.Repeat("a", maxSummary+1) }, wantErr: "summary"},
 		{name: "instructions too long", mutate: func(g *Generated) { g.Instructions = strings.Repeat("é", maxInstructions+1) }, wantErr: "instructions"},

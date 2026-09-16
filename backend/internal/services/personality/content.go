@@ -138,6 +138,14 @@ func Validate(g *Generated) (*Personality, Phrasebook, error) {
 					return nil, nil, fmt.Errorf("phrasebook %s: placeholder %s not allowed here", slot, ph)
 				}
 			}
+			// The apps pick a line from the slot at random, so duplicates aren't padding — they make the friend
+			// say the same thing every time. A small model under a grammar will happily fill a slot by repeating
+			// itself: stock Qwen3.5-2B answered "poked" with the same sentence three times over.
+			for _, seen := range lines {
+				if strings.EqualFold(seen.Text, text) {
+					return nil, nil, fmt.Errorf("phrasebook %s: says %q more than once", slot, text)
+				}
+			}
 			lines = append(lines, PhraseLine{Text: text, Action: line.Action})
 		}
 		if book[entry.Trigger] == nil {
