@@ -64,11 +64,16 @@ var knownGoodProfile = personality.Personality{
 	Instructions: "You are Miso. Call the user Ricky. Stay warm, stay brief, stay curious about the work.",
 }
 
-// trainingSample is one line of dataset.jsonl: exactly one model call, as it will happen in production.
+// trainingSample is one line of dataset.jsonl: exactly one model call, as it will happen in production. The id
+// and kind aren't training inputs; they let the split hold out whole users, so a friend's profile can't sit in
+// training while its chunks sit in validation.
 type trainingSample struct {
-	System string `json:"system"`
-	User   string `json:"user"`
-	Output string `json:"output"`
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Trigger string `json:"trigger,omitempty"`
+	System  string `json:"system"`
+	User    string `json:"user"`
+	Output  string `json:"output"`
 }
 
 // HarvestInputs writes the prompts for n synthetic users, using the live question set so the training data
@@ -175,7 +180,10 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 			if !keepProfile && call.Kind == personality.KindProfile {
 				continue
 			}
-			sample := trainingSample{System: header.System, User: call.User, Output: outputFor(got, call)}
+			sample := trainingSample{
+				ID: record.ID, Kind: call.Kind, Trigger: call.Trigger,
+				System: header.System, User: call.User, Output: outputFor(got, call),
+			}
 			if sample.Output == "" {
 				continue
 			}

@@ -16,3 +16,9 @@ ios_app/Config/Local.xcconfig
 
 # macOS machine-specific build settings
 mac_app/Config/Local.xcconfig
+
+# Harvested training data and fine-tune outputs: hours of generated text and GB of weights,
+# both reproducible from the harvest seed (see training/README.md).
+harvest/
+training/data/
+training/out/
