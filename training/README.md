@@ -45,6 +45,51 @@ Profile calls are the scarce half: they fail more often than chunks, mostly by s
 `filter` keeps a personality's six chunks even when its profile call is rejected, so the dataset skews toward
 chunks — which is the right way round, since chunks are 6 of every 7 calls in production too.
 
+## Running a model and poking it from a terminal
+
+Works the same for stock Qwen3.5-2B, the fine-tune, or anything else llama.cpp can load.
+
+```bash
+brew install llama.cpp                      # note: the bottle has no llama-gbnf-validator
+
+# 1. Serve it. Leave this running in its own terminal.
+llama-server -m ~/models/befriend/qwen35-2b-Q4_K_M.gguf --port 8899 -c 8192 -n -1
+curl -s localhost:8899/health               # {"status":"ok"}
+
+# 2. Grab a grammar and a real prompt.
+cd backend && go run ./cmd/apiserver harvest grammar --kind profile > /tmp/profile.gbnf
+go run ./cmd/apiserver harvest inputs -n 5 -o /tmp/inputs.jsonl     # needs the database up
+
+# 3. One call by hand. /apply-template formats with the model's own chat template, which a fine-tune
+#    trained through apply_chat_template requires — a raw prompt gives it a format it never saw.
+PROMPT=$(jq -r '.calls[0].user' <(sed -n 2p /tmp/inputs.jsonl))
+SYSTEM=$(jq -r '.system' <(sed -n 1p /tmp/inputs.jsonl))
+TEMPLATED=$(jq -n --arg s "$SYSTEM" --arg u "$PROMPT" \
+    '{messages:[{role:"system",content:$s},{role:"user",content:$u}]}' \
+    | curl -s localhost:8899/apply-template -d @- | jq -r .prompt)
+jq -n --arg p "$TEMPLATED" --arg g "$(cat /tmp/profile.gbnf)" \
+    '{prompt:$p, grammar:$g, n_predict:4000, temperature:0.9}' \
+    | curl -s localhost:8899/completion -d @- | jq -r .content
+```
+
+Without a grammar the output is unconstrained and will not parse — the grammar is not optional.
+
+### The whole loop, scored
+
+`generate.py` writes exactly what the Mac harvester writes, so one grader scores the on-device teacher, the
+stock model and the fine-tune with no special cases:
+
+```bash
+python3 training/generate.py --inputs /tmp/inputs.jsonl --outputs /tmp/model.jsonl --users 5
+cd backend && go run ./cmd/apiserver harvest filter \
+    --inputs /tmp/inputs.jsonl --outputs /tmp/model.jsonl -o /tmp/graded.jsonl
+```
+
+Use `--skip` to score a slice the fine-tune never trained on.
+
+Measured on this Mac (M-series, CPU/Metal, no GPU): **~44 s per personality** for 2B Q4_K_M — already inside
+the <60 s budget before any GPU is rented.
+
 ## Judging the result
 
 Pass rate alone is not the bar — the grammar guarantees structure, so a bad model still scores well on it.

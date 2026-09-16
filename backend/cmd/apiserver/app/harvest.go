@@ -76,6 +76,22 @@ type trainingSample struct {
 	Output  string `json:"output"`
 }
 
+// HarvestGrammar prints the GBNF a call is generated under, so a served model can be driven by hand:
+//
+//	apiserver harvest grammar --kind chunk > chunk.gbnf
+//	curl localhost:8899/completion -d "$(jq -n --arg g "$(cat chunk.gbnf)" --arg p "$PROMPT" '{prompt:$p,grammar:$g,n_predict:4000}')"
+func HarvestGrammar(kind string) {
+	switch kind {
+	case personality.KindProfile:
+		fmt.Print(phrasetable.ProfileGrammar())
+	case personality.KindChunk:
+		fmt.Print(phrasetable.ChunkGrammar())
+	default:
+		exitOnError("harvest grammar", fmt.Errorf("kind must be %q or %q, got %q",
+			personality.KindProfile, personality.KindChunk, kind))
+	}
+}
+
 // HarvestInputs writes the prompts for n synthetic users, using the live question set so the training data
 // matches what production will actually ask.
 func HarvestInputs(n int, seed uint64, out string) {

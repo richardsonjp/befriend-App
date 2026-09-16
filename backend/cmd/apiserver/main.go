@@ -106,6 +106,16 @@ var (
 		},
 	}
 
+	harvestGrammarCMD = &cobra.Command{
+		Use:   "grammar",
+		Short: "Print the GBNF a served model must generate under",
+		Args:  cobra.NoArgs,
+		Run: func(c *cobra.Command, _ []string) {
+			kind, _ := c.Flags().GetString("kind")
+			app.HarvestGrammar(kind)
+		},
+	}
+
 	harvestFilterCMD = &cobra.Command{
 		Use:   "filter",
 		Short: "Keep only the harvested personalities that pass Validate whole",
@@ -158,7 +168,8 @@ func main() {
 	harvestFilterCMD.Flags().String("inputs", "inputs.jsonl", "prompts written by `harvest inputs`")
 	harvestFilterCMD.Flags().String("outputs", "outputs.jsonl", "answers written by the Mac harvester")
 	harvestFilterCMD.Flags().StringP("out", "o", "dataset.jsonl", "training samples to write")
-	harvestCMD.AddCommand(harvestInputsCMD, harvestFilterCMD)
+	harvestGrammarCMD.Flags().String("kind", "chunk", "chunk or profile")
+	harvestCMD.AddCommand(harvestInputsCMD, harvestGrammarCMD, harvestFilterCMD)
 
 	// Regist
 	rootCMD.AddCommand(configCMD)
