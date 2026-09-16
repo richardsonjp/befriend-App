@@ -73,8 +73,9 @@ type Store struct {
 	PresenceService    servicePresence.PresenceService
 	EvolutionService   serviceEvolution.EvolutionService
 
-	// CLI (apiserver skin …)
-	SkinService serviceSkin.SkinService
+	// CLI (apiserver skin …, apiserver harvest …)
+	SkinService        serviceSkin.SkinService
+	QuestionSetService serviceQuestionSet.QuestionSetService
 
 	// Handlers
 	UserAuthHandler     *handlerUserAuth.UserAuthHandler
@@ -250,7 +251,8 @@ func Init() {
 		PresenceService:    presenceService,
 		EvolutionService:   evolutionService,
 
-		SkinService: skinService,
+		SkinService:        skinService,
+		QuestionSetService: questionSetService,
 
 		UserAuthHandler:     handlerUserAuth.NewUserAuthHandler(authenticationService),
 		UserHandler:         handlerUser.NewUserHandler(userApplicationService),

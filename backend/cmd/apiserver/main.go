@@ -88,6 +88,35 @@ var (
 			app.SkinRevoke(grantPayload(c))
 		},
 	}
+
+	harvestCMD = &cobra.Command{
+		Use:   "harvest",
+		Short: "Build training data for befriend's own personality model",
+	}
+
+	harvestInputsCMD = &cobra.Command{
+		Use:   "inputs",
+		Short: "Write prompts for synthetic users, from the live question set",
+		Args:  cobra.NoArgs,
+		Run: func(c *cobra.Command, _ []string) {
+			n, _ := c.Flags().GetInt("count")
+			seed, _ := c.Flags().GetUint64("seed")
+			out, _ := c.Flags().GetString("out")
+			app.HarvestInputs(n, seed, out)
+		},
+	}
+
+	harvestFilterCMD = &cobra.Command{
+		Use:   "filter",
+		Short: "Keep only the harvested personalities that pass Validate whole",
+		Args:  cobra.NoArgs,
+		Run: func(c *cobra.Command, _ []string) {
+			inputs, _ := c.Flags().GetString("inputs")
+			outputs, _ := c.Flags().GetString("outputs")
+			out, _ := c.Flags().GetString("out")
+			app.HarvestFilter(inputs, outputs, out)
+		},
+	}
 )
 
 func grantPayload(c *cobra.Command) skin.GrantPayload {
@@ -123,12 +152,21 @@ func main() {
 	}
 	skinCMD.AddCommand(skinBuildCMD, skinPublishCMD, skinGrantCMD, skinRevokeCMD)
 
+	harvestInputsCMD.Flags().IntP("count", "n", 1200, "how many synthetic users")
+	harvestInputsCMD.Flags().Uint64("seed", 1, "same seed, same users: lets a harvest be extended")
+	harvestInputsCMD.Flags().StringP("out", "o", "inputs.jsonl", "prompts file to write")
+	harvestFilterCMD.Flags().String("inputs", "inputs.jsonl", "prompts written by `harvest inputs`")
+	harvestFilterCMD.Flags().String("outputs", "outputs.jsonl", "answers written by the Mac harvester")
+	harvestFilterCMD.Flags().StringP("out", "o", "dataset.jsonl", "training samples to write")
+	harvestCMD.AddCommand(harvestInputsCMD, harvestFilterCMD)
+
 	// Regist
 	rootCMD.AddCommand(configCMD)
 	rootCMD.AddCommand(serverCMD)
 	rootCMD.AddCommand(migrateCMD)
 	rootCMD.AddCommand(evolveCMD)
 	rootCMD.AddCommand(skinCMD)
+	rootCMD.AddCommand(harvestCMD)
 	if err := rootCMD.Execute(); err != nil {
 		os.Exit(1)
 	}
