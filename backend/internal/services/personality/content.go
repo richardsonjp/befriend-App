@@ -66,6 +66,13 @@ var (
 	// User-facing text must never break character.
 	breaksCharacter = regexp.MustCompile(`(?i)\b(AI|A\.I\.|artificial intelligence|language model|LLM|chatbot|large language)\b`)
 	placeholder     = regexp.MustCompile(`\{[^}]*\}`)
+
+	// Instructions are spoken *to* the friend and become its on-device persona verbatim. A model that slips into
+	// first person has confused who it is writing for — "Call me Nia" makes the friend answer to the user's name,
+	// and "I recharge in groups" hands the friend the user's questionnaire answers as its own biography.
+	// Capital "I" standing alone is unambiguously the pronoun in English, which makes this cheap to detect.
+	firstPerson         = regexp.MustCompile(`\bI\b|(?i)\bcall me\b`)
+	instructionsOpening = "You are "
 )
 
 // Validate cleans every string (invisible and control characters removed, whitespace collapsed) and
@@ -87,6 +94,12 @@ func Validate(g *Generated) (*Personality, Phrasebook, error) {
 	// Instructions may legitimately say "never mention being an AI", so they skip the character check.
 	if err := checkText("instructions", p.Instructions, minInstructions, maxInstructions, false); err != nil {
 		return nil, nil, err
+	}
+	if !strings.HasPrefix(p.Instructions, instructionsOpening) {
+		return nil, nil, fmt.Errorf("instructions: must start %q", instructionsOpening)
+	}
+	if match := firstPerson.FindString(p.Instructions); match != "" {
+		return nil, nil, fmt.Errorf("instructions: written in first person (%q); they are spoken to the friend", match)
 	}
 	if len(g.Traits) < minTraits || len(g.Traits) > maxTraits {
 		return nil, nil, fmt.Errorf("traits: want %d–%d, got %d", minTraits, maxTraits, len(g.Traits))

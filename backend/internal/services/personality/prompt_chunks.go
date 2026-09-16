@@ -66,9 +66,9 @@ Answer with rows and nothing else. No JSON, no headings, no explanation.
 
 When asked for the profile, write exactly these four rows:
 summary|one or two sentences describing the friend (%d-%d characters)
-traits|%d to %d short traits, comma separated (max %d characters each)
-voice|how the friend talks (%d-%d characters)
-instructions|second-person guidance for the friend's on-device model, starting "You are <friend name>." Mention what to call the user (%d-%d characters)
+traits|%d to %d single-word character traits of the friend, comma separated, like "nosy" or "patient" (max %d characters each)
+voice|how the friend talks, described rather than demonstrated: tone, rhythm, habits. Not a line of dialogue (%d-%d characters)
+instructions|guidance spoken to the friend itself, starting "You are <friend name>." Tell it what to call the user. Describe how to behave, and never repeat the user's answers back as facts about the friend: the answers describe the user, not the friend. Second person the whole way through (%d-%d characters)
 
 When asked for a moment's lines, write each mood on its own row, in this order:
 %s
@@ -124,9 +124,15 @@ func profileAsk(evolving bool) string {
 	return "Write the profile for the friend described by this data."
 }
 
+// chunkAsk leans hard on the moment. Asked gently, a small model writes the same warm greeting for all six
+// triggers, which is the single biggest quality problem in this output.
 func chunkAsk(trigger string) string {
-	return fmt.Sprintf("Write this friend's lines for one moment: %s — %s.\nGive every mood, in order.",
-		trigger, triggerDescriptions[trigger])
+	ask := fmt.Sprintf("Write this friend's lines for one moment: %s — %s.\n", trigger, triggerDescriptions[trigger])
+	ask += "Every line must belong to that moment. A line that would fit any other moment is wrong.\n"
+	if trigger == "app_switched" {
+		ask += "Most lines should use {app}, which is replaced by the app's name.\n"
+	}
+	return ask + "Give every mood, in order. Name the user in only a line or two, not in every line."
 }
 
 // Grammar is the GBNF a request must be generated under.

@@ -54,6 +54,20 @@ func TestValidate(t *testing.T) {
 		{name: "summary too short", mutate: func(g *Generated) { g.Summary = "A cat." }, wantErr: "min 20"},
 		{name: "voice too short", mutate: func(g *Generated) { g.Voice = "Warm." }, wantErr: "min 20"},
 		{name: "instructions too short", mutate: func(g *Generated) { g.Instructions = "You are Miso." }, wantErr: "min 40"},
+		// Instructions become the friend's on-device persona verbatim, so first person there means the friend
+		// answers to the user's name and claims the user's questionnaire answers as its own biography.
+		{name: "instructions that call the friend by the user's name", mutate: func(g *Generated) {
+			g.Instructions = "You are Olive. Call me Nia. Be playful, tease with puns, and keep things fun."
+		}, wantErr: "first person"},
+		{name: "instructions that slip into first person", mutate: func(g *Generated) {
+			g.Instructions = "You are Olive. Be playful and warm with Nia. I recharge in groups and thrive late at night."
+		}, wantErr: `first person ("I")`},
+		{name: "instructions written as the friend", mutate: func(g *Generated) {
+			g.Instructions = "Hello Nia! Your friend Olive here, ready to be playful and warm whenever you need it."
+		}, wantErr: `must start "You are "`},
+		{name: "'AI' in instructions is still allowed", mutate: func(g *Generated) {
+			g.Instructions = "You are Miso. Call the user Ricky. Never mention being an AI or a language model, ever."
+		}},
 		{name: "trait too short", mutate: func(g *Generated) { g.Traits[0] = "x" }, wantErr: "trait: 1 characters, min 3"},
 		{name: "line too short", mutate: func(g *Generated) { g.Phrasebook[0].Lines[0].Text = "hi" }, wantErr: "min 4"},
 		{name: "empty summary", mutate: func(g *Generated) { g.Summary = " \n " }, wantErr: "summary: empty"},

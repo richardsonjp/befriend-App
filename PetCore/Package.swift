@@ -30,6 +30,13 @@ let package = Package(
             resources: [.copy("Resources/pixel-cat.zip")], // built from skins/pixel-cat
             swiftSettings: settings
         ),
+        // Developer tool, not shipped: answers `apiserver harvest inputs` with the on-device model to build
+        // training data for befriend's own model. Not a dependency of the PetCore product, so the apps ignore it.
+        .executableTarget(
+            name: "Harvest",
+            dependencies: ["PetCore"],
+            swiftSettings: settings
+        ),
         .testTarget(
             name: "PetCoreTests",
             dependencies: ["PetCore", .product(name: "ZIPFoundation", package: "ZIPFoundation")],

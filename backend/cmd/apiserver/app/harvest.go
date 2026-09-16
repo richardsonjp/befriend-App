@@ -55,6 +55,15 @@ type harvestOutput struct {
 	Output  string `json:"output"`
 }
 
+// knownGoodProfile stands in for a rejected one while checking whether a personality's chunks are salvageable.
+// Its only job is to pass Validate.
+var knownGoodProfile = personality.Personality{
+	Summary:      "A small striped cat who has opinions about your tab habits.",
+	Traits:       []string{"nosy", "warm", "patient"},
+	Voice:        "Short, fond, a little teasing. Never nags.",
+	Instructions: "You are Miso. Call the user Ricky. Stay warm, stay brief, stay curious about the work.",
+}
+
 // trainingSample is one line of dataset.jsonl: exactly one model call, as it will happen in production.
 type trainingSample struct {
 	System string `json:"system"`
@@ -114,9 +123,9 @@ func writeHarvestInputs(inputs []personality.PromptInput, seed uint64, out strin
 	return calls, writer.Flush()
 }
 
-// HarvestFilter grades what the Mac produced and keeps only the calls belonging to a personality that passes
-// Validate whole. A personality with one bad chunk teaches the model that bad chunks are acceptable, so all
-// seven of its calls are dropped together.
+// HarvestFilter grades what the Mac produced with the same Validate the production worker runs. A bad chunk
+// drops the whole personality — teaching the model that bad chunks are acceptable is the one thing this must not
+// do — but a bad profile drops only the profile call, since the six chunk calls stand on their own.
 func HarvestFilter(inputsPath, outputsPath, out string) {
 	header, records, err := readInputs(inputsPath)
 	exitOnError("harvest filter", err)
@@ -129,7 +138,7 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 	writer := bufio.NewWriter(file)
 
 	reasons := map[string]int{}
-	passed, samples, incomplete := 0, 0, 0
+	passed, chunksOnly, samples, incomplete := 0, 0, 0, 0
 	for _, record := range records {
 		got := outputs[record.ID]
 		if len(got) == 0 {
@@ -141,15 +150,31 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 			continue
 		}
 		generated, err := personality.Assemble(profile, chunks)
-		if err == nil {
-			_, _, err = personality.Validate(generated)
-		}
 		if err != nil {
 			reasons[summarise(err)]++
 			continue
 		}
-		passed++
+		_, _, err = personality.Validate(generated)
+
+		// A bad profile shouldn't waste six good chunks — on this teacher it is the commonest single failure,
+		// and the chunk calls don't depend on it. Swapping in a known-good profile and revalidating says whether
+		// the chunks were ever the problem, without a second copy of the validation rules to keep in step.
+		keepProfile := err == nil
+		if err != nil {
+			reasons[summarise(err)]++
+			probe := *generated
+			probe.Personality = knownGoodProfile
+			if _, _, retry := personality.Validate(&probe); retry != nil {
+				continue // the chunks are bad too: nothing here is worth keeping
+			}
+			chunksOnly++
+		} else {
+			passed++
+		}
 		for _, call := range record.Calls {
+			if !keepProfile && call.Kind == personality.KindProfile {
+				continue
+			}
 			sample := trainingSample{System: header.System, User: call.User, Output: outputFor(got, call)}
 			if sample.Output == "" {
 				continue
@@ -161,6 +186,9 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 	exitOnError("harvest filter", writer.Flush())
 
 	fmt.Printf("harvest filter: %d personalities passed, %d training samples → %s\n", passed, samples, out)
+	if chunksOnly > 0 {
+		fmt.Printf("  %d kept for their chunks only (the profile call was rejected)\n", chunksOnly)
+	}
 	if incomplete > 0 {
 		fmt.Printf("  %d part-answered and skipped\n", incomplete)
 	}

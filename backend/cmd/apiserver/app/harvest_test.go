@@ -124,10 +124,20 @@ func TestHarvestRoundTrip(t *testing.T) {
 	HarvestFilter(inputsPath, outputsPath, datasetPath)
 
 	samples := readSamples(t, datasetPath)
-	// Users 0, 4 and 5 pass whole; 1 has an invented action, 2 collapses under cleaning, 3 is incomplete.
-	wantSamples := 3 * (1 + len(vocabulary.TriggerKinds))
+	// Users 0, 4 and 5 pass whole. User 1 has an invented action, so nothing of it is kept. User 2's profile
+	// collapses under cleaning but its chunks are fine, so those six are salvaged. User 3 is incomplete.
+	wantSamples := 3*(1+len(vocabulary.TriggerKinds)) + len(vocabulary.TriggerKinds)
 	if len(samples) != wantSamples {
 		t.Fatalf("got %d samples, want %d", len(samples), wantSamples)
+	}
+	profiles := 0
+	for _, s := range samples {
+		if strings.HasSuffix(strings.TrimSpace(s.User), "Write the profile for the friend described by this data.") {
+			profiles++
+		}
+	}
+	if profiles != 3 {
+		t.Errorf("got %d profile samples, want 3: a rejected profile must not reach the dataset", profiles)
 	}
 	for _, s := range samples {
 		if s.System != header.System {

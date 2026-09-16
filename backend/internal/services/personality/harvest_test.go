@@ -137,7 +137,7 @@ func TestRequestsShareACacheablePrefix(t *testing.T) {
 		if !strings.HasPrefix(r.User, data) {
 			t.Fatalf("%s: user message does not share the data prefix", r.Trigger)
 		}
-		if !strings.HasSuffix(strings.TrimSpace(r.User), "Give every mood, in order.") {
+		if !strings.Contains(r.User[len(data):], "Write this friend's lines for one moment: "+r.Trigger) {
 			t.Fatalf("%s: the ask should come last: %q", r.Trigger, r.User)
 		}
 	}
