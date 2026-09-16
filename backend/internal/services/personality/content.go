@@ -6,21 +6,23 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"befriend/pkg/phrasetable"
 	customStr "befriend/pkg/utils/strings"
 	"befriend/pkg/utils/vocabulary"
 )
 
-// Length caps, in characters. The on-device model gets Instructions inside its 4K context, so they stay short.
+// Length caps and counts come from phrasetable, which also builds the grammar the model generates under, so the
+// format, the grammar and this validation cannot drift apart.
 const (
-	maxSummary      = 200
-	maxVoice        = 160
-	maxInstructions = 600
-	maxTrait        = 24
-	minTraits       = 3
-	maxTraits       = 5
-	maxLineText     = 80
-	minLinesPerSlot = 2
-	maxLinesPerSlot = 3
+	maxSummary      = phrasetable.MaxSummaryRunes
+	maxVoice        = phrasetable.MaxVoiceRunes
+	maxInstructions = phrasetable.MaxInstructionsRunes
+	maxTrait        = phrasetable.MaxTraitRunes
+	minTraits       = phrasetable.MinTraits
+	maxTraits       = phrasetable.MaxTraits
+	maxLineText     = phrasetable.MaxTextRunes
+	minLinesPerSlot = phrasetable.MinLines
+	maxLinesPerSlot = phrasetable.MaxLines
 	appPlaceholder  = "{app}"
 )
 
