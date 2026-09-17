@@ -42,6 +42,7 @@ func TestCompleteSendsStructuredRequest(t *testing.T) {
 	format, _ := got["response_format"].(map[string]interface{})
 	schema, _ := format["json_schema"].(map[string]interface{})
 	plugins, _ := got["plugins"].([]interface{})
+	reasoning, _ := got["reasoning"].(map[string]interface{})
 	switch {
 	case len(models) != 2 || models[0] != "primary:free":
 		t.Errorf("models = %v", got["models"])
@@ -49,6 +50,9 @@ func TestCompleteSendsStructuredRequest(t *testing.T) {
 		t.Errorf("response_format = %v", got["response_format"])
 	case len(plugins) != 1 || plugins[0].(map[string]interface{})["id"] != "response-healing":
 		t.Errorf("plugins = %v", got["plugins"])
+	// Without this a reasoning model thinks in prose until max_tokens and never emits the schema.
+	case reasoning == nil || reasoning["enabled"] != false:
+		t.Errorf("reasoning = %v", got["reasoning"])
 	case got["max_tokens"] != float64(1000):
 		t.Errorf("max_tokens = %v", got["max_tokens"])
 	}

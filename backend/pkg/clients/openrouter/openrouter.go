@@ -88,7 +88,12 @@ func (c *Client) Complete(ctx context.Context, req Request) (*Response, error) {
 			},
 		},
 		// Repairs markdown fences, trailing commas and similar; our own validation still runs afterwards.
-		"plugins":     []map[string]string{{"id": "response-healing"}},
+		"plugins": []map[string]string{{"id": "response-healing"}},
+		// A reasoning model ignores the schema and thinks in prose until max_tokens, which finish_reason
+		// "length" then turns into a hard failure. Observed with nemotron as the fallback once the primary
+		// model was rate-limited upstream: the same request returns valid JSON with reasoning off.
+		// Models without a reasoning mode ignore this field.
+		"reasoning":   map[string]interface{}{"enabled": false},
 		"max_tokens":  req.MaxTokens,
 		"temperature": req.Temperature,
 	})
