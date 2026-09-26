@@ -34,15 +34,27 @@ public nonisolated struct SyncSettings: Codable, Equatable, Sendable {
     public var excludedApps: [String]
     /// The account's skin; nil is the built-in one.
     public var skinId: String?
+    /// A pick still getting dressed: the friend's lines are being rewritten for it, and `skinId` follows once they're ready.
+    public var pendingSkin: PendingSkin?
 
-    public init(logSyncPaused: Bool = false, excludedApps: [String] = [], skinId: String? = nil) {
+    public init(logSyncPaused: Bool = false, excludedApps: [String] = [], skinId: String? = nil, pendingSkin: PendingSkin? = nil) {
         self.logSyncPaused = logSyncPaused
         self.excludedApps = excludedApps
         self.skinId = skinId
+        self.pendingSkin = pendingSkin
     }
 
     public func excludes(appName: String) -> Bool {
         excludedApps.contains { $0.caseInsensitiveCompare(appName) == .orderedSame }
+    }
+}
+
+public nonisolated struct PendingSkin: Codable, Equatable, Sendable {
+    /// nil is the built-in skin.
+    public let skinId: String?
+
+    public init(skinId: String?) {
+        self.skinId = skinId
     }
 }
 

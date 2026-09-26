@@ -58,10 +58,22 @@ nonisolated struct GeneratedProfile {
     var instructions: String
 }
 
+/// Training data is written in the built-in vocabulary (vocabulary v1), so the harvest keeps its own enums of it.
+@Generable
+nonisolated enum HarvestAction: String, CaseIterable {
+    case idle, wave, nudge, sleep, celebrate, dance, laugh, cry, yawn, stretch
+    case think, peek, hide, shrug, facepalm, cheer, jump, spin, sit, love
+}
+
+@Generable
+nonisolated enum HarvestMood: String, CaseIterable {
+    case content, curious, concerned, excited, sleepy, bored, playful, proud, shy, grumpy, calm, lonely
+}
+
 @Generable
 nonisolated struct GeneratedLine {
     @Guide(description: "The animation the friend plays")
-    var action: PetAction
+    var action: HarvestAction
 
     @Guide(description: "One short thing the friend says at this exact moment, at most 80 characters")
     var text: String
@@ -70,7 +82,7 @@ nonisolated struct GeneratedLine {
 @Generable
 nonisolated struct GeneratedMood {
     @Guide(description: "The mood these lines are for")
-    var mood: PetMood
+    var mood: HarvestMood
 
     @Guide(description: "What the friend says in this mood", .count(2))
     var lines: [GeneratedLine]
@@ -105,12 +117,12 @@ nonisolated enum Rows {
     /// Every mood must be present exactly once; a chunk missing one would fail the backend's decoder anyway, and
     /// failing here means it is simply retried on the next run.
     static func chunk(_ c: GeneratedChunk) -> String? {
-        var byMood: [PetMood: [GeneratedLine]] = [:]
+        var byMood: [HarvestMood: [GeneratedLine]] = [:]
         for entry in c.moods where byMood[entry.mood] == nil {
             byMood[entry.mood] = entry.lines
         }
         var out = ""
-        for mood in PetMood.allCases {
+        for mood in HarvestMood.allCases {
             let lines = (byMood[mood] ?? [])
                 .map { GeneratedLine(action: $0.action, text: clean($0.text, max: maxTextLength)) }
                 .filter { $0.text.count >= 4 }

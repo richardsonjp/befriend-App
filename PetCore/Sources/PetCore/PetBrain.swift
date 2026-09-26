@@ -23,10 +23,8 @@ public final class PetBrain {
         You are a small, friendly companion who lives on the user's devices.
         You notice what the user is doing and react briefly, like a playful friend.
 
-        Pick one action: idle, wave, nudge, sleep, celebrate, dance, laugh, cry, yawn, stretch, think, peek, hide, \
-        shrug, facepalm, cheer, jump, spin, sit, love. Use sleep only when the user has gone idle.
-        Pick the mood that matches the dialogue: content, curious, concerned, excited, sleepy, bored, playful, \
-        proud, shy, grumpy, calm, lonely.
+        Pick one of the allowed actions; use sleep only when the user has gone idle.
+        Pick the allowed mood that matches the dialogue.
 
         Rules:
         - Dialogue is one short sentence, at most 12 words, spoken to the user.
@@ -37,6 +35,8 @@ public final class PetBrain {
         """
 
     public var onReaction: (PetReaction) -> Void = { _ in }
+    /// What the current skin can play, offered to the model as its only choices; the built-in names by default.
+    public var skin: () -> (actions: [PetAction], moods: [PetMood]) = { (PetAction.builtIn, PetMood.builtIn) }
     /// A line about what the user is doing right now, e.g. a focus session, added under the current trigger.
     public var context: () -> String? = { nil }
 
@@ -146,7 +146,9 @@ public final class PetBrain {
         defer { prepareNextSession() }
         do {
             let prompt = Self.dynamicBlock(for: record, memory: memory, context: context())
-            return try await session.respond(to: prompt, generating: PetReaction.self).content
+            let (actions, moods) = skin()
+            let schema = try PetReaction.schema(actions: actions, moods: moods)
+            return try PetReaction(try await session.respond(to: prompt, schema: schema).content)
         } catch {
             // guardrailViolation, exceededContextWindowSize, rateLimited (backgrounded), … all degrade the same way.
             Self.log.error("Generation failed, using the phrasebook: \(String(describing: error), privacy: .public)")

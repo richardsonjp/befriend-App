@@ -50,7 +50,13 @@ final class AppModel {
             ?? URL.applicationSupportDirectory
         uploader = TriggerLogUploader(api: api, fileURL: queueURL.appending(path: "trigger-queue.json"))
         PokeIntent.handler = { [weak self] in await self?.poke() }
-        skins.onChange = { [weak self] in self?.surfaces.skinChanged() }
+        skins.onChange = { [weak self] in
+            guard let self else { return }
+            self.surfaces.skinChanged()
+            // A switch that landed comes with lines written for it; a reset while signing out doesn't.
+            guard self.api.isSignedIn, self.friend != nil else { return }
+            Task { await self.refresh() }
+        }
         PomodoroIntent.handler = { [weak self] in self?.pomodoroCommand($0) }
         pomodoro.mayAutoStart = { [weak self] in self?.isForeground ?? false }
         pomodoro.onPhaseEnded = { _, next in PhonePomodoro.chime(next) }
@@ -180,6 +186,7 @@ final class AppModel {
             brain = PetBrain(friend: latest)
             brain.onReaction = { [weak self] in self?.show($0) }
             brain.context = { [pomodoro] in pomodoro.state.promptContext(at: .now) }
+            brain.skin = { [skins] in skins.current?.vocabulary ?? (PetAction.builtIn, PetMood.builtIn) }
             let hello = brain.quickReaction(to: .returned(afterSeconds: 0))
             show(hello)
             surfaces.friendReady(latest, state: FriendSurfaceState(presence: .here, mood: hello.mood, action: hello.action, line: hello.dialogue))

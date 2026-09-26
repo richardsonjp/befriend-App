@@ -208,9 +208,25 @@ public nonisolated struct Phrasebook: Codable, Equatable, Sendable {
         self.lines = lines
     }
 
+    /// The wire shape: a list, since mood names come from skins and snake_case key decoding would rewrite them
+    /// as dictionary keys (very_happy → veryHappy).
+    private struct Entry: Codable {
+        let trigger: String
+        let mood: String
+        let lines: [Line]
+    }
+
     public init(from decoder: Decoder) throws {
+        if let entries = try? [Entry](from: decoder) {
+            var lines: [String: [String: [Line]]] = [:]
+            for entry in entries {
+                lines[entry.trigger, default: [:]][entry.mood] = entry.lines
+            }
+            self.lines = lines
+            return
+        }
+        // A friend saved before the list shape (built-in moods only, so only the trigger keys got rewritten).
         let raw = try [String: [String: [Line]]](from: decoder)
-        // Wire.decoder's snake_case conversion rewrites dictionary keys too (app_switched → appSwitched): map back.
         lines = Dictionary(raw.map { (Self.kindKey($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
     }
 
@@ -224,7 +240,10 @@ public nonisolated struct Phrasebook: Codable, Equatable, Sendable {
     }
 
     public func encode(to encoder: Encoder) throws {
-        try lines.encode(to: encoder)
+        let entries = lines.keys.sorted().flatMap { trigger in
+            (lines[trigger] ?? [:]).keys.sorted().map { Entry(trigger: trigger, mood: $0, lines: lines[trigger]?[$0] ?? []) }
+        }
+        try entries.encode(to: encoder)
     }
 
     /// A random line for the trigger, in `mood` when the phrasebook has it, otherwise in any mood.
@@ -236,7 +255,7 @@ public nonisolated struct Phrasebook: Codable, Equatable, Sendable {
         guard let chosen, let line = moods[chosen.rawValue]?.randomElement() else { return nil }
 
         let text = trigger.sanitized.appName.map { line.text.replacingOccurrences(of: "{app}", with: $0) } ?? line.text
-        return PetReaction(action: PetAction(rawValue: line.action) ?? .idle, mood: chosen, dialogue: text).clamped(for: trigger)
+        return PetReaction(action: PetAction(line.action), mood: chosen, dialogue: text).clamped(for: trigger)
     }
 }
 

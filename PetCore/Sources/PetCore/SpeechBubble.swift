@@ -39,19 +39,12 @@ public struct SpeechBubble: View {
 public nonisolated extension PetMood {
     /// An accent colour per mood, for controls and dots next to the character.
     var tint: Color {
-        switch self {
-        case .content: .orange
-        case .curious: .teal
-        case .concerned: .indigo
-        case .excited: .pink
-        case .sleepy: .gray
-        case .bored: .brown
-        case .playful: .yellow
-        case .proud: .purple
-        case .shy: .mint
-        case .grumpy: .red
-        case .calm: .cyan
-        case .lonely: .blue
-        }
+        Self.tints[rawValue] ?? .orange // a skin's own moods get the default accent
     }
+
+    private static let tints: [String: Color] = [
+        "content": .orange, "curious": .teal, "concerned": .indigo, "excited": .pink, "sleepy": .gray,
+        "bored": .brown, "playful": .yellow, "proud": .purple, "shy": .mint, "grumpy": .red, "calm": .cyan,
+        "lonely": .blue,
+    ]
 }

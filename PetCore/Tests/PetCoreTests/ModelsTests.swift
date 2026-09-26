@@ -75,7 +75,7 @@ struct PhrasebookTests {
     @Test func prefersRequestedMoodAndToleratesUnknownActions() throws {
         #expect(book.reaction(for: .poked, mood: .playful)?.dialogue == "Hehe!")
         let shy = try #require(book.reaction(for: .poked, mood: .shy))
-        #expect(shy.action == .idle)
+        #expect(shy.action == PetAction("brand_new_action"), "skins name their own actions; drawing falls back to idle")
         // A mood the phrasebook lacks falls back to one it has.
         #expect(["Hehe!", "Eep."].contains(book.reaction(for: .poked, mood: .grumpy)?.dialogue))
     }

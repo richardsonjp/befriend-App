@@ -15,7 +15,8 @@ type ProfileResponse struct {
 	Timezone     string           `json:"timezone"`
 	Chart        astro.Chart      `json:"chart"`
 	Personality  PersonalityState `json:"personality"`
-	// Phrasebook of the current ready version: phrasebook[trigger][mood] = [{text, action}].
+	// Phrasebook of the current ready version: [{trigger, mood, lines: [{text, action}]}]. A list, not a map:
+	// mood names come from skins (under_scores allowed) and the apps' snake_case key decoding rewrites map keys.
 	Phrasebook json.RawMessage `json:"phrasebook,omitempty"`
 }
 

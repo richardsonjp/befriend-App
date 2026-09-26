@@ -2,7 +2,11 @@ package friend
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -102,7 +106,9 @@ func (s *friendService) GetProfile(ctx context.Context, userID string) (*Profile
 		}
 		if current.Personality != nil && current.Phrasebook != nil {
 			profile.Personality.Content = current.Personality.Data
-			profile.Phrasebook = current.Phrasebook.Data
+			if profile.Phrasebook, err = phrasebookEntries(current.Phrasebook.Data); err != nil {
+				return nil, err
+			}
 		}
 		profile.Personality.Status = current.Status.String()
 		profile.Personality.Version = current.Version
@@ -111,6 +117,26 @@ func (s *friendService) GetProfile(ctx context.Context, userID string) (*Profile
 		}
 	}
 	return profile, nil
+}
+
+// phrasebookEntries turns the stored phrasebook[trigger][mood] into the list the apps read, in a stable order.
+func phrasebookEntries(stored json.RawMessage) (json.RawMessage, error) {
+	var book map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(stored, &book); err != nil {
+		return nil, fmt.Errorf("stored phrasebook: %w", err)
+	}
+	type entry struct {
+		Trigger string          `json:"trigger"`
+		Mood    string          `json:"mood"`
+		Lines   json.RawMessage `json:"lines"`
+	}
+	entries := []entry{}
+	for _, trigger := range slices.Sorted(maps.Keys(book)) {
+		for _, mood := range slices.Sorted(maps.Keys(book[trigger])) {
+			entries = append(entries, entry{Trigger: trigger, Mood: mood, Lines: book[trigger][mood]})
+		}
+	}
+	return json.Marshal(entries)
 }
 
 // cityLevel rounds a coordinate to one decimal (~11 km), which is all the chart and flavor text need.

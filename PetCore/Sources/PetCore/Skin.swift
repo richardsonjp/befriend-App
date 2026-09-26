@@ -78,6 +78,18 @@ public nonisolated struct InstalledSkin: Equatable, Sendable {
         frame(clip(action, mood.rawValue), 0)
     }
 
+    /// What the friend's model may pick in this skin: its actions (not the app-played walk and focus) and moods.
+    public var vocabulary: (actions: [PetAction], moods: [PetMood]) {
+        var actions: [PetAction] = []
+        for clip in manifest.clips {
+            let action = PetAction(String(clip.name.prefix { $0 != "/" }))
+            if action.rawValue != Self.walk, action.rawValue != Self.focus, !actions.contains(action) {
+                actions.append(action)
+            }
+        }
+        return (actions, manifest.moods.isEmpty ? [.none] : manifest.moods.map { PetMood($0) })
+    }
+
     /// The small head for the Dynamic Island and accessory widgets.
     public func mini(_ mood: PetMood) -> URL {
         let name = manifest.moods.contains(mood.rawValue) ? mood.rawValue : "default"

@@ -43,8 +43,8 @@ struct SkinInstallerTests {
         #expect(skin.id == InstalledSkin.builtInID && skin.isBuiltIn)
         #expect(skin.manifest.size == 32 && skin.manifest.miniSize == 16 && skin.manifest.format == 2)
         #expect(skin.folder.lastPathComponent == "pixel-cat@\(SkinInstaller.sha256(of: archive))")
-        for action in PetAction.allCases {
-            for mood in PetMood.allCases {
+        for action in PetAction.builtIn {
+            for mood in PetMood.builtIn {
                 #expect(FileManager.default.fileExists(atPath: skin.still(action, mood).path))
             }
         }
@@ -52,6 +52,10 @@ struct SkinInstallerTests {
         #expect(skin.clip("wave", "grumpy").name == "wave/grumpy")
         #expect(skin.clip("walk", "happy").name == "walk", "a mood the skin lacks plays the plain clip")
         #expect(skin.clip("moonwalk", "grumpy").name == "idle", "an action the skin lacks plays idle")
+        let vocabulary = skin.vocabulary
+        #expect(Set(vocabulary.actions) == Set(PetAction.builtIn), "the cat offers the built-in actions, not walk or focus")
+        #expect(Set(vocabulary.moods) == Set(PetMood.builtIn))
+        #expect(throws: Never.self) { try PetReaction.schema(actions: vocabulary.actions, moods: vocabulary.moods) }
 
         let again = try SkinInstaller.install(archive: archive, expectedSHA256: SkinInstaller.sha256(of: archive).uppercased(), into: root)
         #expect(again == skin, "an installed skin is reused")

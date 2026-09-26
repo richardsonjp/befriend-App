@@ -6,15 +6,34 @@ struct VocabularyTests {
     /// Must match backend/pkg/utils/vocabulary exactly: the backend validates phrasebooks against it.
     @Test func matchesBackendV1() {
         #expect(Vocabulary.version == 1)
-        #expect(PetAction.allCases.map(\.rawValue) == [
+        #expect(PetAction.builtIn.map(\.rawValue) == [
             "idle", "wave", "nudge", "sleep", "celebrate", "dance", "laugh", "cry", "yawn", "stretch",
             "think", "peek", "hide", "shrug", "facepalm", "cheer", "jump", "spin", "sit", "love",
         ])
-        #expect(PetMood.allCases.map(\.rawValue) == [
+        #expect(PetMood.builtIn.map(\.rawValue) == [
             "content", "curious", "concerned", "excited", "sleepy", "bored", "playful", "proud", "shy", "grumpy", "calm", "lonely",
         ])
         // pomodoro is device-only: never uploaded, so the backend never sees it
         #expect(TriggerKind.allCases.filter { $0 != .pomodoro }.map(\.rawValue) == ["app_switched", "went_idle", "returned", "left_app", "poked", "check_in"])
+    }
+}
+
+struct OpenVocabularyTests {
+    @Test func skinNamesDecodeAsTheyAre() throws {
+        let json = #"{"presence":"here","mood":"sulky","action":"backflip","line":"hm","updated_at":0}"#
+        let state = try JSONDecoder().decode(FriendSurfaceState.self, from: Data(json.utf8))
+        #expect(state.mood == PetMood("sulky") && state.action == PetAction("backflip"))
+        #expect(PetAction("backflip").isOneShot && !PetAction("focus").isOneShot)
+        #expect(try JSONEncoder().encode(PetMood.calm) == Data(#""calm""#.utf8))
+    }
+
+    @Test func phrasebookListKeepsSkinMoodNames() throws {
+        let json = #"[{"trigger":"app_switched","mood":"very_happy","lines":[{"text":"Ooh, {app}!","action":"float"}]}]"#
+        let book = try Wire.decoder.decode(Phrasebook.self, from: Data(json.utf8))
+        let reaction = try #require(book.reaction(for: .appSwitched(name: "Xcode"), mood: PetMood("very_happy")))
+        #expect(reaction.mood == PetMood("very_happy") && reaction.action == PetAction("float"))
+        let again = try Wire.decoder.decode(Phrasebook.self, from: Wire.encoder.encode(book))
+        #expect(again == book, "a saved friend reads back unchanged")
     }
 }
 

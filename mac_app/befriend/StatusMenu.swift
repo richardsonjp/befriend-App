@@ -131,7 +131,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let submenu = NSMenu()
         let choices: [(name: String, id: String?)] = [("Pixel Cat", nil)] + controller.skins.granted.map { ($0.name, $0.id) }
         for choice in choices {
-            let item = NSMenuItem(title: choice.name, action: #selector(selectSkin(_:)), keyEquivalent: "").targeted(self)
+            let dressing = controller.skins.pending.map { $0.skinId == choice.id } ?? false
+            let title = dressing ? "\(choice.name) (getting dressed…)" : choice.name
+            let item = NSMenuItem(title: title, action: #selector(selectSkin(_:)), keyEquivalent: "").targeted(self)
             item.representedObject = choice.id
             item.state = controller.skins.current?.pickID == choice.id ? .on : .off
             submenu.addItem(item)

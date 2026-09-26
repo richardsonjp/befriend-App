@@ -6,15 +6,11 @@
 import Foundation
 import FoundationModels
 
-@Generable(description: "How a small companion reacts to what the user just did")
+/// How the friend reacts to what the user just did. The model generates it under `schema(for:)`, built from what
+/// the skin can play, since each skin names its own actions and moods.
 public nonisolated struct PetReaction: Equatable, Sendable {
-    @Guide(description: "The animation the companion plays")
     public let action: PetAction
-
-    @Guide(description: "The companion's current mood")
     public let mood: PetMood
-
-    @Guide(description: "One short, friendly sentence the companion says, at most 12 words")
     public let dialogue: String
 
     public init(action: PetAction, mood: PetMood, dialogue: String) {
@@ -25,6 +21,31 @@ public nonisolated struct PetReaction: Equatable, Sendable {
 }
 
 public nonisolated extension PetReaction {
+    /// The generation schema for a skin: its actions and moods as the only choices.
+    static func schema(actions: [PetAction], moods: [PetMood]) throws -> GenerationSchema {
+        let root = DynamicGenerationSchema(
+            name: "PetReaction",
+            description: "How a small companion reacts to what the user just did",
+            properties: [
+                .init(name: "action", description: "The animation the companion plays",
+                      schema: DynamicGenerationSchema(name: "Action", anyOf: actions.map(\.rawValue))),
+                .init(name: "mood", description: "The companion's current mood",
+                      schema: DynamicGenerationSchema(name: "Mood", anyOf: moods.map(\.rawValue))),
+                .init(name: "dialogue", description: "One short, friendly sentence the companion says, at most 12 words",
+                      schema: DynamicGenerationSchema(type: String.self)),
+            ]
+        )
+        return try GenerationSchema(root: root, dependencies: [])
+    }
+
+    init(_ content: GeneratedContent) throws {
+        self.init(
+            action: PetAction(try content.value(String.self, forProperty: "action")),
+            mood: PetMood(try content.value(String.self, forProperty: "mood")),
+            dialogue: try content.value(String.self, forProperty: "dialogue")
+        )
+    }
+
     static let maxDialogueLength = 80
 
     /// Canned reaction for when there is neither a model nor a phrasebook line.

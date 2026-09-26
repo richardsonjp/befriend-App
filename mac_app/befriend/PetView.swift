@@ -54,12 +54,12 @@ struct PetView: View {
                 Button("Poked") { simulate(.poked) }
             }
             Menu("Play Action") {
-                ForEach(PetAction.allCases, id: \.self) { action in
+                ForEach(skins.current?.vocabulary.actions ?? PetAction.builtIn, id: \.self) { action in
                     Button(action.rawValue) { pet.apply(PetReaction(action: action, mood: pet.mood, dialogue: "")) }
                 }
             }
             Menu("Set Mood") {
-                ForEach(PetMood.allCases, id: \.self) { mood in
+                ForEach(skins.current?.vocabulary.moods ?? PetMood.builtIn, id: \.self) { mood in
                     Button(mood.rawValue) { pet.apply(PetReaction(action: pet.action, mood: mood, dialogue: "")) }
                 }
             }

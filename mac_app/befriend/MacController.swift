@@ -143,6 +143,7 @@ final class MacController {
             brain = PetBrain(friend: latest)
             brain.onReaction = { [weak self] in self?.show($0) }
             brain.context = { [pomodoro] in pomodoro.state.promptContext(at: .now) }
+            brain.skin = { [skins] in skins.current?.vocabulary ?? (PetAction.builtIn, PetMood.builtIn) }
         }
         guard panel == nil else { return }
 
@@ -229,10 +230,13 @@ final class MacController {
         pet.apply(reaction)
     }
 
+    /// A skin switch that landed comes with lines written for it: fetch the friend too.
     private func syncSkins() {
         Task { [weak self] in
             guard let self else { return }
+            let before = self.skins.current
             await self.skins.sync(api: self.api)
+            if self.skins.current != before { await self.checkFriend() }
         }
     }
 

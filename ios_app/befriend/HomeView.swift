@@ -231,7 +231,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Look")
                 } footer: {
-                    Text("Your friend looks the same on your iPhone and Mac. Skins you're given show up here.")
+                    Text("Your friend looks the same on your iPhone and Mac. Skins you're given show up here. A new look takes a minute: your friend learns what it can do in it first.")
                 }
 
                 Section {
@@ -325,7 +325,10 @@ struct SettingsView: View {
             HStack {
                 Text(name).foregroundStyle(.primary)
                 Spacer()
-                if model.skins.current?.pickID == id {
+                if model.skins.pending.map({ $0.skinId == id }) ?? false {
+                    ProgressView()
+                    Text("Getting dressed…").font(.footnote).foregroundStyle(.secondary)
+                } else if model.skins.current?.pickID == id {
                     Image(systemName: "checkmark").foregroundStyle(.tint)
                 }
             }
