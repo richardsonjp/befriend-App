@@ -14,7 +14,7 @@ public nonisolated enum SkinInstallError: Error, Equatable {
     /// A file a skin doesn't have (or a duplicate); nothing outside the allowlist is ever written.
     case unexpectedEntry(String)
     case missingFile(String)
-    /// manifest.json is malformed, a newer format, or lacks a plain idle, walk or jump.
+    /// manifest.json is malformed, a newer format, or lacks a plain idle, walk, jump or focus.
     case invalidManifest
 }
 

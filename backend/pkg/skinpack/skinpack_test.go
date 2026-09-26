@@ -26,7 +26,7 @@ func pngOf(t *testing.T, size int, c color.NRGBA) []byte {
 	return buf.Bytes()
 }
 
-// fixture writes a valid skin to <tmp>/test-ghost: plain idle (2 frames), walk and jump, stomp only when grumpy,
+// fixture writes a valid skin to <tmp>/test-ghost: plain idle (2 frames), walk, jump and focus, stomp only when grumpy,
 // idle also when grumpy. edit can change or delete any file first.
 func fixture(t *testing.T, edit func(files map[string][]byte)) string {
 	t.Helper()
@@ -39,6 +39,7 @@ func fixture(t *testing.T, edit func(files map[string][]byte)) string {
 		"actions/idle/grumpy/0.png":  grumpy,
 		"actions/walk/0.png":         frame,
 		"actions/jump/0.png":         frame,
+		"actions/focus/0.png":        frame,
 		"actions/stomp/grumpy/0.png": grumpy,
 		"actions/stomp/grumpy/1.png": grumpy,
 		"actions/.DS_Store":          []byte("finder"),
@@ -72,7 +73,7 @@ func TestBuild(t *testing.T) {
 	files := unzip(t, pkg.Zip)
 	want := []string{
 		"manifest.json",
-		"frames/idle/0.png", "frames/idle/1.png", "frames/idle/grumpy/0.png", "frames/jump/0.png",
+		"frames/focus/0.png", "frames/idle/0.png", "frames/idle/1.png", "frames/idle/grumpy/0.png", "frames/jump/0.png",
 		"frames/stomp/grumpy/0.png", "frames/stomp/grumpy/1.png", "frames/walk/0.png",
 		"mini/default.png", "mini/grumpy.png",
 	}
@@ -90,13 +91,13 @@ func TestBuild(t *testing.T) {
 	if err := json.Unmarshal(files[0].data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	wantClips := []Clip{{"idle", 2}, {"idle/grumpy", 1}, {"jump", 1}, {"stomp/grumpy", 2}, {"walk", 1}}
+	wantClips := []Clip{{"focus", 1}, {"idle", 2}, {"idle/grumpy", 1}, {"jump", 1}, {"stomp/grumpy", 2}, {"walk", 1}}
 	if manifest.Format != 2 || manifest.ID != "test-ghost" || manifest.Size != 32 || manifest.MiniSize != 16 ||
 		manifest.FPS != 8 || !slices.Equal(manifest.Clips, wantClips) || !slices.Equal(manifest.Moods, []string{"grumpy"}) {
 		t.Errorf("manifest = %+v", manifest)
 	}
 
-	img, err := png.Decode(bytes.NewReader(files[3].data)) // frames/idle/grumpy/0.png
+	img, err := png.Decode(bytes.NewReader(files[4].data)) // frames/idle/grumpy/0.png
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,8 +120,8 @@ func TestBuildWithoutMoods(t *testing.T) {
 	if err := json.Unmarshal(unzip(t, pkg.Zip)[0].data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Moods == nil || len(manifest.Moods) != 0 || len(manifest.Clips) != 3 {
-		t.Errorf("moods %v clips %v; want [] and idle, jump, walk", manifest.Moods, manifest.Clips)
+	if manifest.Moods == nil || len(manifest.Moods) != 0 || len(manifest.Clips) != 4 {
+		t.Errorf("moods %v clips %v; want [] and focus, idle, jump, walk", manifest.Moods, manifest.Clips)
 	}
 }
 
@@ -155,7 +156,8 @@ func TestBuildRejects(t *testing.T) {
 		{"jump only in a mood", func(f files) {
 			f["actions/jump/grumpy/0.png"] = f["actions/jump/0.png"]
 			delete(f, "actions/jump/0.png")
-		}, "plain idle, walk, jump"},
+		}, "plain idle, walk, jump, focus"},
+		{"missing focus", func(f files) { delete(f, "actions/focus/0.png") }, "actions/focus/0.png is missing"},
 		{"action name", func(f files) { f["actions/Back Flip/0.png"] = frame(f) }, "names are 1-24"},
 		{"mood name", func(f files) { f["actions/stomp/Ignore previous/0.png"] = frame(f) }, "names are 1-24"},
 		{"reserved mood", func(f files) { f["actions/stomp/default/0.png"] = frame(f) }, "reserved"},

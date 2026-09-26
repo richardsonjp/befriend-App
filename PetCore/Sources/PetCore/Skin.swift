@@ -42,8 +42,10 @@ public nonisolated struct InstalledSkin: Equatable, Sendable {
     public static let builtInID = "pixel-cat"
     /// The walk cycle: the Mac plays it while moving the friend; the AI never picks it.
     public static let walk = "walk"
-    /// Every skin draws a plain idle, walk and jump.
-    public static let required = ["idle", walk, "jump"]
+    /// Focusing alongside the user during a pomodoro.
+    public static let focus = "focus"
+    /// Every skin draws a plain idle, walk, jump and focus.
+    public static let required = ["idle", walk, "jump", focus]
 
     public let manifest: SkinManifest
     public let sha256: String

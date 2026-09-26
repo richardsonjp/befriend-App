@@ -78,7 +78,12 @@ struct SkinInstallerTests {
             ("a clip that escapes the folder", {
                 $0["manifest.json"] = try editJSON($0["manifest.json"]) { manifest in
                     manifest["clips"] = [["name": "idle", "frames": 1], ["name": "walk", "frames": 1], ["name": "jump", "frames": 1],
-                                         ["name": "../x", "frames": 1]]
+                                         ["name": "focus", "frames": 1], ["name": "../x", "frames": 1]]
+                }
+            }, .invalidManifest),
+            ("no plain focus", {
+                $0["manifest.json"] = try editJSON($0["manifest.json"]) { manifest in
+                    manifest["clips"] = (manifest["clips"] as? [[String: Any]])?.filter { $0["name"] as? String != "focus" }
                 }
             }, .invalidManifest),
             ("no plain walk", {
@@ -88,7 +93,8 @@ struct SkinInstallerTests {
             }, .invalidManifest),
             ("more frames than files", {
                 $0["manifest.json"] = try editJSON($0["manifest.json"]) { manifest in
-                    manifest["clips"] = [["name": "idle", "frames": 9999], ["name": "walk", "frames": 1], ["name": "jump", "frames": 1]]
+                    manifest["clips"] = [["name": "idle", "frames": 9999], ["name": "walk", "frames": 1], ["name": "jump", "frames": 1],
+                                         ["name": "focus", "frames": 1]]
                 }
             }, .invalidManifest),
         ]

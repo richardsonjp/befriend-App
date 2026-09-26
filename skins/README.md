@@ -10,6 +10,7 @@ ghost/
     idle/0.png 1.png …           required: the rest pose, plays in any mood
     walk/0.png …                 required: the Mac's walk cycle, heading right (the AI never picks it)
     jump/0.png …                 required: the menu-bar hop
+    focus/0.png …                required: focusing alongside you during a pomodoro
     stomp/grumpy/0.png …         optional: an action in one mood only
     idle/grumpy/0.png …          optional: idle when grumpy
   mini/

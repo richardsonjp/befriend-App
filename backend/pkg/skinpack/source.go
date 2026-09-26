@@ -9,7 +9,7 @@
 //	mini/default.png                 16×16 head for the Dynamic Island and menu bar
 //	mini/<mood>.png                  one per mood found under actions/
 //
-// Plain idle, walk and jump are required. Frame 0 is the still widgets show; repeat an image to hold a pose.
+// Plain idle, walk, jump and focus are required. Frame 0 is the still widgets show; repeat an image to hold a pose.
 package skinpack
 
 import (
@@ -35,8 +35,9 @@ const (
 	DefaultMini = "default" // the head shown when the skin has no face for the mood; not a mood name
 )
 
-// Required are the plain actions every skin draws: the rest pose, the Mac's walk cycle and its menu-bar hop.
-var Required = []string{"idle", "walk", "jump"}
+// Required are the plain actions every skin draws: the rest pose, the Mac's walk cycle, its menu-bar hop, and
+// focusing alongside the user during a pomodoro.
+var Required = []string{"idle", "walk", "jump", "focus"}
 
 var (
 	idPattern    = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
