@@ -2,6 +2,7 @@ package skin
 
 import (
 	"context"
+	"time"
 
 	"befriend/internal/model"
 	"befriend/pkg/clients/db"
@@ -26,6 +27,14 @@ type SkinRepo interface {
 	Grant(ctx context.Context, userID, skinID string) (bool, error)
 	// Revoke deletes the grant (a foreign key clears the account's pick of it); false when there was none.
 	Revoke(ctx context.Context, userID, skinID string) (bool, error)
+	// Submissions (M9): artists' uploads and their review.
+	CountPendingSubmissions(ctx context.Context, artistID string) (int64, error)
+	CreateSubmission(ctx context.Context, m *model.SkinSubmission) error
+	// ListSubmissions returns submissions without archives, newest first; nil artist and "" status list all.
+	ListSubmissions(ctx context.Context, artistID *string, status string, limit int) ([]model.SkinSubmission, error)
+	GetSubmission(ctx context.Context, id string) (*model.SkinSubmission, error)
+	ReviewSubmission(ctx context.Context, id, status string, note *string, now time.Time) error
+	GetArtist(ctx context.Context, skinID string) (artist *string, found bool, err error)
 	// NotifyUser and NotifySelected queue skin_changed notifications, delivered when the transaction commits.
 	NotifyUser(ctx context.Context, userID string) error
 	NotifySelected(ctx context.Context, skinID string) error

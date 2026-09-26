@@ -11,10 +11,13 @@ import (
 // publishSQL returns the new version only when the archive changed: an identical one matches no row to update.
 // The name is inside the archive (manifest.json), so renaming a skin changes its sha256 too.
 const publishSQL = `
-INSERT INTO skin (id, name, version, sha256, archive, clips) VALUES (@id, @name, 1, @sha256, @archive, @clips)
+INSERT INTO skin (id, name, version, sha256, archive, clips, artist_user_id)
+VALUES (@id, @name, 1, @sha256, @archive, @clips, @artist)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, version = skin.version + 1, sha256 = EXCLUDED.sha256,
-    archive = EXCLUDED.archive, clips = EXCLUDED.clips, updated_at = NOW()
+    archive = EXCLUDED.archive, clips = EXCLUDED.clips,
+    artist_user_id = COALESCE(EXCLUDED.artist_user_id, skin.artist_user_id), updated_at = NOW()
 WHERE skin.sha256 <> EXCLUDED.sha256
+  AND (EXCLUDED.artist_user_id IS NULL OR skin.artist_user_id = EXCLUDED.artist_user_id)
 RETURNING version`
 
 func (r *skinRepo) ListGranted(ctx context.Context, userID string) ([]model.SkinSummary, error) {
@@ -44,13 +47,24 @@ WHERE g.user_id = ? AND s.id = ?`, userID, skinID).Scan(m)
 func (r *skinRepo) Publish(ctx context.Context, m model.Skin) (int, bool, error) {
 	var versions []int
 	err := r.dbdget.Get(ctx).
-		Raw(publishSQL, map[string]interface{}{"id": m.ID, "name": m.Name, "sha256": m.SHA256, "archive": m.Archive, "clips": m.Clips}).
+		Raw(publishSQL, map[string]interface{}{"id": m.ID, "name": m.Name, "sha256": m.SHA256, "archive": m.Archive, "clips": m.Clips, "artist": m.ArtistUserID}).
 		Scan(&versions).Error
 	if err != nil || len(versions) == 1 {
 		return firstOrZero(versions), err == nil, err
 	}
-	err = r.dbdget.Get(ctx).Raw(`SELECT version FROM skin WHERE id = ?`, m.ID).Scan(&versions).Error
-	return firstOrZero(versions), false, err
+	// Nothing changed, or an artist's upload met a skin that isn't theirs (checked in the same statement, so two
+	// artists racing on a new id can't take each other's).
+	var rows []model.Skin
+	if err := r.dbdget.Get(ctx).Raw(`SELECT version, sha256, artist_user_id FROM skin WHERE id = ?`, m.ID).Scan(&rows).Error; err != nil {
+		return 0, false, err
+	}
+	if len(rows) == 1 && rows[0].SHA256 != m.SHA256 {
+		return 0, false, errors.From("SKIN_TAKEN")
+	}
+	if len(rows) == 0 {
+		return 0, false, nil
+	}
+	return rows[0].Version, false, nil
 }
 
 func (r *skinRepo) GetClips(ctx context.Context, skinID string) ([]string, error) {

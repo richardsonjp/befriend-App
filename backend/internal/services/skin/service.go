@@ -52,7 +52,7 @@ func (s *skinService) GetArchive(ctx context.Context, userID, skinID string) (*m
 	return m, err
 }
 
-func (s *skinService) Publish(ctx context.Context, pkg *skinpack.Package) (int, bool, error) {
+func (s *skinService) Publish(ctx context.Context, pkg *skinpack.Package, artistID *string) (int, bool, error) {
 	var version int
 	var changed bool
 	err := s.txRepo.Run(ctx, func(ctx context.Context) error {
@@ -63,6 +63,7 @@ func (s *skinService) Publish(ctx context.Context, pkg *skinpack.Package) (int, 
 		}
 		version, changed, err = s.skinRepo.Publish(ctx, model.Skin{
 			ID: pkg.ID, Name: pkg.Name, SHA256: pkg.SHA256, Archive: pkg.Zip, Clips: ct.JSONB[[]string]{Data: clips},
+			ArtistUserID: artistID,
 		})
 		if err != nil || !changed {
 			return err

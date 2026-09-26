@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"befriend/cmd/apiserver/app/store"
 	"befriend/internal/services/skin"
@@ -22,7 +23,7 @@ func SkinBuild(dir, out string) {
 func SkinPublish(dir string) {
 	pkg := buildSkin(dir)
 	store.Init()
-	version, changed, err := store.App.SkinService.Publish(context.Background(), pkg)
+	version, changed, err := store.App.SkinService.Publish(context.Background(), pkg, nil)
 	exitOnError("skin publish", err)
 	if !changed {
 		fmt.Printf("skin publish: %s is unchanged at version %d\n", pkg.ID, version)
@@ -47,6 +48,52 @@ func SkinRevoke(payload skin.GrantPayload) {
 		return
 	}
 	fmt.Printf("skin revoke: %s revoked\n", payload.SkinID)
+}
+
+// SkinSubmissions lists what's waiting for review, oldest last.
+func SkinSubmissions() {
+	store.Init()
+	pending, err := store.App.SkinService.ListSubmissions(context.Background(), nil)
+	exitOnError("skin submissions", err)
+	if len(pending) == 0 {
+		fmt.Println("skin submissions: nothing waiting")
+		return
+	}
+	for _, s := range pending {
+		fmt.Printf("%s  %-20s %-24q artist %s  %s\n", s.ID, s.SkinID, s.Name, s.ArtistID, s.CreatedAt.Format(time.DateTime))
+	}
+}
+
+// SkinSubmission saves an upload so it can be unzipped and looked at (or run through `skin build`).
+func SkinSubmission(id, out string) {
+	store.Init()
+	m, err := store.App.SkinService.GetSubmission(context.Background(), id)
+	exitOnError("skin submission", err)
+	exitOnError("skin submission", os.WriteFile(out, m.Archive, 0o644))
+	fmt.Printf("skin submission: %s (%s, %s) → %s\n", m.SkinID, m.Name, m.Status, out)
+}
+
+func SkinApprove(id string) {
+	store.Init()
+	pkg, version, err := store.App.SkinService.Approve(context.Background(), id)
+	exitOnError("skin approve", err)
+	fmt.Printf("skin approve: %s published as version %d (%d bytes); grant it to accounts with `skin grant`\n", pkg.ID, version, len(pkg.Zip))
+}
+
+func SkinReject(id, note string) {
+	store.Init()
+	exitOnError("skin reject", store.App.SkinService.Reject(context.Background(), id, note))
+	fmt.Println("skin reject: done; the artist sees your note")
+}
+
+func SetArtist(payload skin.GrantPayload, artist bool) {
+	store.Init()
+	exitOnError("artist", store.App.SkinService.SetArtist(context.Background(), payload, artist))
+	if artist {
+		fmt.Println("artist add: the account can submit skins")
+	} else {
+		fmt.Println("artist remove: the account can no longer submit skins")
+	}
 }
 
 func buildSkin(dir string) *skinpack.Package {

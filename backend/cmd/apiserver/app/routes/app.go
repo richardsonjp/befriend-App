@@ -9,6 +9,9 @@ import (
 )
 
 // initAppRoute registers the signed-in app endpoints.
+// submissionsPerMinute caps skin uploads per client; each one is unzipped and built.
+const submissionsPerMinute = 5
+
 func initAppRoute(api fiber.Router, appStore *store.Store) {
 	auth := appStore.MiddlewarePasetoAuth.MiddlewarePasetoAuth
 	// Pairing codes are short: limit guessing them even for signed-in users.
@@ -32,4 +35,6 @@ func initAppRoute(api fiber.Router, appStore *store.Store) {
 	api.Get("/presence/ws", auth, appStore.PresenceHandler.RequireUpgrade, appStore.PresenceHandler.Socket())
 	api.Get("/skins", auth, appStore.SkinHandler.List)
 	api.Get("/skins/:id/archive", auth, appStore.SkinHandler.Archive)
+	api.Get("/skins/submissions", auth, appStore.SkinHandler.Submissions)
+	api.Post("/skins/submissions", middlewares.RateLimit(submissionsPerMinute), auth, appStore.SkinHandler.Submit)
 }

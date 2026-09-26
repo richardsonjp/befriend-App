@@ -24,7 +24,9 @@ type User struct {
 	LogSyncPaused bool               `gorm:"column:log_sync_paused;default:false"`
 	ExcludedApps  ct.JSONB[[]string] `gorm:"column:excluded_apps;default:'[]'"`
 	// SkinID is the granted skin the account picked; nil means the built-in one.
-	SkinID    *string   `gorm:"column:skin_id"`
+	SkinID *string `gorm:"column:skin_id"`
+	// IsArtist lets the account submit skins (apiserver artist add).
+	IsArtist  bool      `gorm:"column:is_artist;default:false"`
 	CreatedAt time.Time `gorm:"column:created_at;default:now()"`
 	UpdatedAt time.Time `gorm:"column:updated_at;default:now()"`
 }

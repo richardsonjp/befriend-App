@@ -17,6 +17,8 @@ type UserService interface {
 	ClaimForProvider(ctx context.Context, id string) error
 	UpdateSyncSettings(ctx context.Context, m model.User) error
 	UpdateSkin(ctx context.Context, id string, skinID *string) error
+	// SetArtist lets the account submit skins, or stops it.
+	SetArtist(ctx context.Context, id string, artist bool) error
 	DeleteUser(ctx context.Context, id string) error
 }
 

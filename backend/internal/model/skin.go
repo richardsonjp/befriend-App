@@ -19,9 +19,11 @@ type Skin struct {
 	SHA256  string `gorm:"column:sha256"`
 	Archive []byte `gorm:"column:archive"`
 	// Clips are its animations ("wave", "wave/grumpy"): what its friend's phrasebook may use.
-	Clips     ct.JSONB[[]string] `gorm:"column:clips"`
-	CreatedAt time.Time          `gorm:"column:created_at"`
-	UpdatedAt time.Time          `gorm:"column:updated_at"`
+	Clips ct.JSONB[[]string] `gorm:"column:clips"`
+	// ArtistUserID made it (nil: published from the repo); only they can submit a new version.
+	ArtistUserID *string   `gorm:"column:artist_user_id"`
+	CreatedAt    time.Time `gorm:"column:created_at"`
+	UpdatedAt    time.Time `gorm:"column:updated_at"`
 }
 
 // SkinSummary is a skin without its archive.

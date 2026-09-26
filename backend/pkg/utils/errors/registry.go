@@ -32,5 +32,10 @@ var Registry = map[string]AppError{
 	// # pairing: the code expired, was already used, or doesn't match
 	"PAIRING_GONE": {Code: "PAIRING_GONE", Status: http.StatusGone, Message: "Pairing code expired"},
 	// # skins: not published, or not granted to this account (the two look the same)
-	"SKIN_NOT_FOUND": {Code: "SKIN_NOT_FOUND", Status: http.StatusNotFound, Message: "Skin not found"},
+	"SKIN_NOT_FOUND":       {Code: "SKIN_NOT_FOUND", Status: http.StatusNotFound, Message: "Skin not found"},
+	"NOT_AN_ARTIST":        {Code: "NOT_AN_ARTIST", Status: http.StatusForbidden, Message: "Only invited artists can submit skins"},
+	"SKIN_TAKEN":           {Code: "SKIN_TAKEN", Status: http.StatusConflict, Message: "Another artist's skin already uses this id"},
+	"SKIN_INVALID":         {Code: "SKIN_INVALID", Status: http.StatusUnprocessableEntity, Message: "The skin doesn't follow the format"},
+	"TOO_MANY_SUBMISSIONS": {Code: "TOO_MANY_SUBMISSIONS", Status: http.StatusTooManyRequests, Message: "Wait for your submissions to be reviewed first"},
+	"SUBMISSION_NOT_FOUND": {Code: "SUBMISSION_NOT_FOUND", Status: http.StatusNotFound, Message: "Submission not found"},
 }

@@ -23,6 +23,35 @@ ghost/
 - Names: 1–24 of `a-z`, `0-9`, `_`, starting with a letter. `default` is not a mood.
 - In the app, a mood the action wasn't drawn for plays the plain action, and an action the skin lacks plays idle.
 
+## Submitting a skin (invited artists)
+
+Zip the skin folder and upload it with your befriend account's access token. The id is what the skin is
+published under: 1–40 of `a-z`, `0-9`, `-`, and not another artist's.
+
+```bash
+cd ghost && zip -r ../ghost.zip . && cd ..
+curl -X POST "https://<api>/api/skins/submissions?skin_id=ghost" \
+  -H "Authorization: Bearer <token>" -H "STATIC-API-KEY: <key>" \
+  -H "Content-Type: application/zip" --data-binary @ghost.zip
+curl "https://<api>/api/skins/submissions" -H "Authorization: Bearer <token>" -H "STATIC-API-KEY: <key>"
+```
+
+The upload is checked against this format right away (the error says what's wrong), then waits for review. Up to
+3 can wait at once; zips are at most 4 MB. Submitting the same id again after approval is how you ship a new
+version.
+
+Reviewing, from `backend/`:
+
+```bash
+go run ./cmd/apiserver artist add --email artist@example.com       # invite (artist remove to stop)
+go run ./cmd/apiserver skin submissions                             # what's waiting
+go run ./cmd/apiserver skin submission <id> -o ghost.zip            # look at it
+go run ./cmd/apiserver skin approve <id>                            # publish it as the artist's skin
+go run ./cmd/apiserver skin reject <id> --note "The walk stutters." # the artist sees the note
+```
+
+## Built-in and granted skins
+
 `pixel-cat` ships inside the apps (PetCore's `Resources/pixel-cat.zip`); everyone has it. Other skins are published
 to the backend and granted per account. From `backend/`:
 

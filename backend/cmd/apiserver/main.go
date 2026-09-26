@@ -89,6 +89,67 @@ var (
 		},
 	}
 
+	skinSubmissionsCMD = &cobra.Command{
+		Use:   "submissions",
+		Short: "List artists' submissions waiting for review",
+		Args:  cobra.NoArgs,
+		Run: func(_ *cobra.Command, _ []string) {
+			app.SkinSubmissions()
+		},
+	}
+
+	skinSubmissionCMD = &cobra.Command{
+		Use:   "submission <submission id>",
+		Short: "Save a submission's upload to look at before approving it",
+		Args:  cobra.ExactArgs(1),
+		Run: func(c *cobra.Command, args []string) {
+			out, _ := c.Flags().GetString("out")
+			app.SkinSubmission(args[0], out)
+		},
+	}
+
+	skinApproveCMD = &cobra.Command{
+		Use:   "approve <submission id>",
+		Short: "Publish a submission as its artist's skin",
+		Args:  cobra.ExactArgs(1),
+		Run: func(_ *cobra.Command, args []string) {
+			app.SkinApprove(args[0])
+		},
+	}
+
+	skinRejectCMD = &cobra.Command{
+		Use:   "reject <submission id>",
+		Short: "Turn a submission down, telling the artist why",
+		Args:  cobra.ExactArgs(1),
+		Run: func(c *cobra.Command, args []string) {
+			note, _ := c.Flags().GetString("note")
+			app.SkinReject(args[0], note)
+		},
+	}
+
+	artistCMD = &cobra.Command{
+		Use:   "artist",
+		Short: "Invite accounts to submit skins",
+	}
+
+	artistAddCMD = &cobra.Command{
+		Use:   "add",
+		Short: "Let an account submit skins",
+		Args:  cobra.NoArgs,
+		Run: func(c *cobra.Command, _ []string) {
+			app.SetArtist(grantPayload(c), true)
+		},
+	}
+
+	artistRemoveCMD = &cobra.Command{
+		Use:   "remove",
+		Short: "Stop an account submitting skins (its published skins stay)",
+		Args:  cobra.NoArgs,
+		Run: func(c *cobra.Command, _ []string) {
+			app.SetArtist(grantPayload(c), false)
+		},
+	}
+
 	harvestCMD = &cobra.Command{
 		Use:   "harvest",
 		Short: "Build training data for befriend's own personality model",
@@ -160,7 +221,17 @@ func main() {
 		c.Flags().String("user-id", "", "account user ID (for accounts without an email)")
 		_ = c.MarkFlagRequired("skin")
 	}
-	skinCMD.AddCommand(skinBuildCMD, skinPublishCMD, skinGrantCMD, skinRevokeCMD)
+	for _, c := range []*cobra.Command{artistAddCMD, artistRemoveCMD} {
+		c.Flags().String("email", "", "account email")
+		c.Flags().String("user-id", "", "account user ID (for accounts without an email)")
+	}
+	skinSubmissionCMD.Flags().StringP("out", "o", "", "zip file to write")
+	_ = skinSubmissionCMD.MarkFlagRequired("out")
+	skinRejectCMD.Flags().String("note", "", "why, for the artist (max 500 characters)")
+	_ = skinRejectCMD.MarkFlagRequired("note")
+	skinCMD.AddCommand(skinBuildCMD, skinPublishCMD, skinGrantCMD, skinRevokeCMD,
+		skinSubmissionsCMD, skinSubmissionCMD, skinApproveCMD, skinRejectCMD)
+	artistCMD.AddCommand(artistAddCMD, artistRemoveCMD)
 
 	harvestInputsCMD.Flags().IntP("count", "n", 1200, "how many synthetic users")
 	harvestInputsCMD.Flags().Uint64("seed", 1, "same seed, same users: lets a harvest be extended")
@@ -177,6 +248,7 @@ func main() {
 	rootCMD.AddCommand(migrateCMD)
 	rootCMD.AddCommand(evolveCMD)
 	rootCMD.AddCommand(skinCMD)
+	rootCMD.AddCommand(artistCMD)
 	rootCMD.AddCommand(harvestCMD)
 	if err := rootCMD.Execute(); err != nil {
 		os.Exit(1)
