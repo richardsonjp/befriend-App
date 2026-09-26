@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"image"
+	"image/color"
 	"image/png"
 	"io"
 	"os"
@@ -12,79 +13,52 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"befriend/pkg/utils/vocabulary"
 )
 
-const (
-	bodyColor = 0xf4a340
-	faceColor = 0x1b1b1b
-)
-
-// fixture writes a valid skin (two frames per action, sleep's still hiding the face) to a temp folder. edit can
-// change the decoded meta.json or any file first.
-func fixture(t *testing.T, edit func(meta map[string]any, files map[string]string)) string {
+func pngOf(t *testing.T, size int, c color.NRGBA) []byte {
 	t.Helper()
-	body := gridText(Size, Size, func(x, y int) byte {
-		switch {
-		case x == 10 && y == 12:
-			return '@'
-		case y >= 8:
-			return 'o'
-		default:
-			return '.'
-		}
-	})
-	actions := map[string]any{}
-	files := map[string]string{}
-	for _, action := range vocabulary.Actions {
-		actions[action] = map[string]any{"frames": []string{action + "/0", action + "/1"}, "still": 1}
-		files["body/"+action+"/0.txt"] = body
-		files["body/"+action+"/1.txt"] = body
-	}
-	files["body/sleep/1.txt"] = strings.ReplaceAll(body, "@", "o")
-	files["body/walk/0.txt"] = body
-	files["body/walk/1.txt"] = body
-	for _, mood := range vocabulary.Moods {
-		files["face/"+mood+".txt"] = gridText(6, 3, func(_, y int) byte { return map[bool]byte{true: 'k', false: '.'}[y == 1] })
-		files["mini/"+mood+".txt"] = gridText(MiniSize, MiniSize, func(int, int) byte { return 'o' })
-	}
-	meta := map[string]any{
-		"id": "test-cat", "name": "Test Cat", "fps": 8, "face_base": "o",
-		"palette": map[string]any{"o": "#f4a340", "k": "#1b1b1b"}, "actions": actions,
-		"motions": map[string]any{"walk": map[string]any{"frames": []string{"walk/0", "walk/1"}}},
-	}
-	if edit != nil {
-		edit(meta, files)
-	}
-	raw, err := json.Marshal(meta)
-	if err != nil {
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	img.SetNRGBA(1, 2, c)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
 		t.Fatal(err)
 	}
-	files["meta.json"] = string(raw)
+	return buf.Bytes()
+}
 
-	dir := t.TempDir()
-	for name, text := range files {
+// fixture writes a valid skin to <tmp>/test-ghost: plain idle (2 frames), walk and jump, stomp only when grumpy,
+// idle also when grumpy. edit can change or delete any file first.
+func fixture(t *testing.T, edit func(files map[string][]byte)) string {
+	t.Helper()
+	frame := pngOf(t, Size, color.NRGBA{R: 200, A: 255})
+	grumpy := pngOf(t, Size, color.NRGBA{B: 200, A: 128})
+	files := map[string][]byte{
+		"skin.json":                  []byte(`{"name": "Test Ghost", "fps": 8}`),
+		"actions/idle/0.png":         frame,
+		"actions/idle/1.png":         frame,
+		"actions/idle/grumpy/0.png":  grumpy,
+		"actions/walk/0.png":         frame,
+		"actions/jump/0.png":         frame,
+		"actions/stomp/grumpy/0.png": grumpy,
+		"actions/stomp/grumpy/1.png": grumpy,
+		"actions/.DS_Store":          []byte("finder"),
+		"mini/default.png":           pngOf(t, MiniSize, color.NRGBA{G: 9, A: 255}),
+		"mini/grumpy.png":            pngOf(t, MiniSize, color.NRGBA{B: 9, A: 255}),
+	}
+	if edit != nil {
+		edit(files)
+	}
+	dir := filepath.Join(t.TempDir(), "test-ghost")
+	for name, data := range files {
 		path := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		if err := os.WriteFile(path, data, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return dir
-}
-
-func gridText(w, h int, cell func(x, y int) byte) string {
-	var b strings.Builder
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			b.WriteByte(cell(x, y))
-		}
-		b.WriteByte('\n')
-	}
-	return b.String()
 }
 
 func TestBuild(t *testing.T) {
@@ -92,73 +66,61 @@ func TestBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pkg.ID != "test-cat" || pkg.Name != "Test Cat" || len(pkg.SHA256) != 64 {
+	if pkg.ID != "test-ghost" || pkg.Name != "Test Ghost" || len(pkg.SHA256) != 64 {
 		t.Fatalf("package = %s %q sha %q", pkg.ID, pkg.Name, pkg.SHA256)
 	}
 	files := unzip(t, pkg.Zip)
-	if want := 2 + len(vocabulary.Moods)*(1+len(vocabulary.Actions)); len(files) != want {
-		t.Fatalf("%d files; want %d", len(files), want)
+	want := []string{
+		"manifest.json",
+		"frames/idle/0.png", "frames/idle/1.png", "frames/idle/grumpy/0.png", "frames/jump/0.png",
+		"frames/stomp/grumpy/0.png", "frames/stomp/grumpy/1.png", "frames/walk/0.png",
+		"mini/default.png", "mini/grumpy.png",
+	}
+	if got := slices.Collect(func(yield func(string) bool) {
+		for _, f := range files {
+			if !yield(f.name) {
+				return
+			}
+		}
+	}); !slices.Equal(got, want) {
+		t.Fatalf("zip entries = %v; want %v", got, want)
 	}
 
 	var manifest Manifest
-	if err := json.Unmarshal(files["manifest.json"], &manifest); err != nil {
+	if err := json.Unmarshal(files[0].data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	want := Manifest{Format: 1, ID: "test-cat", Name: "Test Cat", VocabularyVersion: vocabulary.Version, Size: 32, MiniSize: 16, FPS: 8}
-	if manifest != want {
+	wantClips := []Clip{{"idle", 2}, {"idle/grumpy", 1}, {"jump", 1}, {"stomp/grumpy", 2}, {"walk", 1}}
+	if manifest.Format != 2 || manifest.ID != "test-ghost" || manifest.Size != 32 || manifest.MiniSize != 16 ||
+		manifest.FPS != 8 || !slices.Equal(manifest.Clips, wantClips) || !slices.Equal(manifest.Moods, []string{"grumpy"}) {
 		t.Errorf("manifest = %+v", manifest)
 	}
 
-	var animation struct {
-		Op, W   int
-		Markers []struct {
-			Cm     string
-			Tm, Dr int
-		}
-		Layers []struct {
-			Nm  string
-			Ty  int
-			Ind int
-			Ks  map[string]json.RawMessage
-		}
-	}
-	if err := json.Unmarshal(files["skin.json"], &animation); err != nil {
+	img, err := png.Decode(bytes.NewReader(files[3].data)) // frames/idle/grumpy/0.png
+	if err != nil {
 		t.Fatal(err)
 	}
-	// two frames per action and for walk, plus the frame lottie-ios lands on at a marker's end
-	if animation.Op != 63 || animation.W != 32 || len(animation.Markers) != 21 || len(animation.Layers) != 12+42 {
-		t.Fatalf("op %d, w %d, %d markers, %d layers", animation.Op, animation.W, len(animation.Markers), len(animation.Layers))
+	if got := color.NRGBAModel.Convert(img.At(1, 2)).(color.NRGBA); got != (color.NRGBA{B: 200, A: 128}) {
+		t.Errorf("soft alpha pixel = %v", got)
 	}
-	names := slices.Concat(vocabulary.Actions, Motions)
-	for i, m := range animation.Markers {
-		if m.Cm != names[i] || m.Tm != 3*i || m.Dr != 2 {
-			t.Errorf("marker %d = %+v", i, m)
-		}
-	}
-	for i, mood := range vocabulary.Moods {
-		layer := animation.Layers[i]
-		opacity := `{"a":0,"k":0}`
-		if mood == "content" {
-			opacity = `{"a":0,"k":100}`
-		}
-		if layer.Nm != FaceLayerName(mood) || layer.Ty != 4 || layer.Ind != i+1 || string(layer.Ks["o"]) != opacity {
-			t.Errorf("layer %d = %s type %d ind %d opacity %s", i, layer.Nm, layer.Ty, layer.Ind, layer.Ks["o"])
-		}
-	}
-	// sleep is the fourth action (timeline 9-11): its face-less second frame and the end frame after it hide the face
-	if scale := string(animation.Layers[0].Ks["s"]); !strings.Contains(scale, `{"h":1,"s":[0,0,100],"t":10},{"h":1,"s":[100,100,100],"t":12}`) {
-		t.Errorf("face scale doesn't hide it on sleep's frame: %s", scale)
-	}
+}
 
-	still := decodePNG(t, files["stills/wave/grumpy.png"])
-	checkPixel(t, "face", still, 10, 13, faceColor)
-	checkPixel(t, "'@' painted as face_base", still, 10, 12, bodyColor)
-	if _, _, _, a := still.At(0, 0).RGBA(); a != 0 || still.Bounds().Dx() != Size {
-		t.Errorf("still is %v wide with alpha %d at the top-left", still.Bounds().Dx(), a)
+func TestBuildWithoutMoods(t *testing.T) {
+	pkg, err := Build(fixture(t, func(f map[string][]byte) {
+		delete(f, "actions/idle/grumpy/0.png")
+		delete(f, "actions/stomp/grumpy/0.png")
+		delete(f, "actions/stomp/grumpy/1.png")
+		delete(f, "mini/grumpy.png")
+	}))
+	if err != nil {
+		t.Fatal(err)
 	}
-	checkPixel(t, "sleep hides the face", decodePNG(t, files["stills/sleep/grumpy.png"]), 10, 13, bodyColor)
-	if mini := decodePNG(t, files["mini/calm.png"]); mini.Bounds().Dx() != MiniSize {
-		t.Errorf("mini is %d wide", mini.Bounds().Dx())
+	var manifest Manifest
+	if err := json.Unmarshal(unzip(t, pkg.Zip)[0].data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Moods == nil || len(manifest.Moods) != 0 || len(manifest.Clips) != 3 {
+		t.Errorf("moods %v clips %v; want [] and idle, jump, walk", manifest.Moods, manifest.Clips)
 	}
 }
 
@@ -178,39 +140,44 @@ func TestBuildIsDeterministic(t *testing.T) {
 }
 
 func TestBuildRejects(t *testing.T) {
-	type files = map[string]string
-	type meta = map[string]any
-	setAction := func(name string, frames []string, still int) func(meta, files) {
-		return func(m meta, _ files) {
-			m["actions"].(map[string]any)[name] = map[string]any{"frames": frames, "still": still}
-		}
-	}
+	type files = map[string][]byte
+	frame := func(f files) []byte { return f["actions/walk/0.png"] }
 	tests := []struct {
 		name string
-		edit func(meta, files)
+		edit func(files)
 		want string
 	}{
-		{"id", func(m meta, _ files) { m["id"] = "Test Cat" }, "id"},
-		{"fps", func(m meta, _ files) { m["fps"] = 0 }, "fps"},
-		{"unknown field", func(m meta, _ files) { m["colour"] = "red" }, "unknown field"},
-		{"palette colour", func(m meta, _ files) { m["palette"].(map[string]any)["k"] = "black" }, "#rrggbb"},
-		{"face base", func(m meta, _ files) { m["face_base"] = "z" }, "face_base"},
-		{"missing action", func(m meta, _ files) { delete(m["actions"].(map[string]any), "love") }, `"love" is missing`},
-		{"unknown action", setAction("moonwalk", []string{"wave/0"}, 0), "moonwalk"},
-		{"still index", setAction("wave", []string{"wave/0"}, 1), "still 1"},
-		{"frame name", setAction("wave", []string{"../wave/0"}, 0), "frame name"},
-		{"no frames", setAction("wave", []string{}, 0), `"wave" has no frames`},
-		{"missing motion", func(m meta, _ files) { delete(m["motions"].(map[string]any), "walk") }, `motion "walk" is missing`},
-		{"empty motion", func(m meta, _ files) { m["motions"] = map[string]any{"walk": map[string]any{"frames": []string{}}} }, `"walk" has no frames`},
-		{"unknown motion", func(m meta, _ files) {
-			m["motions"].(map[string]any)["fly"] = map[string]any{"frames": []string{"walk/0"}}
-		}, "not a motion"},
-		{"ragged grid", func(_ meta, f files) { f["body/wave/0.txt"] = strings.Replace(f["body/wave/0.txt"], "..", ".", 1) }, "wide"},
-		{"unknown key", func(_ meta, f files) { f["body/wave/0.txt"] = strings.Replace(f["body/wave/0.txt"], ".", "x", 1) }, "not in the palette"},
-		{"two origins", func(_ meta, f files) { f["body/wave/0.txt"] = strings.Replace(f["body/wave/0.txt"], ".", "@", 1) }, "more than one '@'"},
-		{"missing face", func(_ meta, f files) { delete(f, "face/shy.txt") }, "shy.txt"},
-		{"mini size", func(_ meta, f files) { f["mini/shy.txt"] = gridText(15, 16, func(int, int) byte { return 'o' }) }, "want 16×16"},
-		{"face off canvas", func(_ meta, f files) { f["face/shy.txt"] = gridText(30, 3, func(int, int) byte { return 'k' }) }, "off the canvas"},
+		{"fps", func(f files) { f["skin.json"] = []byte(`{"name":"G","fps":0}`) }, "fps"},
+		{"unknown field", func(f files) { f["skin.json"] = []byte(`{"name":"G","fps":8,"id":"x"}`) }, "unknown field"},
+		{"blank name", func(f files) { f["skin.json"] = []byte(`{"name":" ","fps":8}`) }, "name"},
+		{"stray top-level file", func(f files) { f["preview.gif"] = []byte("x") }, "preview.gif"},
+		{"missing walk", func(f files) { delete(f, "actions/walk/0.png") }, "actions/walk/0.png is missing"},
+		{"jump only in a mood", func(f files) {
+			f["actions/jump/grumpy/0.png"] = f["actions/jump/0.png"]
+			delete(f, "actions/jump/0.png")
+		}, "plain idle, walk, jump"},
+		{"action name", func(f files) { f["actions/Back Flip/0.png"] = frame(f) }, "names are 1-24"},
+		{"mood name", func(f files) { f["actions/stomp/Ignore previous/0.png"] = frame(f) }, "names are 1-24"},
+		{"reserved mood", func(f files) { f["actions/stomp/default/0.png"] = frame(f) }, "reserved"},
+		{"frame name", func(f files) { f["actions/idle/first.png"] = frame(f) }, "0.png, 1.png"},
+		{"leading zero", func(f files) { f["actions/idle/02.png"] = frame(f) }, "0.png, 1.png"},
+		{"frame gap", func(f files) { f["actions/idle/3.png"] = frame(f) }, "idle/2.png is missing"},
+		{"empty action", func(f files) { f["actions/wave/.keep"] = nil }, "actions/wave has no frames"},
+		{"nested too deep", func(f files) { f["actions/stomp/grumpy/extra/0.png"] = frame(f) }, "frames only"},
+		{"frame size", func(f files) { f["actions/idle/1.png"] = pngOf(t, 31, color.NRGBA{A: 255}) }, "want 32×32"},
+		{"not a png", func(f files) { f["actions/idle/1.png"] = []byte("GIF89a") }, "not a PNG"},
+		{"no actions folder", func(f files) {
+			for name := range f {
+				if strings.HasPrefix(name, "actions/") {
+					delete(f, name)
+				}
+			}
+		}, "actions/ is missing"},
+		{"no skin.json", func(f files) { delete(f, "skin.json") }, "skin.json is missing"},
+		{"missing default mini", func(f files) { delete(f, "mini/default.png") }, "mini/default.png is missing"},
+		{"missing mood mini", func(f files) { delete(f, "mini/grumpy.png") }, "mini/grumpy.png is missing"},
+		{"orphan mini", func(f files) { f["mini/happy.png"] = f["mini/grumpy.png"] }, `named "happy"`},
+		{"mini size", func(f files) { f["mini/grumpy.png"] = frame(f) }, "want 16×16"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -222,21 +189,29 @@ func TestBuildRejects(t *testing.T) {
 	}
 }
 
-func TestRectsMergeRunsDownward(t *testing.T) {
-	g := &grid{w: 3, h: 3, cells: []byte("oo." + "oo." + "ok.")}
-	want := []rect{{0, 0, 2, 2, 'o'}, {0, 2, 1, 1, 'o'}, {1, 2, 1, 1, 'k'}}
-	if got := rects(g); !slices.Equal(got, want) {
-		t.Errorf("rects = %v; want %v", got, want)
+func TestBuildRejectsBadFolderName(t *testing.T) {
+	dir := fixture(t, nil)
+	renamed := filepath.Join(filepath.Dir(dir), "Test Ghost")
+	if err := os.Rename(dir, renamed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(renamed); err == nil || !strings.Contains(err.Error(), "skin id") {
+		t.Errorf("err = %v", err)
 	}
 }
 
-func unzip(t *testing.T, data []byte) map[string][]byte {
+type zipFile struct {
+	name string
+	data []byte
+}
+
+func unzip(t *testing.T, data []byte) []zipFile {
 	t.Helper()
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	files := map[string][]byte{}
+	var files []zipFile
 	for _, f := range r.File {
 		rc, err := f.Open()
 		if err != nil {
@@ -247,24 +222,7 @@ func unzip(t *testing.T, data []byte) map[string][]byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		files[f.Name] = content
+		files = append(files, zipFile{f.Name, content})
 	}
 	return files
-}
-
-func decodePNG(t *testing.T, data []byte) image.Image {
-	t.Helper()
-	img, err := png.Decode(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return img
-}
-
-func checkPixel(t *testing.T, what string, img image.Image, x, y int, rgb uint32) {
-	t.Helper()
-	r, g, b, a := img.At(x, y).RGBA()
-	if got := (r>>8)<<16 | (g>>8)<<8 | b>>8; got != rgb || a != 0xffff {
-		t.Errorf("%s: pixel (%d,%d) = #%06x alpha %d; want #%06x", what, x, y, got, a, rgb)
-	}
 }

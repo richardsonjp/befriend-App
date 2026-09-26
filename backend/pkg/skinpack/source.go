@@ -1,22 +1,24 @@
-// Package skinpack builds a character skin from its text source. A skin folder (skins/<id>/) holds meta.json and
-// pixel grids; Build turns it into the zip the apps install: a Lottie animation with a marker per action and a face
-// layer per mood, a still PNG for every action and mood (widgets can't run Lottie), and a small head per mood for
-// the Dynamic Island.
+// Package skinpack builds a character skin from an artist's folder of PNG frames. Names are the files: whatever
+// actions and moods the folders hold is what the skin can do, and nothing else lists them.
 //
-// Folder layout:
+// Folder layout (skins/<id>/, the folder name is the id):
 //
-//	meta.json             id, name, fps, face_base, palette, actions (frames + still per vocabulary action),
-//	                      motions (frames per Motions entry: app-only moves like walking, never picked by the AI)
-//	body/<frame>.txt      32×32 grid: '.' transparent, palette keys, one '@' where the face's top-left goes
-//	face/<mood>.txt       any size up to 32×32, '.' transparent
-//	mini/<mood>.txt       16×16 head for the Dynamic Island
+//	skin.json                        {"name": "Ghost", "fps": 8}
+//	actions/<action>/<n>.png         32×32 frames played 0, 1, 2…; plays in any mood
+//	actions/<action>/<mood>/<n>.png  that action in that mood only (faces are drawn into the frames)
+//	mini/default.png                 16×16 head for the Dynamic Island and menu bar
+//	mini/<mood>.png                  one per mood found under actions/
+//
+// Plain idle, walk and jump are required. Frame 0 is the still widgets show; repeat an image to hold a pose.
 package skinpack
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"image/color"
+	"image"
+	"image/draw"
+	"image/png"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,264 +26,240 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"befriend/pkg/utils/vocabulary"
 )
 
 const (
-	Size     = 32 // body grids and stills are Size×Size pixels
-	MiniSize = 16 // Dynamic Island heads are MiniSize×MiniSize
-	maxFPS   = 30
-
-	transparent = '.'
-	faceOrigin  = '@' // top-left of the mood face on a body frame; the pixel itself is painted with face_base
+	Size        = 32 // action frames are Size×Size pixels
+	MiniSize    = 16 // heads are MiniSize×MiniSize
+	maxFPS      = 30
+	DefaultMini = "default" // the head shown when the skin has no face for the mood; not a mood name
 )
 
-// Motions are played by the apps themselves (the Mac walks the friend around); they get a marker after the actions
-// and no stills, since widgets never move.
-var Motions = []string{"walk"}
+// Required are the plain actions every skin draws: the rest pose, the Mac's walk cycle and its menu-bar hop.
+var Required = []string{"idle", "walk", "jump"}
 
 var (
-	idPattern        = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
-	frameNamePattern = regexp.MustCompile(`^[a-z0-9_-]+(/[a-z0-9_-]+)?$`)
-	hexColorPattern  = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+	idPattern    = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
+	NamePattern  = regexp.MustCompile(`^[a-z][a-z0-9_]{0,23}$`) // action and mood names; they reach the AI prompt
+	framePattern = regexp.MustCompile(`^(0|[1-9][0-9]{0,3})\.png$`)
 )
 
 type meta struct {
-	ID       string                `json:"id"`
-	Name     string                `json:"name"`
-	FPS      int                   `json:"fps"`
-	FaceBase string                `json:"face_base"` // palette key painted under '@'
-	Palette  map[string]string     `json:"palette"`   // one character → "#rrggbb"
-	Actions  map[string]actionMeta `json:"actions"`
-	Motions  map[string]motionMeta `json:"motions"`
-}
-
-type motionMeta struct {
-	Frames []string `json:"frames"`
-}
-
-// clip is one marker's worth of timeline.
-type clip struct {
-	name   string
-	frames []string
-}
-
-// timeline lists every marker in play order: the vocabulary actions, then the motions.
-func (m *meta) timeline() []clip {
-	var clips []clip
-	for _, action := range vocabulary.Actions {
-		clips = append(clips, clip{action, m.Actions[action].Frames})
-	}
-	for _, motion := range Motions {
-		clips = append(clips, clip{motion, m.Motions[motion].Frames})
-	}
-	return clips
-}
-
-type actionMeta struct {
-	Frames []string `json:"frames"` // grid names under body/, e.g. "wave/0"; repeat a name to hold it longer
-	Still  int      `json:"still"`  // index into Frames drawn for widgets and Live Activities
-}
-
-// grid is a parsed pixel grid: a palette key or '.' per cell, row by row.
-type grid struct {
-	w, h         int
-	cells        []byte
-	faceX, faceY int // where the face goes; -1 when this frame hides it
+	Name string `json:"name"`
+	FPS  int    `json:"fps"`
 }
 
 type source struct {
-	meta    meta
-	palette map[byte]color.NRGBA
-	bodies  map[string]*grid // by frame name, with '@' painted as face_base
-	faces   map[string]*grid // by mood
-	minis   map[string]*grid // by mood
+	id    string
+	meta  meta
+	clips map[string][][]byte // "wave" or "wave/grumpy" → re-encoded frames in play order
+	moods []string            // sorted
+	minis map[string][]byte   // "default" and every mood
 }
 
 func load(dir string) (*source, error) {
-	m, err := readMeta(filepath.Join(dir, "meta.json"))
+	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
-	palette, err := parsePalette(m.Palette)
+	src := &source{id: filepath.Base(abs), clips: map[string][][]byte{}, minis: map[string][]byte{}}
+	if !idPattern.MatchString(src.id) {
+		return nil, fmt.Errorf("folder name %q is the skin id: use 1-40 of a-z, 0-9 and -", src.id)
+	}
+	files, dirs, err := list(abs)
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := palette[firstByte(m.FaceBase)]; !ok || len(m.FaceBase) != 1 {
-		return nil, fmt.Errorf("meta.json: face_base %q must be one palette key", m.FaceBase)
+	if extra := without(append(files, dirs...), "skin.json", "actions", "mini"); len(extra) > 0 {
+		return nil, fmt.Errorf("%s: only skin.json, actions/ and mini/ belong here", extra[0])
 	}
-
-	src := &source{meta: *m, palette: palette, bodies: map[string]*grid{}, faces: map[string]*grid{}, minis: map[string]*grid{}}
-	if err := src.loadBodies(dir); err != nil {
+	for _, want := range [][2]string{{"skin.json", "skin.json"}, {"actions", "actions/"}, {"mini", "mini/"}} {
+		if !slices.Contains(files, want[0]) && !slices.Contains(dirs, want[0]) {
+			return nil, fmt.Errorf("%s is missing", want[1])
+		}
+	}
+	if src.meta, err = readMeta(filepath.Join(abs, "skin.json")); err != nil {
 		return nil, err
 	}
-	for _, mood := range vocabulary.Moods {
-		if src.faces[mood], err = readGrid(filepath.Join(dir, "face", mood+".txt"), 0, 0, false, palette); err != nil {
-			return nil, err
-		}
-		if src.minis[mood], err = readGrid(filepath.Join(dir, "mini", mood+".txt"), MiniSize, MiniSize, false, palette); err != nil {
-			return nil, err
-		}
+	if err := src.loadActions(filepath.Join(abs, "actions")); err != nil {
+		return nil, err
 	}
-	return src, src.checkFacesFit()
+	return src, src.loadMinis(filepath.Join(abs, "mini"))
 }
 
-func readMeta(path string) (*meta, error) {
+func readMeta(path string) (meta, error) {
+	var m meta
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return m, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	var m meta
 	if err := decoder.Decode(&m); err != nil {
-		return nil, fmt.Errorf("meta.json: %w", err)
+		return m, fmt.Errorf("skin.json: %w", err)
 	}
 	switch {
-	case !idPattern.MatchString(m.ID):
-		return nil, fmt.Errorf("meta.json: id %q must be 1-40 of a-z, 0-9 and -", m.ID)
 	case strings.TrimSpace(m.Name) == "" || utf8.RuneCountInString(m.Name) > 40:
-		return nil, fmt.Errorf("meta.json: name must be 1-40 characters")
+		return m, fmt.Errorf("skin.json: name must be 1-40 characters")
 	case m.FPS < 1 || m.FPS > maxFPS:
-		return nil, fmt.Errorf("meta.json: fps must be 1-%d", maxFPS)
+		return m, fmt.Errorf("skin.json: fps must be 1-%d", maxFPS)
 	}
-	for action := range m.Actions {
-		if !vocabulary.IsAction(action) {
-			return nil, fmt.Errorf("meta.json: %q is not a vocabulary v%d action", action, vocabulary.Version)
-		}
-	}
-	for motion := range m.Motions {
-		if !slices.Contains(Motions, motion) {
-			return nil, fmt.Errorf("meta.json: %q is not a motion (%s)", motion, strings.Join(Motions, ", "))
-		}
-	}
-	return &m, nil
+	return m, nil
 }
 
-func parsePalette(raw map[string]string) (map[byte]color.NRGBA, error) {
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("meta.json: palette is empty")
+// loadActions reads actions/<action>/ (plain frames) and actions/<action>/<mood>/ (frames for that mood).
+func (s *source) loadActions(dir string) error {
+	_, actions, err := list(dir)
+	if err != nil {
+		return err
 	}
-	palette := map[byte]color.NRGBA{}
-	for key, hex := range raw {
-		if len(key) != 1 || key[0] <= ' ' || key[0] > '~' || key[0] == transparent || key[0] == faceOrigin {
-			return nil, fmt.Errorf("meta.json: palette key %q must be one printable character other than '.' and '@'", key)
+	moods := map[string]bool{}
+	for _, action := range actions {
+		if err := checkName("actions/"+action, action); err != nil {
+			return err
 		}
-		if !hexColorPattern.MatchString(hex) {
-			return nil, fmt.Errorf("meta.json: palette %q = %q is not #rrggbb", key, hex)
+		frames, variants, err := readFrames(filepath.Join(dir, action), "actions/"+action, true)
+		if err != nil {
+			return err
 		}
-		v, _ := strconv.ParseUint(hex[1:], 16, 32)
-		palette[key[0]] = color.NRGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 255}
-	}
-	return palette, nil
-}
-
-// loadBodies reads every frame the timeline uses, in play order; frames shared between clips load once.
-func (s *source) loadBodies(dir string) error {
-	for _, action := range vocabulary.Actions {
-		a, ok := s.meta.Actions[action]
-		switch {
-		case !ok:
-			return fmt.Errorf("meta.json: action %q is missing", action)
-		case a.Still < 0 || a.Still >= max(len(a.Frames), 1):
-			return fmt.Errorf("meta.json: action %q still %d is not a frame index", action, a.Still)
+		if len(frames) > 0 {
+			s.clips[action] = frames
 		}
-	}
-	for _, motion := range Motions {
-		if _, ok := s.meta.Motions[motion]; !ok {
-			return fmt.Errorf("meta.json: motion %q is missing", motion)
-		}
-	}
-	for _, c := range s.meta.timeline() {
-		if len(c.frames) == 0 {
-			return fmt.Errorf("meta.json: %q has no frames", c.name)
-		}
-		for _, name := range c.frames {
-			if s.bodies[name] != nil {
-				continue
-			}
-			if !frameNamePattern.MatchString(name) {
-				return fmt.Errorf("meta.json: frame name %q must look like wave/0", name)
-			}
-			g, err := readGrid(filepath.Join(dir, "body", name+".txt"), Size, Size, true, s.palette)
-			if err != nil {
+		for _, mood := range variants {
+			path := "actions/" + action + "/" + mood
+			if err := checkName(path, mood); err != nil {
 				return err
 			}
-			for i, cell := range g.cells {
-				if cell == faceOrigin {
-					g.cells[i] = s.meta.FaceBase[0]
-				}
+			if mood == DefaultMini {
+				return fmt.Errorf("%s: %q is reserved; put mood-less frames straight in actions/%s/", path, mood, action)
 			}
-			s.bodies[name] = g
+			if s.clips[action+"/"+mood], _, err = readFrames(filepath.Join(dir, action, mood), path, false); err != nil {
+				return err
+			}
+			moods[mood] = true
+		}
+	}
+	for _, action := range Required {
+		if s.clips[action] == nil {
+			return fmt.Errorf("actions/%s/0.png is missing: every skin draws a plain %s", action, strings.Join(Required, ", "))
+		}
+	}
+	for mood := range moods {
+		s.moods = append(s.moods, mood)
+	}
+	slices.Sort(s.moods)
+	return nil
+}
+
+// readFrames reads a clip's 0.png, 1.png…; allowMoods lets it hold mood folders too, returned by name.
+func readFrames(dir, rel string, allowMoods bool) ([][]byte, []string, error) {
+	files, dirs, err := list(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(dirs) > 0 && !allowMoods {
+		return nil, nil, fmt.Errorf("%s/%s: mood folders hold frames only", rel, dirs[0])
+	}
+	count := 0
+	for _, name := range files {
+		if !framePattern.MatchString(name) {
+			return nil, nil, fmt.Errorf("%s/%s: frames are named 0.png, 1.png, 2.png…", rel, name)
+		}
+		count++
+	}
+	if count == 0 && len(dirs) == 0 {
+		return nil, nil, fmt.Errorf("%s has no frames", rel)
+	}
+	frames := make([][]byte, count)
+	for i := range frames {
+		name := strconv.Itoa(i) + ".png"
+		if !slices.Contains(files, name) {
+			return nil, nil, fmt.Errorf("%s/%s is missing: frames must count up from 0 with no gaps", rel, name)
+		}
+		if frames[i], err = readPNG(filepath.Join(dir, name), rel+"/"+name, Size); err != nil {
+			return nil, nil, err
+		}
+	}
+	return frames, dirs, nil
+}
+
+func (s *source) loadMinis(dir string) error {
+	files, dirs, err := list(dir)
+	if err != nil {
+		return err
+	}
+	if len(dirs) > 0 {
+		return fmt.Errorf("mini/%s: mini/ holds <mood>.png files only", dirs[0])
+	}
+	for _, name := range files {
+		mood := strings.TrimSuffix(name, ".png")
+		if mood == name || (mood != DefaultMini && !slices.Contains(s.moods, mood)) {
+			return fmt.Errorf("mini/%s: no mood folder under actions/ is named %q", name, mood)
+		}
+		if s.minis[mood], err = readPNG(filepath.Join(dir, name), "mini/"+name, MiniSize); err != nil {
+			return err
+		}
+	}
+	for _, mood := range append([]string{DefaultMini}, s.moods...) {
+		if s.minis[mood] == nil {
+			return fmt.Errorf("mini/%s.png is missing", mood)
 		}
 	}
 	return nil
 }
 
-// checkFacesFit makes sure every face drawn at every frame's '@' stays on the canvas.
-func (s *source) checkFacesFit() error {
-	for name, body := range s.bodies {
-		if body.faceX < 0 {
-			continue
-		}
-		for mood, face := range s.faces {
-			if body.faceX+face.w > Size || body.faceY+face.h > Size {
-				return fmt.Errorf("face/%s.txt (%d×%d) runs off the canvas at body/%s.txt's '@' (%d,%d)",
-					mood, face.w, face.h, name, body.faceX, body.faceY)
-			}
-		}
-	}
-	return nil
-}
-
-// readGrid parses a text grid. w and h of 0 accept any size up to the canvas; allowFaceOrigin permits one '@'.
-func readGrid(path string, w, h int, allowFaceOrigin bool, palette map[byte]color.NRGBA) (*grid, error) {
+// readPNG checks the size before decoding (uploads are untrusted) and re-encodes the pixels, dropping metadata so
+// the same art always packs to the same bytes.
+func readPNG(path, rel string, size int) ([]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	name := filepath.Base(filepath.Dir(path)) + "/" + filepath.Base(path)
-	text := strings.TrimRight(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
-
-	g := &grid{faceX: -1, faceY: -1}
-	for y, line := range strings.Split(text, "\n") {
-		if y == 0 {
-			g.w = len(line)
-		}
-		if len(line) != g.w {
-			return nil, fmt.Errorf("%s: line %d is %d wide; line 1 is %d", name, y+1, len(line), g.w)
-		}
-		for x := 0; x < len(line); x++ {
-			c := line[x]
-			_, inPalette := palette[c]
-			switch {
-			case c == transparent || inPalette:
-			case c == faceOrigin && allowFaceOrigin:
-				if g.faceX >= 0 {
-					return nil, fmt.Errorf("%s: more than one '@'", name)
-				}
-				g.faceX, g.faceY = x, y
-			default:
-				return nil, fmt.Errorf("%s: line %d column %d: %q is not in the palette", name, y+1, x+1, c)
-			}
-		}
-		g.cells = append(g.cells, line...)
-		g.h++
-	}
-
+	config, format, err := image.DecodeConfig(bytes.NewReader(raw))
 	switch {
-	case w > 0 && (g.w != w || g.h != h):
-		return nil, fmt.Errorf("%s is %d×%d; want %d×%d", name, g.w, g.h, w, h)
-	case g.w == 0 || g.w > Size || g.h > Size:
-		return nil, fmt.Errorf("%s is %d×%d; want 1-%d on each side", name, g.w, g.h, Size)
+	case err != nil || format != "png":
+		return nil, fmt.Errorf("%s is not a PNG", rel)
+	case config.Width != size || config.Height != size:
+		return nil, fmt.Errorf("%s is %d×%d; want %d×%d", rel, config.Width, config.Height, size, size)
 	}
-	return g, nil
+	decoded, err := png.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", rel, err)
+	}
+	img := image.NewNRGBA(decoded.Bounds())
+	draw.Draw(img, img.Bounds(), decoded, decoded.Bounds().Min, draw.Src)
+	var buf bytes.Buffer
+	err = (&png.Encoder{CompressionLevel: png.BestCompression}).Encode(&buf, img)
+	return buf.Bytes(), err
 }
 
-func firstByte(s string) byte {
-	if s == "" {
-		return 0
+// list returns a folder's files and subfolders, sorted, skipping hidden entries like .DS_Store.
+func list(dir string) (files, dirs []string, err error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil, err
 	}
-	return s[0]
+	for _, e := range entries {
+		switch {
+		case strings.HasPrefix(e.Name(), "."):
+		case e.IsDir():
+			dirs = append(dirs, e.Name())
+		case e.Type().IsRegular():
+			files = append(files, e.Name())
+		default:
+			return nil, nil, fmt.Errorf("%s is not a regular file", e.Name())
+		}
+	}
+	return files, dirs, nil
+}
+
+func checkName(rel, name string) error {
+	if !NamePattern.MatchString(name) {
+		return fmt.Errorf("%s: names are 1-24 of a-z, 0-9 and _, starting with a letter", rel)
+	}
+	return nil
+}
+
+func without(names []string, allowed ...string) []string {
+	return slices.DeleteFunc(names, func(n string) bool { return slices.Contains(allowed, n) })
 }

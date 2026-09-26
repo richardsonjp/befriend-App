@@ -16,7 +16,7 @@ func TestRepoSkins(t *testing.T) {
 				t.Fatal(err)
 			}
 			if pkg.ID != id {
-				t.Errorf("meta id %q; want the folder name %q", pkg.ID, id)
+				t.Errorf("id %q; want the folder name %q", pkg.ID, id)
 			}
 			if id != "pixel-cat" {
 				return

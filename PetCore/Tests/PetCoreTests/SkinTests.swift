@@ -41,7 +41,7 @@ struct SkinInstallerTests {
         let archive = try #require(SkinStore.builtInArchive)
         let skin = try SkinInstaller.install(archive: archive, expectedSHA256: nil, into: root)
         #expect(skin.id == InstalledSkin.builtInID && skin.isBuiltIn)
-        #expect(skin.manifest.size == 32 && skin.manifest.miniSize == 16 && skin.manifest.vocabularyVersion == Vocabulary.version)
+        #expect(skin.manifest.size == 32 && skin.manifest.miniSize == 16 && skin.manifest.format == 2)
         #expect(skin.folder.lastPathComponent == "pixel-cat@\(SkinInstaller.sha256(of: archive))")
         for action in PetAction.allCases {
             for mood in PetMood.allCases {
@@ -49,6 +49,9 @@ struct SkinInstallerTests {
             }
         }
         #expect(FileManager.default.fileExists(atPath: skin.mini(.lonely).path))
+        #expect(skin.clip("wave", "grumpy").name == "wave/grumpy")
+        #expect(skin.clip("walk", "happy").name == "walk", "a mood the skin lacks plays the plain clip")
+        #expect(skin.clip("moonwalk", "grumpy").name == "idle", "an action the skin lacks plays idle")
 
         let again = try SkinInstaller.install(archive: archive, expectedSHA256: SkinInstaller.sha256(of: archive).uppercased(), into: root)
         #expect(again == skin, "an installed skin is reused")
@@ -69,24 +72,25 @@ struct SkinInstallerTests {
         let cases: [(String, (inout [String: Data]) throws -> Void, SkinInstallError)] = [
             ("an extra file", { $0["notes.txt"] = Data("hi".utf8) }, .unexpectedEntry("notes.txt")),
             ("a path outside the skin", { $0["../escape.png"] = Data() }, .unexpectedEntry("../escape.png")),
-            ("a missing still", { $0["stills/wave/shy.png"] = nil }, .missingFile("stills/wave/shy.png")),
-            ("another vocabulary", { $0["manifest.json"] = try editJSON($0["manifest.json"]) { $0["vocabulary_version"] = 2 } }, .invalidManifest),
+            ("a missing frame", { $0["frames/wave/grumpy/0.png"] = nil }, .missingFile("frames/wave/grumpy/0.png")),
+            ("an older format", { $0["manifest.json"] = try editJSON($0["manifest.json"]) { $0["format"] = 1 } }, .invalidManifest),
             ("an id that isn't a skin id", { $0["manifest.json"] = try editJSON($0["manifest.json"]) { $0["id"] = "../cat" } }, .invalidManifest),
-            ("a missing action marker", {
-                $0["skin.json"] = try editJSON($0["skin.json"]) { lottie in
-                    lottie["markers"] = (lottie["markers"] as? [[String: Any]])?.filter { $0["cm"] as? String != "love" }
+            ("a clip that escapes the folder", {
+                $0["manifest.json"] = try editJSON($0["manifest.json"]) { manifest in
+                    manifest["clips"] = [["name": "idle", "frames": 1], ["name": "walk", "frames": 1], ["name": "jump", "frames": 1],
+                                         ["name": "../x", "frames": 1]]
                 }
-            }, .missingMarker("love")),
-            ("a missing walk", {
-                $0["skin.json"] = try editJSON($0["skin.json"]) { lottie in
-                    lottie["markers"] = (lottie["markers"] as? [[String: Any]])?.filter { $0["cm"] as? String != "walk" }
+            }, .invalidManifest),
+            ("no plain walk", {
+                $0["manifest.json"] = try editJSON($0["manifest.json"]) { manifest in
+                    manifest["clips"] = (manifest["clips"] as? [[String: Any]])?.filter { $0["name"] as? String != "walk" }
                 }
-            }, .missingMarker("walk")),
-            ("a missing mood face", {
-                $0["skin.json"] = try editJSON($0["skin.json"]) { lottie in
-                    lottie["layers"] = (lottie["layers"] as? [[String: Any]])?.filter { $0["nm"] as? String != "face_shy" }
+            }, .invalidManifest),
+            ("more frames than files", {
+                $0["manifest.json"] = try editJSON($0["manifest.json"]) { manifest in
+                    manifest["clips"] = [["name": "idle", "frames": 9999], ["name": "walk", "frames": 1], ["name": "jump", "frames": 1]]
                 }
-            }, .missingFaceLayer("shy")),
+            }, .invalidManifest),
         ]
         for (name, edit, expected) in cases {
             let broken = try repack(archive, edit)

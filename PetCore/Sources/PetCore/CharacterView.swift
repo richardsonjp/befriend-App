@@ -3,7 +3,6 @@
 //  PetCore
 //
 
-import Lottie
 import SwiftUI
 
 #if canImport(UIKit)
@@ -12,8 +11,8 @@ import UIKit
 import AppKit
 #endif
 
-/// The friend in the account's skin: the skin's Lottie playing the action's marker with the mood's face shown.
-/// Widgets and Live Activities can't host Lottie; they draw `PixelImage` stills instead.
+/// The friend in the account's skin: a flipbook of the clip's PNG frames at the skin's fps. Widgets and Live
+/// Activities can't animate; they draw `PixelImage` stills (frame 0) instead.
 public struct CharacterView: View {
     /// 32-pixel skins at exactly 2×.
     public static let size: CGFloat = 64
@@ -38,10 +37,14 @@ public struct CharacterView: View {
 
     public var body: some View {
         Group {
-            if let skin, reduceMotion {
-                PixelImage(url: skin.still(action, mood))
-            } else if let skin {
-                animation(skin)
+            if let skin {
+                let clip = skin.clip(walking ? InstalledSkin.walk : action.rawValue, mood.rawValue)
+                if reduceMotion {
+                    PixelImage(url: skin.frame(clip, 0))
+                } else {
+                    Flipbook(skin: skin, clip: clip, loops: walking || !action.isOneShot)
+                        .id("\(skin.folder.path)|\(clip.name)") // a new clip starts from frame 0
+                }
             } else {
                 // ponytail: only when even the built-in skin couldn't be unpacked (a full disk).
                 Image(systemName: "cat.fill").font(.system(size: 44)).foregroundStyle(.orange)
@@ -50,20 +53,22 @@ public struct CharacterView: View {
         .frame(width: Self.size, height: Self.size)
         .scaleEffect(x: facingLeft ? -1 : 1)
     }
+}
 
-    private func animation(_ skin: InstalledSkin) -> some View {
-        let marker = walking ? InstalledSkin.walkMarker : action.rawValue
-        var view = LottieView { LottieAnimation.filepath(skin.lottieURL.path) }
-            .configuration(LottieConfiguration(renderingEngine: .coreAnimation))
-            .resizable()
-            .playbackMode(.playing(.marker(marker, loopMode: !walking && action.isOneShot ? .playOnce : .loop)))
-        for face in PetMood.allCases {
-            view = view.valueProvider(
-                FloatValueProvider(face == mood ? 100 : 0),
-                for: AnimationKeypath(keypath: "\(InstalledSkin.faceLayer(face)).Transform.Opacity")
-            )
+/// Steps through a clip's frames; a one-shot holds its last frame.
+private struct Flipbook: View {
+    let skin: InstalledSkin
+    let clip: SkinManifest.Clip
+    let loops: Bool
+    @State private var start = Date.now
+
+    var body: some View {
+        let fps = Double(skin.manifest.fps)
+        TimelineView(.periodic(from: start, by: 1 / fps)) { context in
+            let step = max(0, Int(context.date.timeIntervalSince(start) * fps))
+            // ponytail: re-reads a tiny PNG per frame; cache decoded images if profiling ever shows it
+            PixelImage(url: skin.frame(clip, loops ? step % clip.frames : min(step, clip.frames - 1)))
         }
-        return view.id(skin.folder) // a new skin or version loads a new animation
     }
 }
 
