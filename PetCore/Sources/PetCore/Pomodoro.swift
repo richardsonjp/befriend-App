@@ -59,6 +59,16 @@ public nonisolated struct PomodoroSettings: Codable, Equatable, Sendable {
                   friendStaysHome: try c.decode(Bool.self, forKey: .friendStaysHome))
     }
 
+    /// A copy with some settings changed, clamped like any other.
+    public func with(focus: TimeInterval? = nil, shortBreak: TimeInterval? = nil, longBreak: TimeInterval? = nil,
+                     longBreakEvery: Int? = nil, autoStart: Bool? = nil, sound: Bool? = nil,
+                     friendStaysHome: Bool? = nil) -> PomodoroSettings {
+        PomodoroSettings(focus: focus ?? self.focus, shortBreak: shortBreak ?? self.shortBreak,
+                         longBreak: longBreak ?? self.longBreak, longBreakEvery: longBreakEvery ?? self.longBreakEvery,
+                         autoStart: autoStart ?? self.autoStart, sound: sound ?? self.sound,
+                         friendStaysHome: friendStaysHome ?? self.friendStaysHome)
+    }
+
     public func duration(_ phase: PomodoroPhase) -> TimeInterval {
         switch phase {
         case .focus: focus

@@ -6,23 +6,56 @@
 import AppKit
 import Observation
 import PetCore
+import SwiftUI
 
-/// The menu bar item: activity sync controls, sign in/out, quit. Rebuilt each time it opens. It's also the friend's
-/// home: while the friend is inside, the icon is its head in the current mood.
+/// The menu bar item. It's the friend's home: while the friend is inside, the icon is its head in the current mood,
+/// with the pomodoro's countdown beside it while one runs. A click opens the pomodoro popover once the friend is
+/// ready; right-click, "…" in the popover, or any click before then opens the menu (activity sync controls, skin,
+/// sign in/out, quit), rebuilt each time it opens.
 final class StatusMenu: NSObject, NSMenuDelegate {
     private static let iconSize = NSSize(width: 16, height: 16)
 
     private let controller: MacController
-    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let menu = NSMenu()
+    private let popover = NSPopover()
 
     init(controller: MacController) {
         self.controller = controller
         super.init()
-        let menu = NSMenu()
         menu.delegate = self
-        item.menu = menu
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(rootView: PomodoroPopover(
+            pomodoro: controller.pomodoro,
+            showMenu: { [weak self] in self?.showMenu() }
+        ))
+        if let button = item.button {
+            button.target = self
+            button.action = #selector(clicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.imagePosition = .imageLeading
+            button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        }
         controller.walker.dockFrame = { [weak self] in self?.iconFrame }
         updateIcon()
+    }
+
+    @objc private func clicked() {
+        guard controller.stage == .ready, NSApp.currentEvent?.type != .rightMouseUp else { return showMenu() }
+        if popover.isShown {
+            popover.performClose(nil)
+        } else if let button = item.button {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            NSApp.activate() // so the popover takes keyboard focus and closes on an outside click
+        }
+    }
+
+    /// Opens the menu under the icon: attached only while it's open, so a normal click reaches `clicked`.
+    private func showMenu() {
+        popover.performClose(nil)
+        item.menu = menu
+        item.button?.performClick(nil)
+        item.menu = nil
     }
 
     private var iconFrame: CGRect? {
@@ -30,10 +63,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
-    /// Redraws whenever what it shows changes: the stage, whether the friend is home, its mood, or the skin.
+    /// Redraws whenever what it shows changes: the stage, whether the friend is home, its mood, the skin, or the
+    /// pomodoro's countdown.
     private func updateIcon() {
         withObservationTracking {
             item.button?.image = icon()
+            item.button?.title = countdown()
         } onChange: { [weak self] in
             Task { @MainActor in self?.updateIcon() }
         }
@@ -51,6 +86,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         image.accessibilityDescription = "befriend, your friend is here"
         return image
+    }
+
+    /// " 18:42" while a pomodoro phase runs or is paused; nothing otherwise.
+    private func countdown() -> String {
+        let pomodoro = controller.pomodoro
+        guard controller.stage == .ready, pomodoro.state.status != .ready else { return "" }
+        return " " + MacPomodoro.clock(pomodoro.state.remaining(at: pomodoro.now))
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

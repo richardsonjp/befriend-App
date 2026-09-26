@@ -92,6 +92,9 @@ struct PomodoroTests {
         let stored = try JSONDecoder().decode(PomodoroSettings.self, from: JSONSerialization.data(withJSONObject: raw))
         #expect(stored.longBreakEvery == 1 && stored.focus == 60)
 
+        let edited = PomodoroSettings().with(longBreakEvery: 99, sound: false)
+        #expect(edited.longBreakEvery == 12 && !edited.sound && edited.focus == 25 * 60, "with() changes only what it's given, clamped")
+
         let running = Pomodoro(settings: .init(focus: 50 * 60)).start(at: t0)
         let decoded = try JSONDecoder().decode(Pomodoro.self, from: JSONEncoder().encode(running))
         #expect(decoded == running)

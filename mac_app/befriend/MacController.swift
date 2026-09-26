@@ -35,6 +35,8 @@ final class MacController {
     let skins = SkinStore(root: MacConfig.skinsRoot)
     /// Walks the friend between the menu bar icon and the screen.
     let walker = FriendWalker()
+    /// During focus the friend stays in the menu bar icon unless let out.
+    let pomodoro = MacPomodoro()
 
     @ObservationIgnored let api = MacConfig.makeAPIClient()
     @ObservationIgnored private let uploader: TriggerLogUploader
@@ -149,8 +151,10 @@ final class MacController {
         walker.panel = panel
         walker.canWander = { [pet] in pet.action == .idle && pet.dialogue == nil }
         walker.onSettled = { [weak self] in self?.showHeldReaction() }
-        friendVisible = true
-        walker.comeOut()
+        pomodoro.onChange = { [weak self] in self?.updateVisibility() }
+        // A focus phase that outlived a relaunch or sign-out keeps the friend home.
+        friendVisible = !pomodoro.state.friendHome
+        if friendVisible { walker.comeOut() }
 
         let presence = PresenceReporter(api: api)
         presence.onChange = { [weak self] in self?.updateVisibility() }
@@ -224,8 +228,8 @@ final class MacController {
         self.peer = peer
     }
 
-    /// Shows the friend only where it is (see PresenceVisibility): it comes out of the menu bar icon, or goes back
-    /// in, straight away if the screen is locked or asleep.
+    /// Shows the friend only where it is (see PresenceVisibility) and not while it's home for a focus phase: it comes
+    /// out of the menu bar icon, or goes back in, straight away if the screen is locked or asleep.
     private func updateVisibility() {
         guard panel != nil, let presence else { return }
         if presence.owner == .phone { phoneClaimedNearby = false } // the backend caught up with the nearby claim
@@ -234,7 +238,7 @@ final class MacController {
             owner: presence.owner,
             socketConnected: presence.isConnected,
             phoneClaimedNearby: phoneClaimedNearby
-        )
+        ) && !pomodoro.state.friendHome
         guard show != friendVisible else { return }
         friendVisible = show
         if show {

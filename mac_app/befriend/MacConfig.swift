@@ -65,6 +65,18 @@ enum MacConfig {
         try? data.write(to: url, options: .atomic)
     }
 
+    /// This Mac's pomodoro (M10); never synced.
+    static func loadPomodoro() -> Pomodoro? {
+        guard let data = try? Data(contentsOf: supportDirectory.appending(path: "pomodoro.json")) else { return nil }
+        return try? JSONDecoder().decode(Pomodoro.self, from: data)
+    }
+
+    static func savePomodoro(_ pomodoro: Pomodoro) {
+        guard let data = try? JSONEncoder().encode(pomodoro) else { return }
+        try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
+        try? data.write(to: supportDirectory.appending(path: "pomodoro.json"), options: .atomic)
+    }
+
     private static func string(_ key: String) -> String {
         Bundle.main.object(forInfoDictionaryKey: key) as? String ?? ""
     }
