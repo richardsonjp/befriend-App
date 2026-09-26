@@ -40,16 +40,18 @@ func goodProfile(t *testing.T) string {
 	return encoded
 }
 
-func goodChunk(t *testing.T) string {
+// goodChunk answers in the record's skin: every one of its moods, with actions drawn for each.
+func goodChunk(t *testing.T, skin vocabulary.Skin) string {
 	t.Helper()
 	byMood := map[string][]phrasetable.Line{}
-	for i, mood := range vocabulary.Moods {
+	for i, mood := range skin.Moods {
+		actions := skin.ActionsFor(mood)
 		byMood[mood] = []phrasetable.Line{
-			{Action: vocabulary.Actions[i%len(vocabulary.Actions)], Text: "Back again already?"},
+			{Action: actions[i%len(actions)], Text: "Back again already?"},
 			{Action: "idle", Text: "I kept your spot warm."},
 		}
 	}
-	encoded, err := phrasetable.EncodeChunk(byMood)
+	encoded, err := phrasetable.EncodeChunk(byMood, skin)
 	if err != nil {
 		t.Fatalf("EncodeChunk: %v", err)
 	}
@@ -98,7 +100,7 @@ func TestHarvestRoundTrip(t *testing.T) {
 			if i == 3 && call.Kind == personality.KindChunk {
 				continue
 			}
-			output := goodChunk(t)
+			output := goodChunk(t, record.Skin)
 			switch {
 			case call.Kind == personality.KindProfile:
 				output = goodProfile(t)
@@ -139,9 +141,13 @@ func TestHarvestRoundTrip(t *testing.T) {
 	if profiles != 3 {
 		t.Errorf("got %d profile samples, want 3: a rejected profile must not reach the dataset", profiles)
 	}
+	systems := map[string]string{}
+	for _, r := range records {
+		systems[r.ID] = r.System
+	}
 	for _, s := range samples {
-		if s.System != header.System {
-			t.Error("a sample carries the wrong system message")
+		if s.System != systems[s.ID] || s.System == "" {
+			t.Error("a sample carries another skin's system message")
 		}
 		if s.User == "" || s.Output == "" {
 			t.Errorf("incomplete sample: %+v", s)

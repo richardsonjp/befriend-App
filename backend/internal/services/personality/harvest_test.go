@@ -1,6 +1,7 @@
 package personality
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -62,6 +63,11 @@ func TestHarvestInputsAreDistinctAndRepeatable(t *testing.T) {
 		t.Fatalf("HarvestInputs: %v", err)
 	}
 	for i := range inputs {
+		first, _ := json.Marshal(inputs[i].Skin)
+		second, _ := json.Marshal(again[i].Skin)
+		if string(first) != string(second) {
+			t.Errorf("input %d: the same seed gave a different skin", i)
+		}
 		if harvestKey(inputs[i]) != harvestKey(again[i]) {
 			t.Fatalf("input %d differs between runs with the same seed", i)
 		}
@@ -141,7 +147,7 @@ func TestRequestsShareACacheablePrefix(t *testing.T) {
 			t.Fatalf("%s: the ask should come last: %q", r.Trigger, r.User)
 		}
 	}
-	if requests[1].Grammar() != phrasetable.ChunkGrammar() || requests[0].Grammar() != phrasetable.ProfileGrammar() {
+	if requests[1].Grammar() != phrasetable.ChunkGrammar(vocabulary.Skin{}) || requests[0].Grammar() != phrasetable.ProfileGrammar() {
 		t.Error("requests carry the wrong grammar")
 	}
 }
@@ -166,14 +172,14 @@ func TestAssembleFeedsValidate(t *testing.T) {
 				{Action: "idle", Text: "I kept your spot warm."},
 			}
 		}
-		encoded, err := phrasetable.EncodeChunk(byMood)
+		encoded, err := phrasetable.EncodeChunk(byMood, vocabulary.Skin{})
 		if err != nil {
 			t.Fatalf("EncodeChunk %s: %v", trigger, err)
 		}
 		chunks[trigger] = encoded
 	}
 
-	generated, err := Assemble(profile, chunks)
+	generated, err := Assemble(profile, chunks, vocabulary.Skin{})
 	if err != nil {
 		t.Fatalf("Assemble: %v", err)
 	}
@@ -185,7 +191,7 @@ func TestAssembleFeedsValidate(t *testing.T) {
 
 	// A single missing chunk fails the whole personality, so a part-harvested user never reaches the dataset.
 	delete(chunks, "poked")
-	if _, err := Assemble(profile, chunks); err == nil {
+	if _, err := Assemble(profile, chunks, vocabulary.Skin{}); err == nil {
 		t.Error("a missing chunk was accepted")
 	}
 }

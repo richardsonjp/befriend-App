@@ -21,7 +21,31 @@ struct InputHeader: Decodable {
 /// One synthetic user and the seven calls that make its personality.
 struct InputRecord: Decodable {
     let id: String
+    /// The skin this friend wears; absent in inputs written before skins varied (the built-in one).
+    let skin: HarvestSkin?
     let calls: [InputCall]
+}
+
+/// A skin as `harvest inputs` writes it: its moods in order, and the actions drawn for each.
+struct HarvestSkin: Decodable {
+    let moods: [String]
+    let actions: [String: [String]]
+
+    static let builtIn = HarvestSkin(
+        moods: PetMood.builtIn.map(\.rawValue),
+        actions: Dictionary(uniqueKeysWithValues: PetMood.builtIn.map { ($0.rawValue, PetAction.builtIn.map(\.rawValue)) })
+    )
+
+    /// Every action in some mood, in first-seen order.
+    var allActions: [String] {
+        var all: [String] = []
+        for mood in moods {
+            for action in actions[mood] ?? [] where !all.contains(action) {
+                all.append(action)
+            }
+        }
+        return all
+    }
 }
 
 struct InputCall: Decodable {
@@ -58,40 +82,44 @@ nonisolated struct GeneratedProfile {
     var instructions: String
 }
 
-/// Training data is written in the built-in vocabulary (vocabulary v1), so the harvest keeps its own enums of it.
-@Generable
-nonisolated enum HarvestAction: String, CaseIterable {
-    case idle, wave, nudge, sleep, celebrate, dance, laugh, cry, yawn, stretch
-    case think, peek, hide, shrug, facepalm, cheer, jump, spin, sit, love
-}
-
-@Generable
-nonisolated enum HarvestMood: String, CaseIterable {
-    case content, curious, concerned, excited, sleepy, bored, playful, proud, shy, grumpy, calm, lonely
-}
-
-@Generable
+/// One line of a chunk, generated under a schema built from the friend's skin (moods and actions vary per skin).
 nonisolated struct GeneratedLine {
-    @Guide(description: "The animation the friend plays")
-    var action: HarvestAction
-
-    @Guide(description: "One short thing the friend says at this exact moment, at most 80 characters")
-    var text: String
+    let action: String
+    let text: String
 }
 
-@Generable
 nonisolated struct GeneratedMood {
-    @Guide(description: "The mood these lines are for")
-    var mood: HarvestMood
-
-    @Guide(description: "What the friend says in this mood", .count(2))
-    var lines: [GeneratedLine]
+    let mood: String
+    let lines: [GeneratedLine]
 }
 
-@Generable
-nonisolated struct GeneratedChunk {
-    @Guide(description: "One entry for every mood, in the order the prompt lists them")
-    var moods: [GeneratedMood]
+nonisolated enum ChunkSchema {
+    /// One property per mood of the skin, each exactly two lines, so the model can't skip or repeat a mood; actions
+    /// are the skin's, and Rows keeps each mood to its own.
+    static func make(for skin: HarvestSkin) throws -> GenerationSchema {
+        let line = DynamicGenerationSchema(name: "Line", properties: [
+            .init(name: "action", description: "The animation the friend plays",
+                  schema: DynamicGenerationSchema(name: "Action", anyOf: skin.allActions)),
+            .init(name: "text", description: "One short thing the friend says at this exact moment, at most 80 characters",
+                  schema: DynamicGenerationSchema(type: String.self)),
+        ])
+        let moods = skin.moods.map { mood in
+            DynamicGenerationSchema.Property(
+                name: mood, description: "What the friend says when it feels \(mood.replacingOccurrences(of: "_", with: " "))",
+                schema: DynamicGenerationSchema(arrayOf: line, minimumElements: 2, maximumElements: 2)
+            )
+        }
+        return try GenerationSchema(root: DynamicGenerationSchema(name: "Chunk", properties: moods), dependencies: [])
+    }
+
+    static func parse(_ content: GeneratedContent, skin: HarvestSkin) throws -> [GeneratedMood] {
+        try skin.moods.map { mood in
+            GeneratedMood(mood: mood, lines: try content.value([GeneratedContent].self, forProperty: mood).map {
+                GeneratedLine(action: try $0.value(String.self, forProperty: "action"),
+                              text: try $0.value(String.self, forProperty: "text"))
+            })
+        }
+    }
 }
 
 // MARK: - Rows
@@ -116,20 +144,22 @@ nonisolated enum Rows {
 
     /// Every mood must be present exactly once; a chunk missing one would fail the backend's decoder anyway, and
     /// failing here means it is simply retried on the next run.
-    static func chunk(_ c: GeneratedChunk) -> String? {
-        var byMood: [HarvestMood: [GeneratedLine]] = [:]
-        for entry in c.moods where byMood[entry.mood] == nil {
+    /// An action the skin didn't draw for a mood becomes idle, as the production validator does.
+    static func chunk(_ moods: [GeneratedMood], skin: HarvestSkin) -> String? {
+        var byMood: [String: [GeneratedLine]] = [:]
+        for entry in moods where byMood[entry.mood] == nil {
             byMood[entry.mood] = entry.lines
         }
         var out = ""
-        for mood in HarvestMood.allCases {
+        for mood in skin.moods {
+            let allowed = skin.actions[mood] ?? []
             let lines = (byMood[mood] ?? [])
-                .map { GeneratedLine(action: $0.action, text: clean($0.text, max: maxTextLength)) }
+                .map { GeneratedLine(action: allowed.contains($0.action) ? $0.action : "idle", text: clean($0.text, max: maxTextLength)) }
                 .filter { $0.text.count >= 4 }
             guard lines.count >= 2 else { return nil }
-            out += mood.rawValue + "\n"
+            out += mood + "\n"
             for line in lines.prefix(3) {
-                out += line.action.rawValue + separator + line.text + "\n"
+                out += line.action + separator + line.text + "\n"
             }
         }
         return out
@@ -215,7 +245,7 @@ final class Harvester {
 
     /// Answers one call. Returns false when nothing was written, so the caller can pace itself; a skipped call is
     /// simply picked up by the next run.
-    func answer(id: String, call: InputCall) async -> Bool {
+    func answer(id: String, skin: HarvestSkin, call: InputCall) async -> Bool {
         // A fresh session per call: byte-identical instructions and an empty transcript, so the 4K window never
         // fills with earlier users and the model can't parrot the last friend it wrote.
         let session = LanguageModelSession(model: model, instructions: Self.instructions)
@@ -223,7 +253,7 @@ final class Harvester {
             let rows: String? = if call.kind == "profile" {
                 Rows.profile(try await session.respond(to: call.user, generating: GeneratedProfile.self).content)
             } else {
-                Rows.chunk(try await session.respond(to: call.user, generating: GeneratedChunk.self).content)
+                Rows.chunk(try ChunkSchema.parse(try await session.respond(to: call.user, schema: try ChunkSchema.make(for: skin)).content, skin: skin), skin: skin)
             }
             guard let rows else {
                 failed += 1

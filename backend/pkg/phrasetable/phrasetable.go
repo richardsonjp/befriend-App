@@ -66,9 +66,10 @@ type Profile struct {
 
 // EncodeChunk writes one trigger's block: each mood on its own row, followed by its "action|text" lines.
 // Used to turn harvested training data into the format the model is trained to produce.
-func EncodeChunk(byMood map[string][]Line) (string, error) {
+func EncodeChunk(byMood map[string][]Line, skin vocabulary.Skin) (string, error) {
+	skin = skin.OrDefault()
 	var b strings.Builder
-	for _, mood := range vocabulary.Moods {
+	for _, mood := range skin.Moods {
 		lines := byMood[mood]
 		if len(lines) < MinLines || len(lines) > MaxLines {
 			return "", fmt.Errorf("%s: want %d–%d lines, got %d", mood, MinLines, MaxLines, len(lines))
@@ -76,7 +77,7 @@ func EncodeChunk(byMood map[string][]Line) (string, error) {
 		b.WriteString(mood)
 		b.WriteString("\n")
 		for _, line := range lines {
-			if err := checkLine(line); err != nil {
+			if err := checkLine(line, skin); err != nil {
 				return "", fmt.Errorf("%s: %w", mood, err)
 			}
 			b.WriteString(line.Action)
@@ -88,19 +89,21 @@ func EncodeChunk(byMood map[string][]Line) (string, error) {
 	return b.String(), nil
 }
 
-// DecodeChunk reads one trigger's block back. It requires every mood, in vocabulary order, with nothing left over.
-func DecodeChunk(s string) (map[string][]Line, error) {
+// DecodeChunk reads one trigger's block back. It requires every one of the skin's moods, in order, with nothing
+// left over; actions must be the skin's (personality.Validate repairs one drawn only for another mood).
+func DecodeChunk(s string, skin vocabulary.Skin) (map[string][]Line, error) {
+	skin = skin.OrDefault()
 	rows := splitRows(s)
-	out := make(map[string][]Line, len(vocabulary.Moods))
+	out := make(map[string][]Line, len(skin.Moods))
 	i := 0
-	for _, mood := range vocabulary.Moods {
+	for _, mood := range skin.Moods {
 		if i >= len(rows) || rows[i] != mood {
 			return nil, fmt.Errorf("row %d: want mood %q, got %s", i+1, mood, describe(rows, i))
 		}
 		i++
 		var lines []Line
 		for i < len(rows) && strings.Contains(rows[i], sep) {
-			line, err := parseLine(rows[i])
+			line, err := parseLine(rows[i], skin)
 			if err != nil {
 				return nil, fmt.Errorf("row %d (%s): %w", i+1, mood, err)
 			}
@@ -205,17 +208,17 @@ func bounds(key string) (min, max int) {
 	}
 }
 
-func parseLine(row string) (Line, error) {
+func parseLine(row string, skin vocabulary.Skin) (Line, error) {
 	action, text, _ := strings.Cut(row, sep)
-	if !vocabulary.IsAction(action) {
+	if !skin.IsAction(action) {
 		return Line{}, fmt.Errorf("unknown action %q", action)
 	}
 	line := Line{Action: action, Text: text}
-	return line, checkLine(line)
+	return line, checkLine(line, skin)
 }
 
-func checkLine(line Line) error {
-	if !vocabulary.IsAction(line.Action) {
+func checkLine(line Line, skin vocabulary.Skin) error {
+	if !skin.IsAction(line.Action) {
 		return fmt.Errorf("unknown action %q", line.Action)
 	}
 	if strings.ContainsAny(line.Text, sep+"\n") {

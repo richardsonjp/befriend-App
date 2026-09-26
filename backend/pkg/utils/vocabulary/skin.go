@@ -1,6 +1,8 @@
 package vocabulary
 
 import (
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -41,7 +43,9 @@ func FromClips(clips []string) Skin {
 			continue
 		}
 		if !hasMood {
-			plain = append(plain, action)
+			if !slices.Contains(plain, action) {
+				plain = append(plain, action)
+			}
 		} else if !slices.Contains(byMood[mood], action) {
 			byMood[mood] = append(byMood[mood], action)
 		}
@@ -97,3 +101,35 @@ func (s Skin) Uniform() bool {
 func (s Skin) IsMood(mood string) bool         { return slices.Contains(s.Moods, mood) }
 func (s Skin) IsAction(action string) bool     { return slices.Contains(s.Actions(), action) }
 func (s Skin) Allows(action, mood string) bool { return slices.Contains(s.actions[mood], action) }
+
+// skinJSON is how a skin travels in harvest files: its moods in order, and the actions drawn for each.
+type skinJSON struct {
+	Moods   []string            `json:"moods"`
+	Actions map[string][]string `json:"actions"`
+}
+
+func (s Skin) MarshalJSON() ([]byte, error) {
+	return json.Marshal(skinJSON{Moods: s.Moods, Actions: s.actions})
+}
+
+func (s *Skin) UnmarshalJSON(data []byte) error {
+	var raw skinJSON
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for _, mood := range raw.Moods {
+		if len(raw.Actions[mood]) == 0 { // every real skin draws a plain idle, so no mood is empty
+			return fmt.Errorf("skin mood %q has no actions", mood)
+		}
+	}
+	*s = Skin{Moods: raw.Moods, actions: raw.Actions}
+	return nil
+}
+
+// OrDefault is the skin, or the built-in one for the zero Skin.
+func (s Skin) OrDefault() Skin {
+	if len(s.Moods) == 0 {
+		return Default()
+	}
+	return s
+}

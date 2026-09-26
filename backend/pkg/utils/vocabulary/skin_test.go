@@ -31,6 +31,10 @@ func TestFromClips(t *testing.T) {
 		t.Error("membership")
 	}
 
+	if twice := FromClips([]string{"idle", "jump", "idle", "idle/zen"}); len(twice.ActionsFor("zen")) != 2 {
+		t.Errorf("a clip listed twice counts once: %v", twice.ActionsFor("zen"))
+	}
+
 	bare := FromClips([]string{"idle", "walk", "jump", "focus"})
 	if !slices.Equal(bare.Moods, []string{NoMood}) || !slices.Equal(bare.Actions(), []string{"idle", "jump"}) {
 		t.Errorf("mood-less skin = %v / %v", bare.Moods, bare.Actions())

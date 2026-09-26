@@ -27,11 +27,11 @@ func sampleChunk() map[string][]Line {
 
 func TestChunkRoundTrip(t *testing.T) {
 	want := sampleChunk()
-	encoded, err := EncodeChunk(want)
+	encoded, err := EncodeChunk(want, vocabulary.Skin{})
 	if err != nil {
 		t.Fatalf("EncodeChunk: %v", err)
 	}
-	got, err := DecodeChunk(encoded)
+	got, err := DecodeChunk(encoded, vocabulary.Skin{})
 	if err != nil {
 		t.Fatalf("DecodeChunk: %v", err)
 	}
@@ -49,13 +49,13 @@ func TestChunkRoundTrip(t *testing.T) {
 		}
 	}
 	// A model that ends with a blank line or CRLF still parses.
-	if _, err := DecodeChunk(strings.ReplaceAll(encoded, "\n", "\r\n") + "\n"); err != nil {
+	if _, err := DecodeChunk(strings.ReplaceAll(encoded, "\n", "\r\n")+"\n", vocabulary.Skin{}); err != nil {
 		t.Errorf("padded output: %v", err)
 	}
 }
 
 func TestDecodeChunkRejects(t *testing.T) {
-	good, err := EncodeChunk(sampleChunk())
+	good, err := EncodeChunk(sampleChunk(), vocabulary.Skin{})
 	if err != nil {
 		t.Fatalf("EncodeChunk: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestDecodeChunkRejects(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := DecodeChunk(c.input)
+			_, err := DecodeChunk(c.input, vocabulary.Skin{})
 			if err == nil {
 				t.Fatal("decoded, want an error")
 			}
@@ -94,7 +94,7 @@ func TestDecodeChunkRejects(t *testing.T) {
 func TestEncodeChunkRejectsSeparatorsInText(t *testing.T) {
 	byMood := sampleChunk()
 	byMood["content"][0].Text = "pipes | break | rows"
-	if _, err := EncodeChunk(byMood); err == nil {
+	if _, err := EncodeChunk(byMood, vocabulary.Skin{}); err == nil {
 		t.Fatal("encoded, want an error")
 	}
 }
@@ -163,7 +163,7 @@ func TestDecodeProfileRejects(t *testing.T) {
 
 // The grammar and the decoder must agree, so every value the decoder accepts has to be reachable.
 func TestGrammarCoversTheVocabulary(t *testing.T) {
-	chunk := ChunkGrammar()
+	chunk := ChunkGrammar(vocabulary.Skin{})
 	for _, action := range vocabulary.Actions {
 		if !strings.Contains(chunk, `"`+action+`"`) {
 			t.Errorf("chunk grammar is missing action %q", action)
@@ -215,7 +215,7 @@ func TestCompactFormatIsMuchSmallerThanJSON(t *testing.T) {
 	var compact, entries = 0, []jsonEntry{}
 	for _, trigger := range vocabulary.TriggerKinds {
 		chunk := sampleChunk()
-		encoded, err := EncodeChunk(chunk)
+		encoded, err := EncodeChunk(chunk, vocabulary.Skin{})
 		if err != nil {
 			t.Fatalf("EncodeChunk: %v", err)
 		}

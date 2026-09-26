@@ -45,17 +45,21 @@ def main():
     if not records:
         raise SystemExit(f"generate: no users at --skip {args.skip} in {args.inputs}")
 
-    grammars = {"profile": header["profile_grammar"], "chunk": header["chunk_grammar"]}
     started = time.time()
     written = 0
 
     with open(args.outputs, "w") as out:
         for record in records:
+            # Each friend wears its own skin, so its system message and chunk grammar are its own; inputs written
+            # before skins varied carry them in the header.
+            system = record.get("system") or header["system"]
+            grammars = {"profile": header["profile_grammar"],
+                        "chunk": record.get("chunk_grammar") or header["chunk_grammar"]}
             for call in record["calls"]:
                 # Let the server apply the model's own chat template: a fine-tune trained through
                 # apply_chat_template must be prompted the same way, or it sees a format it never saw.
                 prompt = post(args.url, "/apply-template", {"messages": [
-                    {"role": "system", "content": header["system"]},
+                    {"role": "system", "content": system},
                     {"role": "user", "content": call["user"]},
                 ]})["prompt"]
 

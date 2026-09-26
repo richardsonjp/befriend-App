@@ -62,7 +62,7 @@ outer: for record in records {
     for call in record.calls where !harvester.isDone(record.id, call) {
         if attempted >= limit { break outer }
         attempted += 1
-        _ = await harvester.answer(id: record.id, call: call)
+        _ = await harvester.answer(id: record.id, skin: record.skin ?? .builtIn, call: call)
 
         if attempted % 20 == 0 || attempted == min(limit, remaining) {
             let elapsed = Date.now.timeIntervalSince(startedAt)

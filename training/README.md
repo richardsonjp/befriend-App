@@ -30,6 +30,18 @@ pip install unsloth && python3 training/train.py --data training/data --out trai
 
 `harvest/` is gitignored: it is hours of generated text, reproducible from the seed.
 
+### Skins (M9)
+
+Each synthetic friend wears a random skin: about 30% the built-in one (the v1 moods and actions), the rest a
+mix of built-in and new names, some moods with actions drawn only for them. Every record in `inputs.jsonl`
+carries its skin, its own system message and its own chunk grammar; the Mac harvester generates under a schema
+built from the skin, and `filter` validates against it. That's how the model learns to write for whatever moods
+and actions a skin names, which production asks of it for every artist's skin.
+
+**A dataset harvested before this doesn't teach that.** Re-run steps 1–5 (new inputs, harvest, filter, prepare,
+train) before pointing production at the fine-tune; until then phrasebooks come from OpenRouter, which handles
+any skin through the JSON schema. `generate.py` and `filter` still read old inputs (no per-record skin).
+
 ## What to expect
 
 Measured on this Mac (macOS 26.3.1, Apple Intelligence on), from a 10-user batch:

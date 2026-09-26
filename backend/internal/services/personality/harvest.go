@@ -3,12 +3,14 @@ package personality
 import (
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"strings"
 	"time"
 
 	"befriend/internal/model"
 	"befriend/internal/model/enum"
 	"befriend/pkg/utils/astro"
+	"befriend/pkg/utils/vocabulary"
 )
 
 // Synthetic users for harvesting training data (M8). The fine-tune is distilled from Apple's on-device model
@@ -98,7 +100,51 @@ func harvestInput(questions []model.Question, random *rand.Rand) PromptInput {
 		Chart:        astro.ChartAt(born),
 		BirthCity:    where.City,
 		BirthCountry: where.Country,
+		Skin:         harvestSkin(random),
 	}
+}
+
+// Harvested friends wear random skins, so the model learns to write for whatever moods and actions a skin names
+// (M9) rather than one fixed list. Some keep the built-in skin, the one every friend starts on.
+var (
+	extraMoods = []string{
+		"happy", "sad", "angry", "sulky", "giddy", "dreamy", "cranky", "smug", "anxious", "cheeky", "zen",
+		"fired_up", "very_happy", "moody",
+	}
+	extraActions = []string{
+		"stomp", "float", "backflip", "wiggle", "pout", "twirl", "nap", "read", "type", "sparkle", "tail_wag",
+		"bounce", "hug", "gasp", "moonwalk", "sneeze",
+	}
+)
+
+const builtInSkinShare = 0.3
+
+func harvestSkin(random *rand.Rand) vocabulary.Skin {
+	if random.Float64() < builtInSkinShare {
+		return vocabulary.Default()
+	}
+	moods := pickSome(random, append(slices.Clone(vocabulary.Moods), extraMoods...), 1, 8)
+	pool := append(slices.Clone(vocabulary.Actions), extraActions...)
+	clips := []string{"idle", "jump"} // every skin draws both plain
+	for _, action := range pickSome(random, pool, 2, 10) {
+		clips = append(clips, action)
+	}
+	for _, mood := range moods {
+		clips = append(clips, "idle/"+mood) // a mood exists because something is drawn in it
+		if random.IntN(2) == 0 {
+			for _, action := range pickSome(random, pool, 1, 2) {
+				clips = append(clips, action+"/"+mood)
+			}
+		}
+	}
+	return vocabulary.FromClips(clips)
+}
+
+// pickSome returns between min and max distinct items, in random order.
+func pickSome(random *rand.Rand, items []string, min, max int) []string {
+	shuffled := slices.Clone(items)
+	random.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+	return shuffled[:min+random.IntN(max-min+1)]
 }
 
 // harvestAnswer answers one question the way the app would. The two text questions are the friend's name and

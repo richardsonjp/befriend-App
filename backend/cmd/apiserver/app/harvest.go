@@ -26,7 +26,8 @@ import (
 // Validate the production worker runs. Grading with the real validator is the reason this is a Go command and not
 // a notebook cell.
 
-// harvestHeader is the first line of inputs.jsonl: everything shared by every call, written once.
+// harvestHeader is the first line of inputs.jsonl: what's shared by every call. System and ChunkGrammar are the
+// built-in skin's; each record carries its own skin's.
 type harvestHeader struct {
 	System         string `json:"system"`
 	ProfileGrammar string `json:"profile_grammar"`
@@ -35,10 +36,14 @@ type harvestHeader struct {
 	Seed           uint64 `json:"seed"`
 }
 
-// harvestRecord is one synthetic user and the seven prompts that generate its personality.
+// harvestRecord is one synthetic user, the skin its friend wears, and the seven prompts that generate its
+// personality (the system message and chunk grammar depend on the skin).
 type harvestRecord struct {
-	ID    string        `json:"id"`
-	Calls []harvestCall `json:"calls"`
+	ID           string          `json:"id"`
+	Skin         vocabulary.Skin `json:"skin"`
+	System       string          `json:"system"`
+	ChunkGrammar string          `json:"chunk_grammar"`
+	Calls        []harvestCall   `json:"calls"`
 }
 
 type harvestCall struct {
@@ -85,7 +90,7 @@ func HarvestGrammar(kind string) {
 	case personality.KindProfile:
 		fmt.Print(phrasetable.ProfileGrammar())
 	case personality.KindChunk:
-		fmt.Print(phrasetable.ChunkGrammar())
+		fmt.Print(phrasetable.ChunkGrammar(vocabulary.Default()))
 	default:
 		exitOnError("harvest grammar", fmt.Errorf("kind must be %q or %q, got %q",
 			personality.KindProfile, personality.KindChunk, kind))
@@ -118,11 +123,11 @@ func writeHarvestInputs(inputs []personality.PromptInput, seed uint64, out strin
 	defer file.Close()
 	writer := bufio.NewWriter(file)
 
-	// Every call shares one system message, so it is written once rather than n*7 times.
+	builtIn := personality.PromptInput{Skin: vocabulary.Default()}
 	header := harvestHeader{
-		System:         personality.Requests(inputs[0])[0].System,
+		System:         personality.Requests(builtIn)[0].System,
 		ProfileGrammar: phrasetable.ProfileGrammar(),
-		ChunkGrammar:   phrasetable.ChunkGrammar(),
+		ChunkGrammar:   phrasetable.ChunkGrammar(vocabulary.Default()),
 		Count:          len(inputs),
 		Seed:           seed,
 	}
@@ -132,8 +137,12 @@ func writeHarvestInputs(inputs []personality.PromptInput, seed uint64, out strin
 
 	calls := 0
 	for i, in := range inputs {
-		record := harvestRecord{ID: fmt.Sprintf("%05d", i)}
-		for _, request := range personality.Requests(in) {
+		requests := personality.Requests(in)
+		record := harvestRecord{
+			ID: fmt.Sprintf("%05d", i), Skin: in.Skin.OrDefault(),
+			System: requests[0].System, ChunkGrammar: phrasetable.ChunkGrammar(in.Skin),
+		}
+		for _, request := range requests {
 			record.Calls = append(record.Calls, harvestCall{Kind: request.Kind, Trigger: request.Trigger, User: request.User})
 		}
 		calls += len(record.Calls)
@@ -170,12 +179,12 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 			incomplete++
 			continue
 		}
-		generated, err := personality.Assemble(profile, chunks)
+		generated, err := personality.Assemble(profile, chunks, record.Skin)
 		if err != nil {
 			reasons[summarise(err)]++
 			continue
 		}
-		_, _, err = personality.Validate(generated, vocabulary.Default())
+		_, _, err = personality.Validate(generated, record.Skin)
 
 		// A bad profile shouldn't waste six good chunks — on this teacher it is the commonest single failure,
 		// and the chunk calls don't depend on it. Swapping in a known-good profile and revalidating says whether
@@ -185,7 +194,7 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 			reasons[summarise(err)]++
 			probe := *generated
 			probe.Personality = knownGoodProfile
-			if _, _, retry := personality.Validate(&probe, vocabulary.Default()); retry != nil {
+			if _, _, retry := personality.Validate(&probe, record.Skin); retry != nil {
 				continue // the chunks are bad too: nothing here is worth keeping
 			}
 			chunksOnly++
@@ -198,7 +207,7 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 			}
 			sample := trainingSample{
 				ID: record.ID, Kind: call.Kind, Trigger: call.Trigger,
-				System: header.System, User: call.User, Output: outputFor(got, call),
+				System: systemFor(header, record), User: call.User, Output: outputFor(got, call),
 			}
 			if sample.Output == "" {
 				continue
@@ -222,6 +231,14 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 			fmt.Printf("    %4d  %s\n", reasons[r], r)
 		}
 	}
+}
+
+// systemFor is the record's own system message; inputs written before skins varied share the header's.
+func systemFor(header harvestHeader, record harvestRecord) string {
+	if record.System != "" {
+		return record.System
+	}
+	return header.System
 }
 
 func splitOutputs(got []harvestOutput) (profile string, chunks map[string]string, ok bool) {
