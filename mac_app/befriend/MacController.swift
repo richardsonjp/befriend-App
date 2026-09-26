@@ -36,7 +36,7 @@ final class MacController {
     /// Walks the friend between the menu bar icon and the screen.
     let walker = FriendWalker()
     /// During focus the friend stays in the menu bar icon unless let out.
-    let pomodoro = MacPomodoro()
+    let pomodoro = PomodoroRunner(saved: MacConfig.loadPomodoro(), save: MacConfig.savePomodoro)
 
     @ObservationIgnored let api = MacConfig.makeAPIClient()
     @ObservationIgnored private let uploader: TriggerLogUploader
@@ -58,6 +58,7 @@ final class MacController {
 
     init() {
         uploader = TriggerLogUploader(api: api, fileURL: MacConfig.triggerQueueURL)
+        pomodoro.onPhaseEnded = MacPomodoro.announce
         if let saved = MacConfig.loadSettings() { apply(saved) }
     }
 

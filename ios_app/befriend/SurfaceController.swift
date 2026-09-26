@@ -18,12 +18,16 @@ final class SurfaceController {
     private let api: APIClient
     private var tokenTasks: [Task<Void, Never>] = []
     private var observedActivities: Set<String> = []
+    /// The pomodoro every activity update carries; its end is when the activity goes stale ("Focus done").
+    private var pomodoro: PomodoroSurface?
 
     init(api: APIClient) {
         self.api = api
     }
 
-    func friendReady(_ friend: FriendProfile, state: FriendSurfaceState) {
+    func friendReady(_ friend: FriendProfile, state hello: FriendSurfaceState) {
+        let state = FriendSurfaceState(presence: hello.presence, mood: hello.mood, action: hello.action, line: hello.line,
+                                       updatedAt: Date(timeIntervalSince1970: hello.updatedAt), pomodoro: pomodoro)
         observeTokens()
         SharedStore.saveSurface(state)
         WidgetCenter.shared.reloadAllTimelines()
@@ -41,7 +45,7 @@ final class SurfaceController {
         do {
             let activity = try Activity.request(
                 attributes: FriendActivityAttributes(friendName: friend.name),
-                content: ActivityContent(state: state, staleDate: nil),
+                content: ActivityContent(state: state, staleDate: pomodoro?.endDate),
                 pushType: .token
             )
             Self.startDates?.set(Date.now, forKey: activity.id)
@@ -52,22 +56,32 @@ final class SurfaceController {
     }
 
     func update(with reaction: PetReaction) {
-        let state = FriendSurfaceState(presence: .here, mood: reaction.mood, action: reaction.action, line: reaction.dialogue)
+        let state = FriendSurfaceState(presence: .here, mood: reaction.mood, action: reaction.action, line: reaction.dialogue, pomodoro: pomodoro)
         SharedStore.saveSurface(state)
         WidgetCenter.shared.reloadAllTimelines()
         for activity in Activity<FriendActivityAttributes>.activities {
-            Task { await activity.update(ActivityContent(state: state, staleDate: activity.content.staleDate)) }
+            Task { await activity.update(ActivityContent(state: state, staleDate: pomodoro?.endDate)) }
         }
+    }
+
+    func pomodoroChanged(_ surface: PomodoroSurface?) {
+        pomodoro = surface
+        refreshActivities()
     }
 
     /// The account's skin changed: the widget and Live Activity draw their stills from disk, so redraw them. The
     /// activity gets a fresh timestamp, since an update with identical content may not redraw it.
     func skinChanged() {
         WidgetCenter.shared.reloadAllTimelines()
+        refreshActivities()
+    }
+
+    /// Redraws every activity with its current friend state and the latest pomodoro, freshly timestamped.
+    private func refreshActivities() {
         for activity in Activity<FriendActivityAttributes>.activities {
             let old = activity.content.state
-            let state = FriendSurfaceState(presence: old.presence, mood: old.mood, action: old.action, line: old.line)
-            Task { await activity.update(ActivityContent(state: state, staleDate: activity.content.staleDate)) }
+            let state = FriendSurfaceState(presence: old.presence, mood: old.mood, action: old.action, line: old.line, pomodoro: pomodoro)
+            Task { await activity.update(ActivityContent(state: state, staleDate: pomodoro?.endDate)) }
         }
     }
 
@@ -100,6 +114,13 @@ final class SurfaceController {
 
     private func observeUpdateToken(of activity: Activity<FriendActivityAttributes>) {
         guard observedActivities.insert(activity.id).inserted else { return }
+        // The backend's pushes carry the friend but not this iPhone's pomodoro: put it back while the app runs.
+        // ponytail: a push landing while the app is suspended hides the timer until the app next runs.
+        tokenTasks.append(Task { [weak self] in
+            for await content in activity.contentUpdates where content.state.pomodoro != self?.pomodoro {
+                self?.refreshActivities()
+            }
+        })
         // Activities started by push-to-start weren't requested here: they start about when we first see them.
         let startedAt = Self.startDates?.object(forKey: activity.id) as? Date ?? .now
         Self.startDates?.set(startedAt, forKey: activity.id)

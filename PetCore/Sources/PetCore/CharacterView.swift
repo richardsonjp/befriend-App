@@ -24,25 +24,29 @@ public struct CharacterView: View {
     let walking: Bool
     /// Mirrors the friend; skins draw it heading right.
     let facingLeft: Bool
+    /// Plays `focus` instead of the action: the friend studying alongside a pomodoro.
+    let focusing: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(skin: InstalledSkin?, action: PetAction, mood: PetMood, walking: Bool = false, facingLeft: Bool = false) {
+    public init(skin: InstalledSkin?, action: PetAction, mood: PetMood, walking: Bool = false, facingLeft: Bool = false,
+                focusing: Bool = false) {
         self.skin = skin
         self.action = action
         self.mood = mood
         self.walking = walking
         self.facingLeft = facingLeft
+        self.focusing = focusing
     }
 
     public var body: some View {
         Group {
             if let skin {
-                let clip = skin.clip(walking ? InstalledSkin.walk : action.rawValue, mood.rawValue)
+                let clip = skin.clip(walking ? InstalledSkin.walk : focusing ? InstalledSkin.focus : action.rawValue, mood.rawValue)
                 if reduceMotion {
                     PixelImage(url: skin.frame(clip, 0))
                 } else {
-                    Flipbook(skin: skin, clip: clip, loops: walking || !action.isOneShot)
+                    Flipbook(skin: skin, clip: clip, loops: walking || focusing || !action.isOneShot)
                         .id("\(skin.folder.path)|\(clip.name)") // a new clip starts from frame 0
                 }
             } else {

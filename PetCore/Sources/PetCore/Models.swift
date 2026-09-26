@@ -256,19 +256,51 @@ public nonisolated struct FriendSurfaceState: Codable, Hashable, Sendable {
     public let line: String
     /// Unix seconds.
     public let updatedAt: TimeInterval
+    /// The iPhone's pomodoro (M10). Set only on the device: the backend's pushes don't carry it, so a push hides the
+    /// timer until the app next updates the activity.
+    public let pomodoro: PomodoroSurface?
 
     enum CodingKeys: String, CodingKey {
-        case presence, mood, action, line
+        case presence, mood, action, line, pomodoro
         case updatedAt = "updated_at"
     }
 
-    public init(presence: Presence, mood: PetMood, action: PetAction, line: String, updatedAt: Date = .now) {
+    public init(presence: Presence, mood: PetMood, action: PetAction, line: String, updatedAt: Date = .now,
+                pomodoro: PomodoroSurface? = nil) {
         self.presence = presence
         self.mood = mood
         self.action = action
         self.line = line
         self.updatedAt = updatedAt.timeIntervalSince1970
+        self.pomodoro = pomodoro
     }
+}
+
+/// The pomodoro as the Live Activity draws it.
+public nonisolated struct PomodoroSurface: Codable, Hashable, Sendable {
+    public let phase: PomodoroPhase
+    public let round: Int
+    public let rounds: Int
+    /// Unix seconds; set while running.
+    public let endsAt: TimeInterval?
+    public let remaining: TimeInterval
+    public let paused: Bool
+    /// The friend focuses alongside the user instead of talking.
+    public let focusing: Bool
+
+    /// Nil for a session that hasn't started, so the activity shows just the friend.
+    public init?(_ pomodoro: Pomodoro, at now: Date) {
+        if pomodoro.status == .ready, pomodoro.phase == .focus, pomodoro.round == 1 { return nil }
+        phase = pomodoro.phase
+        round = pomodoro.round
+        rounds = pomodoro.settings.longBreakEvery
+        endsAt = pomodoro.endsAt?.timeIntervalSince1970
+        remaining = pomodoro.remaining(at: now)
+        paused = pomodoro.status == .paused
+        focusing = pomodoro.friendHome
+    }
+
+    public var endDate: Date? { endsAt.map(Date.init(timeIntervalSince1970:)) }
 }
 
 // MARK: - Devices

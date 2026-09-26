@@ -31,6 +31,8 @@ final class AppModel {
     let pet = PetStateMachine()
     /// The account's skin, shared with the widget through the App Group.
     let skins = SkinStore(root: SharedStore.skinsRoot)
+    /// This iPhone's own pomodoro; during focus the friend studies alongside instead of talking.
+    let pomodoro = PomodoroRunner(saved: SharedStore.loadPomodoro(), save: SharedStore.savePomodoro)
 
     @ObservationIgnored let api = AppConfig.makeAPIClient()
     @ObservationIgnored private var brain = PetBrain()
@@ -49,6 +51,30 @@ final class AppModel {
         uploader = TriggerLogUploader(api: api, fileURL: queueURL.appending(path: "trigger-queue.json"))
         PokeIntent.handler = { [weak self] in await self?.poke() }
         skins.onChange = { [weak self] in self?.surfaces.skinChanged() }
+        PomodoroIntent.handler = { [weak self] in self?.pomodoroCommand($0) }
+        pomodoro.mayAutoStart = { [weak self] in self?.isForeground ?? false }
+        pomodoro.onPhaseEnded = { _, next in PhonePomodoro.chime(next) }
+        pomodoro.onChange = { [weak self] in self?.pomodoroChanged() }
+        pomodoroChanged()
+    }
+
+    // MARK: Pomodoro
+
+    /// A Live Activity button. "start" also begins the phase after one that ended while the app was suspended.
+    func pomodoroCommand(_ command: String) {
+        pomodoro.settle()
+        switch command {
+        case "start": pomodoro.start()
+        case "pause": pomodoro.pause()
+        case "skip": pomodoro.skip()
+        case "stop": pomodoro.reset()
+        default: break
+        }
+    }
+
+    private func pomodoroChanged() {
+        PhonePomodoro.schedule(pomodoro.state)
+        surfaces.pomodoroChanged(PomodoroSurface(pomodoro.state, at: .now))
     }
 
     var friend: FriendProfile? {
@@ -228,11 +254,14 @@ final class AppModel {
     }
 
     private func show(_ reaction: PetReaction) {
+        guard !pomodoro.state.friendHome else { return } // focusing together: no chatter
         pet.apply(reaction)
         surfaces.update(with: reaction)
     }
 
     func scenePhaseChanged(_ scenePhase: ScenePhase) {
+        // Before isForeground flips: phases that ended while suspended don't auto-start in the past.
+        if scenePhase == .active { pomodoro.settle() }
         if scenePhase != .inactive { isForeground = scenePhase == .active }
         if scenePhase == .active, api.isSignedIn {
             Task { await skins.sync(api: api) } // a skin picked on the Mac, granted, or revoked meanwhile

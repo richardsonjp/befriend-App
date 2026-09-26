@@ -25,10 +25,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         super.init()
         menu.delegate = self
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: PomodoroPopover(
+        popover.contentViewController = NSHostingController(rootView: PomodoroControls(
             pomodoro: controller.pomodoro,
-            showMenu: { [weak self] in self?.showMenu() }
-        ))
+            more: { [weak self] in self?.showMenu() }
+        ).padding(16).frame(width: 290))
         if let button = item.button {
             button.target = self
             button.action = #selector(clicked)
@@ -92,7 +92,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func countdown() -> String {
         let pomodoro = controller.pomodoro
         guard controller.stage == .ready, pomodoro.state.status != .ready else { return "" }
-        return " " + MacPomodoro.clock(pomodoro.state.remaining(at: pomodoro.now))
+        return " " + Pomodoro.clock(pomodoro.state.remaining(at: pomodoro.now))
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

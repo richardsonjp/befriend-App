@@ -44,6 +44,10 @@ struct PomodoroTests {
 
         let (next, _) = after.settle(at: t0 + 131 * minute)
         #expect(next.phase == .focus && next.round == 1)
+
+        let (caughtUp, stopped) = pomodoro.settle(at: t0 + 115 * minute + 1, autoStart: false)
+        #expect(stopped == [.focus] && caughtUp.status == .ready, "a suspended iPhone doesn't auto-start in the past")
+        #expect(Pomodoro.clock(61 * minute + 0.2) == "61:01")
     }
 
     @Test func skipMovesOnWithoutCountingTheRound() {
@@ -98,5 +102,13 @@ struct PomodoroTests {
         let running = Pomodoro(settings: .init(focus: 50 * 60)).start(at: t0)
         let decoded = try JSONDecoder().decode(Pomodoro.self, from: JSONEncoder().encode(running))
         #expect(decoded == running)
+    }
+
+    @Test func liveActivityShowsOnlyAStartedSession() throws {
+        #expect(PomodoroSurface(Pomodoro(), at: t0) == nil, "no timer on the Lock Screen until one starts")
+        let running = try #require(PomodoroSurface(Pomodoro().start(at: t0), at: t0 + minute))
+        #expect(running.endDate == t0 + 25 * minute && running.remaining == 24 * minute && running.focusing && !running.paused)
+        let paused = try #require(PomodoroSurface(Pomodoro().start(at: t0).pause(at: t0 + minute), at: t0 + 2 * minute))
+        #expect(paused.endsAt == nil && paused.paused && paused.remaining == 24 * minute)
     }
 }

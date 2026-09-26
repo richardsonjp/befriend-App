@@ -12,6 +12,14 @@ import Foundation
 
 public nonisolated enum PomodoroPhase: String, Codable, Sendable {
     case focus, shortBreak, longBreak
+
+    public var title: String {
+        switch self {
+        case .focus: "Focus"
+        case .shortBreak: "Short break"
+        case .longBreak: "Long break"
+        }
+    }
 }
 
 public nonisolated enum PomodoroStatus: Sendable {
@@ -102,6 +110,12 @@ public nonisolated struct Pomodoro: Codable, Equatable, Sendable {
         return pausedRemaining == nil ? .ready : .paused
     }
 
+    /// "18:42"; minutes run past 60 for long settings.
+    public static func clock(_ remaining: TimeInterval) -> String {
+        let seconds = Int(remaining.rounded(.up))
+        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+
     public func remaining(at now: Date) -> TimeInterval {
         if let endsAt { return max(0, endsAt.timeIntervalSince(now)) }
         return pausedRemaining ?? settings.duration(phase)
@@ -174,14 +188,15 @@ public nonisolated struct Pomodoro: Codable, Equatable, Sendable {
     }
 
     /// Ends every phase whose time is up, in order. Auto-start chains each next phase from the moment the previous
-    /// one ended, so a Mac waking from sleep lands on the phase the user would be in now.
-    public func settle(at now: Date) -> (pomodoro: Pomodoro, ended: [PomodoroPhase]) {
+    /// one ended, so a Mac waking from sleep lands on the phase the user would be in now. `autoStart: false` stops at
+    /// the first phase end regardless of the setting (the iPhone, catching up after being suspended).
+    public func settle(at now: Date, autoStart: Bool = true) -> (pomodoro: Pomodoro, ended: [PomodoroPhase]) {
         var current = self
         var ended: [PomodoroPhase] = []
         while let end = current.endsAt, end <= now, ended.count < Self.maxPhasesPerSettle {
             ended.append(current.phase)
             current = current.advanced(completedAt: end)
-            if current.settings.autoStart {
+            if autoStart, current.settings.autoStart {
                 current.endsAt = end + current.settings.duration(current.phase)
             }
         }

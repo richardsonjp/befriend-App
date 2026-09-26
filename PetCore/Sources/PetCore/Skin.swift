@@ -70,7 +70,12 @@ public nonisolated struct InstalledSkin: Equatable, Sendable {
 
     /// Frame 0, drawn by widgets and Live Activities.
     public func still(_ action: PetAction, _ mood: PetMood) -> URL {
-        frame(clip(action.rawValue, mood.rawValue), 0)
+        still(clip: action.rawValue, mood)
+    }
+
+    /// Frame 0 of any clip by name, e.g. the app-played `focus`.
+    public func still(clip action: String, _ mood: PetMood) -> URL {
+        frame(clip(action, mood.rawValue), 0)
     }
 
     /// The small head for the Dynamic Island and accessory widgets.

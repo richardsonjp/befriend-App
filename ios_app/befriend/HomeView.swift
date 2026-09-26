@@ -37,11 +37,12 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 28) {
                     VStack(spacing: 16) {
-                        if let dialogue = model.pet.dialogue {
+                        if let dialogue = model.pet.dialogue, !model.pomodoro.state.friendHome {
                             SpeechBubble(text: dialogue)
                                 .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
                         }
-                        CharacterView(skin: model.skins.current, action: model.pet.action, mood: model.pet.mood)
+                        CharacterView(skin: model.skins.current, action: model.pet.action, mood: model.pet.mood,
+                                      focusing: model.pomodoro.state.friendHome)
                             .contentShape(Rectangle())
                             .onTapGesture { Task { await model.poke() } }
                             .accessibilityAddTraits(.isButton)
@@ -60,6 +61,10 @@ struct HomeView: View {
                                 .font(.subheadline.weight(.medium))
                         }
                     }
+
+                    PomodoroControls(pomodoro: model.pomodoro)
+                        .padding()
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
 
                     chart
 

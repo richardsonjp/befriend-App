@@ -1,26 +1,31 @@
 //
-//  PomodoroPopover.swift
-//  befriend
+//  PomodoroControls.swift
+//  PetCore
 //
 
-import PetCore
 import SwiftUI
 
-/// What opens from the menu bar icon: the pomodoro, the friend's focus switch, and "…" for the old menu.
-struct PomodoroPopover: View {
-    let pomodoro: MacPomodoro
-    let showMenu: () -> Void
+/// The pomodoro's controls: the Mac's menu bar popover and the iPhone's Home screen card. `more`, when given, adds
+/// a "…" button (the Mac's old menu).
+public struct PomodoroControls: View {
+    let pomodoro: PomodoroRunner
+    let more: (() -> Void)?
     @State private var showsSettings = false
 
-    var body: some View {
+    public init(pomodoro: PomodoroRunner, more: (() -> Void)? = nil) {
+        self.pomodoro = pomodoro
+        self.more = more
+    }
+
+    public var body: some View {
         let state = pomodoro.state
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("🍅 \(MacPomodoro.title(state.phase))").font(.headline)
+                Text("🍅 \(state.phase.title)").font(.headline)
                 Spacer()
                 Text("Today: \(state.completedToday(at: pomodoro.now))").foregroundStyle(.secondary)
             }
-            Text(MacPomodoro.clock(state.remaining(at: pomodoro.now)))
+            Text(Pomodoro.clock(state.remaining(at: pomodoro.now)))
                 .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
             rounds(state)
             HStack {
@@ -38,20 +43,20 @@ struct PomodoroPopover: View {
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Pomodoro settings")
                 Spacer()
-                Button { showMenu() } label: { Image(systemName: "ellipsis.circle") }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("More")
+                if let more {
+                    Button { more() } label: { Image(systemName: "ellipsis.circle") }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("More")
+                }
             }
             if showsSettings { settings(state.settings) }
         }
-        .padding(16)
-        .frame(width: 290)
     }
 
     @ViewBuilder
     private func primaryButton(_ state: Pomodoro) -> some View {
         switch state.status {
-        case .ready: Button("Start \(MacPomodoro.title(state.phase).lowercased())") { pomodoro.start() }
+        case .ready: Button("Start \(state.phase.title.lowercased())") { pomodoro.start() }
         case .running: Button("Pause") { pomodoro.pause() }
         case .paused: Button("Resume") { pomodoro.start() }
         }

@@ -12,6 +12,7 @@ nonisolated enum SharedStore {
     private static let log = Logger(subsystem: "com.richardsonjp.befriend", category: "shared-store")
     private static let friendFile = "friend.json"
     private static let surfaceFile = "surface.json"
+    private static let pomodoroFile = "pomodoro.json"
 
     private static var container: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroup)
@@ -39,6 +40,15 @@ nonisolated enum SharedStore {
 
     static func saveSurface(_ state: FriendSurfaceState?) {
         write(state.flatMap { try? JSONEncoder().encode($0) }, to: surfaceFile)
+    }
+
+    /// This iPhone's pomodoro (M10); never synced.
+    static func loadPomodoro() -> Pomodoro? {
+        read(pomodoroFile).flatMap { try? JSONDecoder().decode(Pomodoro.self, from: $0) }
+    }
+
+    static func savePomodoro(_ pomodoro: Pomodoro) {
+        write(try? JSONEncoder().encode(pomodoro), to: pomodoroFile)
     }
 
     private static func read(_ name: String) -> Data? {
