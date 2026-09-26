@@ -36,6 +36,10 @@ public nonisolated extension PetReaction {
         case .leftApp: PetReaction(action: .wave, mood: .content, dialogue: "See you soon!")
         case .poked: PetReaction(action: .laugh, mood: .playful, dialogue: "Hehe, that tickles!")
         case .checkIn: PetReaction(action: .wave, mood: .curious, dialogue: "Hey, how's it going?")
+        case .pomodoro(.focusStarted): PetReaction(action: .cheer, mood: .excited, dialogue: "Let's focus! See you at the break.")
+        case .pomodoro(.focusEnded): PetReaction(action: .celebrate, mood: .proud, dialogue: "Nice work! Break time, stretch with me?")
+        case .pomodoro(.breakEnded): PetReaction(action: .stretch, mood: .calm, dialogue: "Break's over. Back to it, you got this!")
+        case .pomodoro(.calledOut): PetReaction(action: .wave, mood: .shy, dialogue: "Just a quick hi! Keep going.")
         }
     }
 

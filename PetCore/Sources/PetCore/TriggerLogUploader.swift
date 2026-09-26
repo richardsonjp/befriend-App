@@ -49,7 +49,7 @@ public final class TriggerLogUploader {
     }
 
     public func record(_ trigger: Trigger, at date: Date = .now) {
-        guard !settings.logSyncPaused else { return }
+        guard !settings.logSyncPaused, trigger.kind != .pomodoro else { return } // pomodoro moments stay on device
         let event = TriggerEventRecord(trigger: trigger, at: date)
         if let appName = event.appName, settings.excludes(appName: appName) { return }
 

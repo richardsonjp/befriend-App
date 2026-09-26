@@ -24,6 +24,8 @@ final class MacController {
     private static let friendPollInterval: Duration = .seconds(5)
     private static let settingsRetryInterval: Duration = .seconds(60)
     private static let personalityRefreshInterval: Duration = .seconds(6 * 60 * 60)
+    /// How long the friend lingers to say its focus line before walking home.
+    private static let goodbyeDuration: TimeInterval = 3
 
     private(set) var stage: Stage = .launching
     private(set) var pairing: PairingStart?
@@ -55,10 +57,13 @@ final class MacController {
     @ObservationIgnored private var friendVisible = true
     /// The latest reaction that arrived while the friend was walking or away.
     @ObservationIgnored private var heldReaction: PetReaction?
+    /// The friend says its focus line before going home; the pomodoro keeps it out until then.
+    @ObservationIgnored private var goodbyeUntil = Date.distantPast
 
     init() {
         uploader = TriggerLogUploader(api: api, fileURL: MacConfig.triggerQueueURL)
         pomodoro.onPhaseEnded = MacPomodoro.announce
+        pomodoro.onMoment = { [weak self] in self?.pomodoroMoment($0) }
         if let saved = MacConfig.loadSettings() { apply(saved) }
     }
 
@@ -137,6 +142,7 @@ final class MacController {
         if isNewVersion {
             brain = PetBrain(friend: latest)
             brain.onReaction = { [weak self] in self?.show($0) }
+            brain.context = { [pomodoro] in pomodoro.state.promptContext(at: .now) }
         }
         guard panel == nil else { return }
 
@@ -203,6 +209,20 @@ final class MacController {
         }
     }
 
+    /// Heading home for focus: a quick line first, then the walk. Otherwise the friend reacts as usual (held while
+    /// it comes out for the break).
+    private func pomodoroMoment(_ moment: PomodoroMoment) {
+        let trigger = Trigger.pomodoro(moment)
+        guard pomodoro.state.friendHome else { return brain.handle(trigger) }
+        guard friendVisible, walker.place == .out else { return }
+        pet.apply(brain.quickReaction(to: trigger))
+        goodbyeUntil = .now + Self.goodbyeDuration
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.goodbyeDuration))
+            self?.updateVisibility()
+        }
+    }
+
     private func showHeldReaction() {
         guard let reaction = heldReaction else { return }
         heldReaction = nil
@@ -239,7 +259,7 @@ final class MacController {
             owner: presence.owner,
             socketConnected: presence.isConnected,
             phoneClaimedNearby: phoneClaimedNearby
-        ) && !pomodoro.state.friendHome
+        ) && !(pomodoro.state.friendHome && Date.now >= goodbyeUntil)
         guard show != friendVisible else { return }
         friendVisible = show
         if show {

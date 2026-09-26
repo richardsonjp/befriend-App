@@ -55,6 +55,11 @@ final class AppModel {
         pomodoro.mayAutoStart = { [weak self] in self?.isForeground ?? false }
         pomodoro.onPhaseEnded = { _, next in PhonePomodoro.chime(next) }
         pomodoro.onChange = { [weak self] in self?.pomodoroChanged() }
+        // Focusing together is quiet; otherwise the friend reacts (a break, being let out).
+        pomodoro.onMoment = { [weak self] moment in
+            guard let self, !self.pomodoro.state.friendHome, self.friend != nil else { return }
+            self.brain.handle(.pomodoro(moment))
+        }
         pomodoroChanged()
     }
 
@@ -174,6 +179,7 @@ final class AppModel {
         if isNewVersion {
             brain = PetBrain(friend: latest)
             brain.onReaction = { [weak self] in self?.show($0) }
+            brain.context = { [pomodoro] in pomodoro.state.promptContext(at: .now) }
             let hello = brain.quickReaction(to: .returned(afterSeconds: 0))
             show(hello)
             surfaces.friendReady(latest, state: FriendSurfaceState(presence: .here, mood: hello.mood, action: hello.action, line: hello.dialogue))

@@ -131,6 +131,31 @@ public nonisolated struct Pomodoro: Codable, Equatable, Sendable {
         settings.friendStaysHome && phase == .focus && status != .ready && !friendLetOut
     }
 
+    /// What the friend should know while the user focuses with it out, for the model's prompt; nil otherwise.
+    public func promptContext(at now: Date) -> String? {
+        guard phase == .focus, status == .running, !friendHome else { return nil }
+        let minutes = max(1, Int((remaining(at: now) / 60).rounded(.up)))
+        return "The user is in a focus session with \(minutes) minutes left: keep it short and encouraging."
+    }
+
+    /// The moment a change amounts to, if any: a phase that ended, a focus phase starting (not resuming), or the
+    /// friend being let out mid-focus. A catch-up over several phases passes only the last one: the friend reacts to
+    /// where the user is now. Skipping and settings changes aren't moments.
+    public static func moment(from before: Pomodoro, to after: Pomodoro, ended: PomodoroPhase?) -> PomodoroMoment? {
+        if let ended {
+            return ended == .focus ? .focusEnded(longBreak: after.phase == .longBreak) : .breakEnded
+        }
+        let resumed = before.phase == .focus && before.round == after.round && before.status != .ready
+        if after.phase == .focus, after.status == .running, !resumed {
+            return .focusStarted(minutes: Int(after.settings.focus / 60))
+        }
+        if before.friendHome, !after.friendHome, after.phase == .focus, after.status != .ready,
+           before.settings == after.settings {
+            return .calledOut
+        }
+        return nil
+    }
+
     public func with(settings: PomodoroSettings) -> Pomodoro {
         var copy = self
         copy.settings = settings

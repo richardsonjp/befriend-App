@@ -18,6 +18,8 @@ public final class PomodoroRunner {
     @ObservationIgnored public var onChange: () -> Void = {}
     /// A phase ended while the app was running (catch-ups at launch are silent). `next` is the state after it.
     @ObservationIgnored public var onPhaseEnded: (_ ended: PomodoroPhase, _ next: Pomodoro) -> Void = { _, _ in }
+    /// Something the friend reacts to: a focus starting, a phase ending, being let out. Called before `onChange`.
+    @ObservationIgnored public var onMoment: (PomodoroMoment) -> Void = { _ in }
     /// Whether auto-start may start phases right now (the iPhone: only while the app is open).
     @ObservationIgnored public var mayAutoStart: () -> Bool = { true }
 
@@ -43,17 +45,19 @@ public final class PomodoroRunner {
         now = .now
         let (next, ended) = state.settle(at: now, autoStart: mayAutoStart())
         guard let last = ended.last else { return }
-        change { _ in next }
+        change(ended: last) { _ in next }
         onPhaseEnded(last, next)
     }
 
-    private func change(_ edit: (Pomodoro) -> Pomodoro) {
+    private func change(ended: PomodoroPhase? = nil, _ edit: (Pomodoro) -> Pomodoro) {
+        let before = state
         state = edit(state)
         now = .now
         save(state)
         ticker?.cancel()
         ticker = nil
         if state.status == .running { startTicking() }
+        if let moment = Pomodoro.moment(from: before, to: state, ended: ended) { onMoment(moment) }
         onChange()
     }
 

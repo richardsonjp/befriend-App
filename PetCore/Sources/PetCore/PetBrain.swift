@@ -37,6 +37,8 @@ public final class PetBrain {
         """
 
     public var onReaction: (PetReaction) -> Void = { _ in }
+    /// A line about what the user is doing right now, e.g. a focus session, added under the current trigger.
+    public var context: () -> String? = { nil }
 
     /// Never interpolated per call, so it stays byte-identical for the life of this brain.
     let instructions: String
@@ -143,7 +145,7 @@ public final class PetBrain {
         nextSession = nil
         defer { prepareNextSession() }
         do {
-            let prompt = Self.dynamicBlock(for: record, memory: memory)
+            let prompt = Self.dynamicBlock(for: record, memory: memory, context: context())
             return try await session.respond(to: prompt, generating: PetReaction.self).content
         } catch {
             // guardrailViolation, exceededContextWindowSize, rateLimited (backgrounded), … all degrade the same way.
@@ -180,14 +182,14 @@ public final class PetBrain {
     #endif
 
     /// Dynamic block: a trimmed window of earlier triggers, then the current one. Kept short for the 4K context.
-    nonisolated static func dynamicBlock(for current: TriggerRecord, memory: [TriggerRecord]) -> String {
+    nonisolated static func dynamicBlock(for current: TriggerRecord, memory: [TriggerRecord], context: String? = nil) -> String {
         let earlier = memory.filter { $0.at < current.at }.suffix(memoryLimit)
         let history = earlier.isEmpty
             ? "Recent events: none."
             : "Recent events (oldest first):\n" + earlier
                 .map { "- \(Trigger.format(current.at.timeIntervalSince($0.at), width: .narrow)) ago: \($0.trigger.memoryLine)" }
                 .joined(separator: "\n")
-        return history + "\nNow: " + current.trigger.promptLine
+        return history + "\nNow: " + current.trigger.promptLine + (context.map { "\n" + $0 } ?? "")
     }
 
     /// The first unavailable fallback tells the user why the friend is in simple mode; later ones stay quiet.

@@ -66,7 +66,7 @@ public nonisolated struct TriggerEventRecord: Codable, Equatable, Sendable {
         case .wentIdle(let away), .returned(let away):
             appName = nil
             seconds = Int(away.rounded())
-        case .leftApp, .poked, .checkIn:
+        case .leftApp, .poked, .checkIn, .pomodoro: // pomodoro moments are never recorded (TriggerLogUploader)
             appName = nil
             seconds = nil
         }

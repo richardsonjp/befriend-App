@@ -13,6 +13,17 @@ public nonisolated enum TriggerKind: String, CaseIterable, Codable, Sendable {
     case leftApp = "left_app"
     case poked
     case checkIn = "check_in"
+    /// Pomodoro moments (M10): on-device only, never uploaded or in the phrasebook.
+    case pomodoro
+}
+
+/// The pomodoro moments the friend reacts to.
+public nonisolated enum PomodoroMoment: Equatable, Sendable {
+    case focusStarted(minutes: Int)
+    case focusEnded(longBreak: Bool)
+    case breakEnded
+    /// The user let the friend out during focus.
+    case calledOut
 }
 
 /// Something the user did that the friend may react to.
@@ -26,6 +37,7 @@ public nonisolated enum Trigger: Equatable, Sendable {
     case poked
     /// Periodic check-in while the user is away (background refresh).
     case checkIn
+    case pomodoro(PomodoroMoment)
 
     public var kind: TriggerKind {
         switch self {
@@ -35,6 +47,7 @@ public nonisolated enum Trigger: Equatable, Sendable {
         case .leftApp: .leftApp
         case .poked: .poked
         case .checkIn: .checkIn
+        case .pomodoro: .pomodoro
         }
     }
 }
@@ -63,6 +76,12 @@ public nonisolated extension Trigger {
         case .leftApp: "The user is leaving to do something else."
         case .poked: "The user poked you."
         case .checkIn: "It's been a while since you last talked. Check in on the user."
+        case .pomodoro(.focusStarted(let minutes)):
+            "The user just started a \(minutes)-minute focus session. Cheer them on in a few words; you'll stay quiet until the break."
+        case .pomodoro(.focusEnded(let longBreak)):
+            "The user just finished a focus session. A \(longBreak ? "long" : "short") break starts now: celebrate with them."
+        case .pomodoro(.breakEnded): "The user's break just ended. Encourage them back to focus."
+        case .pomodoro(.calledOut): "The user called you out during their focus session. Say a quick hello without distracting them."
         }
     }
 
@@ -75,6 +94,10 @@ public nonisolated extension Trigger {
         case .leftApp: "left"
         case .poked: "poked you"
         case .checkIn: "you checked in"
+        case .pomodoro(.focusStarted): "started focusing"
+        case .pomodoro(.focusEnded): "finished a focus session"
+        case .pomodoro(.breakEnded): "ended a break"
+        case .pomodoro(.calledOut): "called you out during focus"
         }
     }
 

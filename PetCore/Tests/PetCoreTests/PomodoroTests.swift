@@ -111,4 +111,23 @@ struct PomodoroTests {
         let paused = try #require(PomodoroSurface(Pomodoro().start(at: t0).pause(at: t0 + minute), at: t0 + 2 * minute))
         #expect(paused.endsAt == nil && paused.paused && paused.remaining == 24 * minute)
     }
+
+    @Test func momentsTheFriendReactsTo() {
+        let ready = Pomodoro()
+        let running = ready.start(at: t0)
+        #expect(Pomodoro.moment(from: ready, to: running, ended: nil) == .focusStarted(minutes: 25))
+        let paused = running.pause(at: t0 + minute)
+        #expect(Pomodoro.moment(from: running, to: paused, ended: nil) == nil)
+        #expect(Pomodoro.moment(from: paused, to: paused.start(at: t0 + 2 * minute), ended: nil) == nil, "resuming isn't a new start")
+        #expect(Pomodoro.moment(from: running, to: running.letFriendOut(), ended: nil) == .calledOut)
+        let homeOff = running.with(settings: running.settings.with(friendStaysHome: false))
+        #expect(Pomodoro.moment(from: running, to: homeOff, ended: nil) == nil, "a settings change isn't being let out")
+
+        let (onBreak, _) = running.settle(at: t0 + 26 * minute)
+        #expect(Pomodoro.moment(from: running, to: onBreak, ended: .focus) == .focusEnded(longBreak: false))
+        #expect(Pomodoro.moment(from: onBreak, to: onBreak, ended: .shortBreak) == .breakEnded)
+
+        #expect(running.promptContext(at: t0 + minute) == nil, "home: the friend isn't talking")
+        #expect(running.letFriendOut().promptContext(at: t0 + 10 * minute)?.contains("15 minutes left") == true)
+    }
 }

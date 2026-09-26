@@ -13,7 +13,8 @@ struct VocabularyTests {
         #expect(PetMood.allCases.map(\.rawValue) == [
             "content", "curious", "concerned", "excited", "sleepy", "bored", "playful", "proud", "shy", "grumpy", "calm", "lonely",
         ])
-        #expect(TriggerKind.allCases.map(\.rawValue) == ["app_switched", "went_idle", "returned", "left_app", "poked", "check_in"])
+        // pomodoro is device-only: never uploaded, so the backend never sees it
+        #expect(TriggerKind.allCases.filter { $0 != .pomodoro }.map(\.rawValue) == ["app_switched", "went_idle", "returned", "left_app", "poked", "check_in"])
     }
 }
 
@@ -34,7 +35,8 @@ struct PetReactionTests {
     }
 
     @Test func fallbackCoversEveryKind() {
-        let triggers: [Trigger] = [.appSwitched(name: "Notes"), .wentIdle(seconds: 1), .returned(afterSeconds: 1), .leftApp, .poked, .checkIn]
+        let triggers: [Trigger] = [.appSwitched(name: "Notes"), .wentIdle(seconds: 1), .returned(afterSeconds: 1), .leftApp, .poked, .checkIn,
+                                   .pomodoro(.focusStarted(minutes: 25)), .pomodoro(.focusEnded(longBreak: true)), .pomodoro(.breakEnded), .pomodoro(.calledOut)]
         #expect(Set(triggers.map(\.kind)) == Set(TriggerKind.allCases))
         for trigger in triggers {
             #expect(!PetReaction.fallback(for: trigger).dialogue.isEmpty)
