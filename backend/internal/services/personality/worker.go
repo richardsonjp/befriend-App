@@ -12,6 +12,7 @@ import (
 	"befriend/internal/model/enum"
 	"befriend/pkg/clients/openrouter"
 	"befriend/pkg/utils/astro"
+	"befriend/pkg/utils/errors"
 	"befriend/pkg/utils/logs"
 	"befriend/pkg/utils/vocabulary"
 )
@@ -76,7 +77,7 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 		System:      system,
 		User:        user,
 		SchemaName:  SchemaName,
-		Schema:      ResponseSchema(),
+		Schema:      ResponseSchema(input.Skin),
 		MaxTokens:   MaxTokens,
 		Temperature: Temperature,
 	})
@@ -95,7 +96,11 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 		s.fail(ctx, job, fmt.Errorf("model returned invalid JSON: %w", err))
 		return
 	}
-	personality, phrasebook, err := Validate(&generated)
+	if job.Reason == enum.REASON_RESKIN {
+		// A new look, the same friend: the model's copy of the personality is discarded, so it can't fail the job.
+		generated.Personality = *input.Previous
+	}
+	personality, phrasebook, err := Validate(&generated, input.Skin)
 	if err != nil {
 		s.fail(ctx, job, fmt.Errorf("model output rejected: %w", err))
 		return
@@ -115,8 +120,22 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 		if err := s.personalityVersionService.MarkReady(ctx, job, resp.Model, vocabulary.Version, personalityJSON, phrasebookJSON); err != nil {
 			return err
 		}
-		return s.friendService.SetCurrentVersion(ctx, job.FriendID, job.ID)
+		if err := s.friendService.SetCurrentVersion(ctx, job.FriendID, job.ID); err != nil {
+			return err
+		}
+		if job.Reason != enum.REASON_RESKIN {
+			return s.reskinIfSwitched(ctx, job, input)
+		}
+		// The phrasebook fits the picked skin now: switch to it. Fails if the grant was revoked meanwhile.
+		if err := s.userService.UpdateSkin(ctx, input.userID, job.SkinID); err != nil {
+			return err
+		}
+		return s.skinService.NotifyUser(ctx, input.userID)
 	})
+	if errors.Is(err, "SKIN_NOT_FOUND") {
+		s.fail(ctx, job, fmt.Errorf("the picked skin is no longer granted"))
+		return
+	}
 	if err != nil {
 		// Most likely the claim expired and another pass owns the row now; leave it to that pass.
 		logs.Log.Errorf("personality %s v%d: store result: %v", job.FriendID, job.Version, err)
@@ -136,6 +155,7 @@ func (s *personalityService) promptInput(ctx context.Context, job *model.Persona
 	}
 
 	input := &PromptInput{
+		userID:       f.UserID,
 		FriendName:   f.Name,
 		UserNickname: f.UserNickname,
 		Chart: astro.Chart{
@@ -157,31 +177,77 @@ func (s *personalityService) promptInput(ctx context.Context, job *model.Persona
 		input.Answers = append(input.Answers, AnsweredQuestion{Question: a.Question, Answer: a.Answer})
 	}
 
-	if job.Reason == enum.REASON_EVOLUTION {
+	// A reskin writes for the picked skin; everything else for the skin the user has on now.
+	skinID := job.SkinID
+	if job.Reason != enum.REASON_RESKIN {
+		owner, err := s.userService.GetUserByID(ctx, f.UserID)
+		if err != nil {
+			return nil, err
+		}
+		skinID = owner.SkinID
+	}
+	input.skinID = skinID
+	if input.Skin, err = s.skinService.Vocabulary(ctx, skinID); err != nil {
+		return nil, err
+	}
+
+	switch job.Reason {
+	case enum.REASON_EVOLUTION:
 		if err := s.addEvolutionInput(ctx, f, input); err != nil {
 			return nil, err
 		}
+	case enum.REASON_RESKIN:
+		if input.Previous, err = s.currentPersonality(ctx, f); err != nil {
+			return nil, err
+		}
+		input.Reskin = true
 	}
 	return input, nil
 }
 
-// addEvolutionInput gives an evolution the friend's current personality and its user's recent activity.
-func (s *personalityService) addEvolutionInput(ctx context.Context, f *model.Friend, input *PromptInput) error {
-	if f.CurrentVersionID == nil {
-		return fmt.Errorf("friend %s has no personality to evolve", f.ID)
-	}
-	current, err := s.personalityVersionService.GetByID(ctx, *f.CurrentVersionID)
+// reskinIfSwitched catches a skin picked while this job ran for the old one (the pick applies at once while the
+// friend is hatching): the lines just written don't fit, so write them again for the skin the user has now.
+func (s *personalityService) reskinIfSwitched(ctx context.Context, job *model.PersonalityVersion, input *PromptInput) error {
+	owner, err := s.userService.GetUserByID(ctx, input.userID)
 	if err != nil {
 		return err
 	}
+	if sameSkin(owner.SkinID, input.skinID) {
+		return nil
+	}
+	_, err = s.personalityVersionService.CreateReskin(ctx, job.FriendID, owner.SkinID)
+	return err
+}
+
+func sameSkin(a, b *string) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
+}
+
+func (s *personalityService) currentPersonality(ctx context.Context, f *model.Friend) (*Personality, error) {
+	if f.CurrentVersionID == nil {
+		return nil, fmt.Errorf("friend %s has no personality yet", f.ID)
+	}
+	current, err := s.personalityVersionService.GetByID(ctx, *f.CurrentVersionID)
+	if err != nil {
+		return nil, err
+	}
 	if current.Personality == nil {
-		return fmt.Errorf("personality version %s has no content", current.ID)
+		return nil, fmt.Errorf("personality version %s has no content", current.ID)
 	}
 	var previous Personality
 	if err := json.Unmarshal(current.Personality.Data, &previous); err != nil {
+		return nil, err
+	}
+	return &previous, nil
+}
+
+// addEvolutionInput gives an evolution the friend's current personality and its user's recent activity.
+func (s *personalityService) addEvolutionInput(ctx context.Context, f *model.Friend, input *PromptInput) error {
+	previous, err := s.currentPersonality(ctx, f)
+	if err != nil {
 		return err
 	}
-	input.Previous = &previous
+	input.Previous = previous
 
 	events, err := s.triggerEventService.Recent(ctx, f.UserID, MaxActivityLines)
 	if err != nil {
@@ -212,16 +278,38 @@ func activityLines(events []model.TriggerEvent, timezone string) []ActivityLine 
 }
 
 // fail records a failed attempt, retried with backoff. A job cut short by shutdown is deferred instead, to
-// run again right away on the next start.
+// run again right away on the next start. A failed reskin isn't retried: the user keeps the skin they had,
+// and their apps stop waiting for the new one.
 func (s *personalityService) fail(ctx context.Context, job *model.PersonalityVersion, cause error) {
 	if ctx.Err() != nil {
 		s.deferJob(ctx, job, time.Now(), fmt.Sprintf("interrupted by shutdown: %v", cause))
+		return
+	}
+	if job.Reason == enum.REASON_RESKIN {
+		s.abandonReskin(ctx, job, cause)
 		return
 	}
 	retryAt := time.Now().Add(retryDelay(job.Attempts))
 	logs.Log.Errorf("personality %s v%d attempt %d failed, retry at %s: %v", job.FriendID, job.Version, job.Attempts, retryAt.Format(time.RFC3339), cause)
 	if err := s.personalityVersionService.Fail(context.WithoutCancel(ctx), job, retryAt, cause.Error()); err != nil {
 		logs.Log.Errorf("personality %s v%d: record failure: %v", job.FriendID, job.Version, err)
+	}
+}
+
+func (s *personalityService) abandonReskin(ctx context.Context, job *model.PersonalityVersion, cause error) {
+	logs.Log.Errorf("personality %s v%d reskin abandoned: %v", job.FriendID, job.Version, cause)
+	err := s.txRepo.Run(context.WithoutCancel(ctx), func(ctx context.Context) error {
+		if err := s.personalityVersionService.Abandon(ctx, job, cause.Error()); err != nil {
+			return err
+		}
+		f, err := s.friendService.GetByID(ctx, job.FriendID)
+		if err != nil {
+			return err
+		}
+		return s.skinService.NotifyUser(ctx, f.UserID)
+	})
+	if err != nil {
+		logs.Log.Errorf("personality %s v%d: abandon: %v", job.FriendID, job.Version, err)
 	}
 }
 

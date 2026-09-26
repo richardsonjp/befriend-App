@@ -24,6 +24,7 @@ const (
 	minLinesPerSlot = phrasetable.MinLines
 	maxLinesPerSlot = phrasetable.MaxLines
 	appPlaceholder  = "{app}"
+	idleAction      = "idle" // every skin draws a plain idle
 
 	minSummary      = phrasetable.MinSummaryRunes
 	minVoice        = phrasetable.MinVoiceRunes
@@ -76,10 +77,14 @@ var (
 )
 
 // Validate cleans every string (invisible and control characters removed, whitespace collapsed) and
-// enforces the contract: length caps, 3–5 traits, every trigger × mood exactly once with 2–3 lines,
-// actions from the vocabulary, {app} only for app switches and no other placeholders, and no text that
-// breaks character.
-func Validate(g *Generated) (*Personality, Phrasebook, error) {
+// enforces the contract: length caps, 3–5 traits, every trigger × the skin's moods exactly once with 2–3 lines,
+// actions the skin has, {app} only for app switches and no other placeholders, and no text that breaks
+// character. An action the skin has but didn't draw for the line's mood becomes idle, which every skin draws
+// plain: cheaper than throwing the whole generation away. The zero Skin is the built-in one.
+func Validate(g *Generated, skin vocabulary.Skin) (*Personality, Phrasebook, error) {
+	if len(skin.Moods) == 0 {
+		skin = vocabulary.Default()
+	}
 	p := Personality{
 		Summary:      clean(g.Summary),
 		Voice:        clean(g.Voice),
@@ -115,7 +120,7 @@ func Validate(g *Generated) (*Personality, Phrasebook, error) {
 	book := Phrasebook{}
 	for _, entry := range g.Phrasebook {
 		slot := entry.Trigger + "/" + entry.Mood
-		if !vocabulary.IsTriggerKind(entry.Trigger) || !vocabulary.IsMood(entry.Mood) {
+		if !vocabulary.IsTriggerKind(entry.Trigger) || !skin.IsMood(entry.Mood) {
 			return nil, nil, fmt.Errorf("phrasebook %s: unknown trigger or mood", slot)
 		}
 		if _, dup := book[entry.Trigger][entry.Mood]; dup {
@@ -130,8 +135,12 @@ func Validate(g *Generated) (*Personality, Phrasebook, error) {
 			if err := checkText("phrasebook "+slot, text, minLineText, maxLineText, true); err != nil {
 				return nil, nil, err
 			}
-			if !vocabulary.IsAction(line.Action) {
-				return nil, nil, fmt.Errorf("phrasebook %s: unknown action %q", slot, line.Action)
+			action := line.Action
+			if !skin.IsAction(action) {
+				return nil, nil, fmt.Errorf("phrasebook %s: unknown action %q", slot, action)
+			}
+			if !skin.Allows(action, entry.Mood) {
+				action = idleAction
 			}
 			for _, ph := range placeholder.FindAllString(text, -1) {
 				if ph != appPlaceholder || entry.Trigger != "app_switched" {
@@ -146,7 +155,7 @@ func Validate(g *Generated) (*Personality, Phrasebook, error) {
 					return nil, nil, fmt.Errorf("phrasebook %s: says %q more than once", slot, text)
 				}
 			}
-			lines = append(lines, PhraseLine{Text: text, Action: line.Action})
+			lines = append(lines, PhraseLine{Text: text, Action: action})
 		}
 		if book[entry.Trigger] == nil {
 			book[entry.Trigger] = map[string][]PhraseLine{}
@@ -154,7 +163,7 @@ func Validate(g *Generated) (*Personality, Phrasebook, error) {
 		book[entry.Trigger][entry.Mood] = lines
 	}
 	for _, trigger := range vocabulary.TriggerKinds {
-		for _, mood := range vocabulary.Moods {
+		for _, mood := range skin.Moods {
 			if _, ok := book[trigger][mood]; !ok {
 				return nil, nil, fmt.Errorf("phrasebook %s/%s: missing", trigger, mood)
 			}

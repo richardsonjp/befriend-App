@@ -8,7 +8,9 @@ import (
 	"befriend/internal/services/friend"
 	"befriend/internal/services/onboarding"
 	"befriend/internal/services/personality_version"
+	"befriend/internal/services/skin"
 	"befriend/internal/services/trigger_event"
+	"befriend/internal/services/user"
 	"befriend/pkg/clients/openrouter"
 )
 
@@ -24,6 +26,8 @@ type personalityService struct {
 	friendService             friend.FriendService
 	onboardingService         onboarding.OnboardingService
 	triggerEventService       trigger_event.TriggerEventService
+	userService               user.UserService
+	skinService               skin.SkinService
 	openRouter                *openrouter.Client // nil when no API key is configured: the queue waits
 }
 
@@ -34,6 +38,8 @@ func NewPersonalityService(
 	friendService friend.FriendService,
 	onboardingService onboarding.OnboardingService,
 	triggerEventService trigger_event.TriggerEventService,
+	userService user.UserService,
+	skinService skin.SkinService,
 	openRouter *openrouter.Client,
 ) PersonalityService {
 	return &personalityService{
@@ -43,6 +49,8 @@ func NewPersonalityService(
 		friendService:             friendService,
 		onboardingService:         onboardingService,
 		triggerEventService:       triggerEventService,
+		userService:               userService,
+		skinService:               skinService,
 		openRouter:                openRouter,
 	}
 }

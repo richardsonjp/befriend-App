@@ -212,6 +212,8 @@ func Init() {
 		friendService,
 		onboardingService,
 		triggerEventService,
+		userService,
+		skinService,
 		openRouterClient,
 	)
 	evolutionService := serviceEvolution.NewEvolutionService(
@@ -229,6 +231,7 @@ func Init() {
 		friendService,
 		triggerEventService,
 		skinService,
+		personalityVersionService,
 	)
 	authenticationService := serviceAuthentication.NewAuthenticationService(
 		txRepo,

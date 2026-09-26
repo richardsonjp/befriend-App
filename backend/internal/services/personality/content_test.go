@@ -112,7 +112,7 @@ func TestValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := validGenerated()
 			tt.mutate(g)
-			p, book, err := Validate(g)
+			p, book, err := Validate(g, vocabulary.Skin{})
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v; want one containing %q", err, tt.wantErr)

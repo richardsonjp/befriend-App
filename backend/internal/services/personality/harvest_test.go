@@ -177,7 +177,7 @@ func TestAssembleFeedsValidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Assemble: %v", err)
 	}
-	if _, book, err := Validate(generated); err != nil {
+	if _, book, err := Validate(generated, vocabulary.Skin{}); err != nil {
 		t.Fatalf("Validate: %v", err)
 	} else if len(book) != len(vocabulary.TriggerKinds) {
 		t.Fatalf("got %d triggers, want %d", len(book), len(vocabulary.TriggerKinds))

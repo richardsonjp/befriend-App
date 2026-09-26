@@ -175,7 +175,7 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 			reasons[summarise(err)]++
 			continue
 		}
-		_, _, err = personality.Validate(generated)
+		_, _, err = personality.Validate(generated, vocabulary.Default())
 
 		// A bad profile shouldn't waste six good chunks — on this teacher it is the commonest single failure,
 		// and the chunk calls don't depend on it. Swapping in a known-good profile and revalidating says whether
@@ -185,7 +185,7 @@ func HarvestFilter(inputsPath, outputsPath, out string) {
 			reasons[summarise(err)]++
 			probe := *generated
 			probe.Personality = knownGoodProfile
-			if _, _, retry := personality.Validate(&probe); retry != nil {
+			if _, _, retry := personality.Validate(&probe, vocabulary.Default()); retry != nil {
 				continue // the chunks are bad too: nothing here is worth keeping
 			}
 			chunksOnly++

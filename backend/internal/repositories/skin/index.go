@@ -19,6 +19,9 @@ type SkinRepo interface {
 	// Publish stores the archive and bumps the version. An identical archive (same sha256) keeps the version and
 	// returns changed false.
 	Publish(ctx context.Context, m model.Skin) (version int, changed bool, err error)
+	// GetClips returns a published skin's clips (not grant-checked: the worker writing a phrasebook asks);
+	// DATA_NOT_FOUND when it isn't published.
+	GetClips(ctx context.Context, skinID string) ([]string, error)
 	// Grant is idempotent (false when the account already had it); DATA_NOT_FOUND when the skin isn't published.
 	Grant(ctx context.Context, userID, skinID string) (bool, error)
 	// Revoke deletes the grant (a foreign key clears the account's pick of it); false when there was none.

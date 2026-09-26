@@ -24,6 +24,7 @@ type PersonalityVersion struct {
 	Version           int                        `gorm:"column:version"`
 	Status            PersonalityStatus          `gorm:"column:status"`
 	Reason            PersonalityReason          `gorm:"column:reason"`
+	SkinID            *string                    `gorm:"column:skin_id"` // reskin: the skin it writes for (nil = built-in)
 	Model             *string                    `gorm:"column:model"`
 	VocabularyVersion *int                       `gorm:"column:vocabulary_version"`
 	Attempts          int                        `gorm:"column:attempts"`

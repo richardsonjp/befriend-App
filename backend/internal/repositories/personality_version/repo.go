@@ -48,7 +48,7 @@ func (r *personalityVersionRepo) GetByID(ctx context.Context, id string) (*model
 
 func (r *personalityVersionRepo) GetLatestByFriend(ctx context.Context, friendID string) (*model.PersonalityVersion, error) {
 	m := &model.PersonalityVersion{}
-	q := r.dbdget.Get(ctx).Where("friend_id = ?", friendID).Order("version DESC").Take(m)
+	q := r.dbdget.Get(ctx).Where("friend_id = ? AND status <> ?", friendID, enum.PERSONALITY_ABANDONED).Order("version DESC").Take(m)
 	if q.Error != nil {
 		if q.Error == gorm.ErrRecordNotFound {
 			return nil, errors.From("DATA_NOT_FOUND")
@@ -56,6 +56,43 @@ func (r *personalityVersionRepo) GetLatestByFriend(ctx context.Context, friendID
 		return nil, q.Error
 	}
 	return m, nil
+}
+
+func (r *personalityVersionRepo) NextVersion(ctx context.Context, friendID string) (int, error) {
+	// Two picks (or a pick and the weekly evolution) must not both take the same number: hold a per-friend lock
+	// until the caller's transaction ends.
+	if err := r.dbdget.Get(ctx).Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "personality_version:"+friendID).Error; err != nil {
+		return 0, err
+	}
+	var next int
+	err := r.dbdget.Get(ctx).Raw(`SELECT COALESCE(MAX(version), 0) + 1 FROM personality_version WHERE friend_id = ?`, friendID).
+		Scan(&next).Error
+	return next, err
+}
+
+// activeReskin is a reskin that may still run: queued, running, or failed and waiting to retry.
+func (r *personalityVersionRepo) activeReskin(ctx context.Context, friendID string) *gorm.DB {
+	return r.dbdget.Get(ctx).Model(&model.PersonalityVersion{}).
+		Where("friend_id = ? AND reason = ? AND status IN ?", friendID, enum.REASON_RESKIN,
+			[]enum.PersonalityStatus{enum.PERSONALITY_PENDING, enum.PERSONALITY_RUNNING, enum.PERSONALITY_FAILED})
+}
+
+func (r *personalityVersionRepo) GetActiveReskin(ctx context.Context, friendID string) (*model.PersonalityVersion, error) {
+	var jobs []model.PersonalityVersion
+	if err := r.activeReskin(ctx, friendID).Order("version DESC").Limit(1).Find(&jobs).Error; err != nil {
+		return nil, err
+	}
+	if len(jobs) == 0 {
+		return nil, nil
+	}
+	return &jobs[0], nil
+}
+
+// AbandonReskins ends every active reskin for good; a running one's worker then finds its claim gone.
+func (r *personalityVersionRepo) AbandonReskins(ctx context.Context, friendID, reason string, now time.Time) error {
+	return r.activeReskin(ctx, friendID).Updates(map[string]interface{}{
+		"status": enum.PERSONALITY_ABANDONED, "locked_until": nil, "error": reason, "updated_at": now,
+	}).Error
 }
 
 func (r *personalityVersionRepo) ClaimDue(ctx context.Context, now time.Time, limit int, lockedUntil time.Time) ([]model.PersonalityVersion, error) {

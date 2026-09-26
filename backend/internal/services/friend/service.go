@@ -58,8 +58,8 @@ func (s *friendService) SetNextEvolutionAt(ctx context.Context, friendID string,
 	return s.friendRepo.SetNextEvolutionAt(ctx, friendID, next)
 }
 
-// GetProfile is the friend as the apps see it: the latest personality version's status, plus the
-// content and phrasebook of the current ready version once one exists.
+// GetProfile is the friend as the apps see it: the current version once one is ready (a queued evolution or
+// reskin doesn't send the apps back to hatching), else the latest version's status.
 func (s *friendService) GetProfile(ctx context.Context, userID string) (*ProfileResponse, error) {
 	f, err := s.friendRepo.GetByUserID(ctx, userID)
 	if err != nil {
@@ -104,6 +104,8 @@ func (s *friendService) GetProfile(ctx context.Context, userID string) (*Profile
 			profile.Personality.Content = current.Personality.Data
 			profile.Phrasebook = current.Phrasebook.Data
 		}
+		profile.Personality.Status = current.Status.String()
+		profile.Personality.Version = current.Version
 		if current.VocabularyVersion != nil {
 			profile.Personality.VocabularyVersion = *current.VocabularyVersion
 		}

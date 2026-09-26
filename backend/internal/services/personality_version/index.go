@@ -15,6 +15,13 @@ type PersonalityVersionService interface {
 	// CreateEvolution queues the next version for a weekly evolution; nil when the latest version isn't ready yet
 	// (still generating, or failed and waiting to retry).
 	CreateEvolution(ctx context.Context, friendID string) (*model.PersonalityVersion, error)
+	// CreateReskin queues a phrasebook for the picked skin (nil = built-in), superseding any reskin still waiting.
+	CreateReskin(ctx context.Context, friendID string, skinID *string) (*model.PersonalityVersion, error)
+	// GetActiveReskin is the skin pick still being written for; nil when there is none.
+	GetActiveReskin(ctx context.Context, friendID string) (*model.PersonalityVersion, error)
+	AbandonReskins(ctx context.Context, friendID, reason string) error
+	// Abandon ends a claimed job without a retry.
+	Abandon(ctx context.Context, job *model.PersonalityVersion, reason string) error
 	GetByID(ctx context.Context, id string) (*model.PersonalityVersion, error)
 	GetLatestByFriend(ctx context.Context, friendID string) (*model.PersonalityVersion, error)
 	ClaimDue(ctx context.Context, limit int, lockFor time.Duration) ([]model.PersonalityVersion, error)

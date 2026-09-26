@@ -32,13 +32,16 @@ const (
 	PERSONALITY_RUNNING
 	PERSONALITY_READY
 	PERSONALITY_FAILED
+	// PERSONALITY_ABANDONED is never retried: a reskin that failed or was superseded by another pick.
+	PERSONALITY_ABANDONED
 )
 
 var PersonalityStatusKey = map[PersonalityStatus]string{
-	PERSONALITY_PENDING: "pending",
-	PERSONALITY_RUNNING: "running",
-	PERSONALITY_READY:   "ready",
-	PERSONALITY_FAILED:  "failed",
+	PERSONALITY_PENDING:   "pending",
+	PERSONALITY_RUNNING:   "running",
+	PERSONALITY_READY:     "ready",
+	PERSONALITY_FAILED:    "failed",
+	PERSONALITY_ABANDONED: "abandoned",
 }
 
 // String for stringify PersonalityStatus
@@ -71,11 +74,14 @@ func (s PersonalityReason) Value() (driver.Value, error) {
 const (
 	REASON_ONBOARDING PersonalityReason = iota + 1
 	REASON_EVOLUTION
+	// REASON_RESKIN writes a phrasebook for the skin the user picked; the pick applies once it is ready.
+	REASON_RESKIN
 )
 
 var PersonalityReasonKey = map[PersonalityReason]string{
 	REASON_ONBOARDING: "onboarding",
 	REASON_EVOLUTION:  "evolution",
+	REASON_RESKIN:     "reskin",
 }
 
 // String for stringify PersonalityReason

@@ -1,6 +1,7 @@
 package user_application
 
 import (
+	"befriend/internal/services/personality_version"
 	"context"
 
 	"befriend/internal/repositories/tx"
@@ -21,12 +22,13 @@ type UserApplicationService interface {
 }
 
 type userApplicationService struct {
-	txRepo                  tx.TxRepo
-	userService             user.UserService
-	verificationCodeService verification_code.VerificationCodeService
-	friendService           friend.FriendService
-	triggerEventService     trigger_event.TriggerEventService
-	skinService             skin.SkinService
+	txRepo                    tx.TxRepo
+	userService               user.UserService
+	verificationCodeService   verification_code.VerificationCodeService
+	friendService             friend.FriendService
+	triggerEventService       trigger_event.TriggerEventService
+	skinService               skin.SkinService
+	personalityVersionService personality_version.PersonalityVersionService
 }
 
 func NewUserApplicationService(
@@ -36,13 +38,15 @@ func NewUserApplicationService(
 	friendService friend.FriendService,
 	triggerEventService trigger_event.TriggerEventService,
 	skinService skin.SkinService,
+	personalityVersionService personality_version.PersonalityVersionService,
 ) UserApplicationService {
 	return &userApplicationService{
-		txRepo:                  txRepo,
-		userService:             userService,
-		verificationCodeService: verificationCodeService,
-		friendService:           friendService,
-		triggerEventService:     triggerEventService,
-		skinService:             skinService,
+		txRepo:                    txRepo,
+		userService:               userService,
+		verificationCodeService:   verificationCodeService,
+		friendService:             friendService,
+		triggerEventService:       triggerEventService,
+		skinService:               skinService,
+		personalityVersionService: personalityVersionService,
 	}
 }

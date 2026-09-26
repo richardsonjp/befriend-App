@@ -8,6 +8,7 @@ import (
 	"befriend/internal/repositories/tx"
 	"befriend/internal/services/user"
 	"befriend/pkg/skinpack"
+	"befriend/pkg/utils/vocabulary"
 )
 
 // NotifyChannel carries a user ID whenever that account's skins or skin pick change.
@@ -23,6 +24,10 @@ type SkinService interface {
 	Grant(ctx context.Context, payload GrantPayload) error
 	// Revoke takes a skin away; an account using it goes back to the built-in skin. False when it wasn't granted.
 	Revoke(ctx context.Context, payload GrantPayload) (bool, error)
+	// Vocabulary is what a skin lets its friend's phrasebook use; nil is the built-in skin.
+	Vocabulary(ctx context.Context, skinID *string) (vocabulary.Skin, error)
+	// IsGranted reports whether the account may pick the skin.
+	IsGranted(ctx context.Context, userID, skinID string) (bool, error)
 	// NotifyUser tells the account's apps to fetch their skin again, once the current transaction commits.
 	NotifyUser(ctx context.Context, userID string) error
 }

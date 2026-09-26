@@ -89,7 +89,7 @@ func TestEveryTriggerIsDescribed(t *testing.T) {
 }
 
 func TestResponseSchemaMatchesVocabulary(t *testing.T) {
-	schema := ResponseSchema()
+	schema := ResponseSchema(vocabulary.Skin{})
 	props := schema["properties"].(map[string]interface{})
 	entry := props["phrasebook"].(map[string]interface{})["items"].(map[string]interface{})["properties"].(map[string]interface{})
 	line := entry["lines"].(map[string]interface{})["items"].(map[string]interface{})["properties"].(map[string]interface{})

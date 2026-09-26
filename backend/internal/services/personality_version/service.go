@@ -31,12 +31,47 @@ func (s *personalityVersionService) CreateEvolution(ctx context.Context, friendI
 	if latest.Status != enum.PERSONALITY_READY {
 		return nil, nil
 	}
+	next, err := s.personalityVersionRepo.NextVersion(ctx, friendID)
+	if err != nil {
+		return nil, err
+	}
 	return s.personalityVersionRepo.Create(ctx, &model.PersonalityVersion{
 		FriendID: friendID,
-		Version:  latest.Version + 1,
+		Version:  next,
 		Status:   enum.PERSONALITY_PENDING,
 		Reason:   enum.REASON_EVOLUTION,
 	})
+}
+
+// CreateReskin queues a phrasebook for skinID (nil = built-in), superseding any reskin still waiting.
+func (s *personalityVersionService) CreateReskin(ctx context.Context, friendID string, skinID *string) (*model.PersonalityVersion, error) {
+	if err := s.AbandonReskins(ctx, friendID, "superseded by another skin pick"); err != nil {
+		return nil, err
+	}
+	next, err := s.personalityVersionRepo.NextVersion(ctx, friendID)
+	if err != nil {
+		return nil, err
+	}
+	return s.personalityVersionRepo.Create(ctx, &model.PersonalityVersion{
+		FriendID: friendID,
+		Version:  next,
+		Status:   enum.PERSONALITY_PENDING,
+		Reason:   enum.REASON_RESKIN,
+		SkinID:   skinID,
+	})
+}
+
+func (s *personalityVersionService) GetActiveReskin(ctx context.Context, friendID string) (*model.PersonalityVersion, error) {
+	return s.personalityVersionRepo.GetActiveReskin(ctx, friendID)
+}
+
+func (s *personalityVersionService) AbandonReskins(ctx context.Context, friendID, reason string) error {
+	return s.personalityVersionRepo.AbandonReskins(ctx, friendID, truncate(reason), time.Now())
+}
+
+// Abandon ends a claimed job for good (a reskin that failed: the user keeps the skin they had).
+func (s *personalityVersionService) Abandon(ctx context.Context, job *model.PersonalityVersion, reason string) error {
+	return s.personalityVersionRepo.Reschedule(ctx, claimOf(job), enum.PERSONALITY_ABANDONED, time.Now(), truncate(reason), true, time.Now())
 }
 
 func (s *personalityVersionService) GetByID(ctx context.Context, id string) (*model.PersonalityVersion, error) {

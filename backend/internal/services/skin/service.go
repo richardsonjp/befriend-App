@@ -6,8 +6,10 @@ import (
 	"regexp"
 
 	"befriend/internal/model"
+	ct "befriend/internal/model/custom_type"
 	"befriend/pkg/skinpack"
 	"befriend/pkg/utils/errors"
+	"befriend/pkg/utils/vocabulary"
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
@@ -55,7 +57,13 @@ func (s *skinService) Publish(ctx context.Context, pkg *skinpack.Package) (int, 
 	var changed bool
 	err := s.txRepo.Run(ctx, func(ctx context.Context) error {
 		var err error
-		version, changed, err = s.skinRepo.Publish(ctx, model.Skin{ID: pkg.ID, Name: pkg.Name, SHA256: pkg.SHA256, Archive: pkg.Zip})
+		clips := make([]string, 0, len(pkg.Clips))
+		for _, clip := range pkg.Clips {
+			clips = append(clips, clip.Name)
+		}
+		version, changed, err = s.skinRepo.Publish(ctx, model.Skin{
+			ID: pkg.ID, Name: pkg.Name, SHA256: pkg.SHA256, Archive: pkg.Zip, Clips: ct.JSONB[[]string]{Data: clips},
+		})
 		if err != nil || !changed {
 			return err
 		}
@@ -94,6 +102,28 @@ func (s *skinService) Revoke(ctx context.Context, payload GrantPayload) (bool, e
 		return s.skinRepo.NotifyUser(ctx, userID)
 	})
 	return revoked, err
+}
+
+func (s *skinService) Vocabulary(ctx context.Context, skinID *string) (vocabulary.Skin, error) {
+	if skinID == nil {
+		return vocabulary.Default(), nil
+	}
+	clips, err := s.skinRepo.GetClips(ctx, *skinID)
+	if errors.Is(err, "DATA_NOT_FOUND") {
+		return vocabulary.Skin{}, errors.From("SKIN_NOT_FOUND")
+	}
+	return vocabulary.FromClips(clips), err
+}
+
+func (s *skinService) IsGranted(ctx context.Context, userID, skinID string) (bool, error) {
+	if !idPattern.MatchString(skinID) {
+		return false, nil
+	}
+	_, err := s.skinRepo.GetGranted(ctx, userID, skinID)
+	if errors.Is(err, "DATA_NOT_FOUND") {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (s *skinService) NotifyUser(ctx context.Context, userID string) error {
