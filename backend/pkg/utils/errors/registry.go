@@ -37,5 +37,7 @@ var Registry = map[string]AppError{
 	"SKIN_TAKEN":           {Code: "SKIN_TAKEN", Status: http.StatusConflict, Message: "Another artist's skin already uses this id"},
 	"SKIN_INVALID":         {Code: "SKIN_INVALID", Status: http.StatusUnprocessableEntity, Message: "The skin doesn't follow the format"},
 	"TOO_MANY_SUBMISSIONS": {Code: "TOO_MANY_SUBMISSIONS", Status: http.StatusTooManyRequests, Message: "Wait for your submissions to be reviewed first"},
+	"PURCHASE_INVALID":     {Code: "PURCHASE_INVALID", Status: http.StatusUnprocessableEntity, Message: "The App Store purchase couldn't be verified"},
+	"PURCHASE_TAKEN":       {Code: "PURCHASE_TAKEN", Status: http.StatusConflict, Message: "This purchase already unlocked the skin on another account"},
 	"SUBMISSION_NOT_FOUND": {Code: "SUBMISSION_NOT_FOUND", Status: http.StatusNotFound, Message: "Submission not found"},
 }

@@ -11,10 +11,10 @@ import (
 // publishSQL returns the new version only when the archive changed: an identical one matches no row to update.
 // The name is inside the archive (manifest.json), so renaming a skin changes its sha256 too.
 const publishSQL = `
-INSERT INTO skin (id, name, version, sha256, archive, clips, artist_user_id)
-VALUES (@id, @name, 1, @sha256, @archive, @clips, @artist)
+INSERT INTO skin (id, name, version, sha256, archive, clips, artist_user_id, preview)
+VALUES (@id, @name, 1, @sha256, @archive, @clips, @artist, @preview)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, version = skin.version + 1, sha256 = EXCLUDED.sha256,
-    archive = EXCLUDED.archive, clips = EXCLUDED.clips,
+    archive = EXCLUDED.archive, clips = EXCLUDED.clips, preview = EXCLUDED.preview,
     artist_user_id = COALESCE(EXCLUDED.artist_user_id, skin.artist_user_id), updated_at = NOW()
 WHERE skin.sha256 <> EXCLUDED.sha256
   AND (EXCLUDED.artist_user_id IS NULL OR skin.artist_user_id = EXCLUDED.artist_user_id)
@@ -47,7 +47,7 @@ WHERE g.user_id = ? AND s.id = ?`, userID, skinID).Scan(m)
 func (r *skinRepo) Publish(ctx context.Context, m model.Skin) (int, bool, error) {
 	var versions []int
 	err := r.dbdget.Get(ctx).
-		Raw(publishSQL, map[string]interface{}{"id": m.ID, "name": m.Name, "sha256": m.SHA256, "archive": m.Archive, "clips": m.Clips, "artist": m.ArtistUserID}).
+		Raw(publishSQL, map[string]interface{}{"id": m.ID, "name": m.Name, "sha256": m.SHA256, "archive": m.Archive, "clips": m.Clips, "artist": m.ArtistUserID, "preview": m.Preview}).
 		Scan(&versions).Error
 	if err != nil || len(versions) == 1 {
 		return firstOrZero(versions), err == nil, err
@@ -63,6 +63,10 @@ func (r *skinRepo) Publish(ctx context.Context, m model.Skin) (int, bool, error)
 	}
 	if len(rows) == 0 {
 		return 0, false, nil
+	}
+	// Skins published before previews existed get one the next time they're published.
+	if err := r.dbdget.Get(ctx).Exec(`UPDATE skin SET preview = ? WHERE id = ? AND preview IS NULL`, m.Preview, m.ID).Error; err != nil {
+		return 0, false, err
 	}
 	return rows[0].Version, false, nil
 }

@@ -21,9 +21,13 @@ type Skin struct {
 	// Clips are its animations ("wave", "wave/grumpy"): what its friend's phrasebook may use.
 	Clips ct.JSONB[[]string] `gorm:"column:clips"`
 	// ArtistUserID made it (nil: published from the repo); only they can submit a new version.
-	ArtistUserID *string   `gorm:"column:artist_user_id"`
-	CreatedAt    time.Time `gorm:"column:created_at"`
-	UpdatedAt    time.Time `gorm:"column:updated_at"`
+	ArtistUserID *string `gorm:"column:artist_user_id"`
+	// Tier and ProductID are set while it's for sale; Preview is idle's first frame for the shop.
+	Tier      *int      `gorm:"column:tier"`
+	ProductID *string   `gorm:"column:product_id"`
+	Preview   []byte    `gorm:"column:preview"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
 // SkinSummary is a skin without its archive.

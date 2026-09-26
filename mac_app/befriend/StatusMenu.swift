@@ -6,6 +6,7 @@
 import AppKit
 import Observation
 import PetCore
+import StoreKit
 import SwiftUI
 
 /// The menu bar item. It's the friend's home: while the friend is inside, the icon is its head in the current mood,
@@ -138,9 +139,32 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             item.state = controller.skins.current?.pickID == choice.id ? .on : .off
             submenu.addItem(item)
         }
+        let forSale = controller.shop.items.filter { !$0.skin.owned && $0.product != nil }
+        if !forSale.isEmpty {
+            submenu.addItem(.separator())
+            for shopItem in forSale {
+                let price = shopItem.product?.displayPrice ?? ""
+                let buy = NSMenuItem(title: "Buy \(shopItem.skin.name) — \(price)", action: #selector(buySkin(_:)), keyEquivalent: "").targeted(self)
+                buy.representedObject = shopItem.id
+                buy.isEnabled = controller.shop.busy == nil
+                submenu.addItem(buy)
+            }
+        }
+        submenu.addItem(.separator())
+        submenu.addItem(NSMenuItem(title: "Restore Purchases", action: #selector(restorePurchases), keyEquivalent: "").targeted(self))
         let item = NSMenuItem(title: "Skin", action: nil, keyEquivalent: "")
         item.submenu = submenu
         return item
+    }
+
+    @objc private func buySkin(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String,
+              let shopItem = controller.shop.items.first(where: { $0.id == id }) else { return }
+        Task { await controller.shop.buy(shopItem) }
+    }
+
+    @objc private func restorePurchases() {
+        Task { await controller.shop.restore() }
     }
 
     @objc private func selectSkin(_ sender: NSMenuItem) {

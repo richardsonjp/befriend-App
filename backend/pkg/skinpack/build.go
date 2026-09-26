@@ -23,12 +23,14 @@ var zipTime = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // Package is a built skin.
 type Package struct {
-	ID     string
-	Name   string
-	Clips  []Clip
-	Moods  []string
-	Zip    []byte
-	SHA256 string // hex digest of Zip
+	ID    string
+	Name  string
+	Clips []Clip
+	Moods []string
+	// Preview is idle's first frame, shown in the shop.
+	Preview []byte
+	Zip     []byte
+	SHA256  string // hex digest of Zip
 }
 
 // Clip is one playable animation: "wave" plays in any mood, "wave/grumpy" only in that mood.
@@ -101,5 +103,6 @@ func Build(dir string) (*Package, error) {
 		return nil, fmt.Errorf("%s packs to %d bytes; the apps accept at most %d", src.id, len(data), MaxZipBytes)
 	}
 	sum := sha256.Sum256(data)
-	return &Package{ID: src.id, Name: src.meta.Name, Clips: clips, Moods: src.moods, Zip: data, SHA256: hex.EncodeToString(sum[:])}, nil
+	return &Package{ID: src.id, Name: src.meta.Name, Clips: clips, Moods: src.moods, Preview: src.clips["idle"][0],
+		Zip: data, SHA256: hex.EncodeToString(sum[:])}, nil
 }

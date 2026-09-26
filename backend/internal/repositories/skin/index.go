@@ -35,6 +35,14 @@ type SkinRepo interface {
 	GetSubmission(ctx context.Context, id string) (*model.SkinSubmission, error)
 	ReviewSubmission(ctx context.Context, id, status string, note *string, now time.Time) error
 	GetArtist(ctx context.Context, skinID string) (artist *string, found bool, err error)
+	// Sales (M9): skins as In-App Purchase products, and the purchases that unlock them.
+	Catalog(ctx context.Context, userID string) ([]CatalogItem, error)
+	SetProduct(ctx context.Context, skinID string, tier int, prefix string) (string, error)
+	SkinForProduct(ctx context.Context, productID string) (string, error)
+	ClaimPurchase(ctx context.Context, p Purchase) (owner string, err error)
+	GrantPurchased(ctx context.Context, userID, skinID string) error
+	RevokePurchased(ctx context.Context, userID, skinID string) error
+	RevokePurchase(ctx context.Context, originalTransactionID string, now time.Time) (userID, skinID string, found bool, err error)
 	// NotifyUser and NotifySelected queue skin_changed notifications, delivered when the transaction commits.
 	NotifyUser(ctx context.Context, userID string) error
 	NotifySelected(ctx context.Context, skinID string) error

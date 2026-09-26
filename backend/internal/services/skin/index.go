@@ -7,6 +7,7 @@ import (
 	repoSkin "befriend/internal/repositories/skin"
 	"befriend/internal/repositories/tx"
 	"befriend/internal/services/user"
+	"befriend/pkg/appstore"
 	"befriend/pkg/skinpack"
 	"befriend/pkg/utils/vocabulary"
 )
@@ -32,6 +33,14 @@ type SkinService interface {
 	Approve(ctx context.Context, id string) (*skinpack.Package, int, error)
 	// Reject records why a pending submission won't be published.
 	Reject(ctx context.Context, id, note string) error
+	// Catalog lists the skins for sale and whether the account owns each.
+	Catalog(ctx context.Context, userID string) ([]CatalogResponse, error)
+	// SetTier puts a skin on sale in a price tier (0 takes it off) and returns the product id to sell it as.
+	SetTier(ctx context.Context, skinID string, tier int) (string, error)
+	// Purchase checks an App Store signed transaction and unlocks its skin for the account.
+	Purchase(ctx context.Context, userID, signedTransaction string) (*CatalogResponse, error)
+	// AppStoreNotification takes back skins whose purchase was refunded or revoked.
+	AppStoreNotification(ctx context.Context, signedPayload string) error
 	// SetArtist invites an account to submit skins, or stops it.
 	SetArtist(ctx context.Context, payload GrantPayload, artist bool) error
 	Grant(ctx context.Context, payload GrantPayload) error
@@ -49,6 +58,7 @@ type skinService struct {
 	txRepo      tx.TxRepo
 	skinRepo    repoSkin.SkinRepo
 	userService user.UserService
+	appStore    *appstore.Verifier
 }
 
 func NewSkinService(txRepo tx.TxRepo, skinRepo repoSkin.SkinRepo, userService user.UserService) SkinService {
@@ -56,5 +66,6 @@ func NewSkinService(txRepo tx.TxRepo, skinRepo repoSkin.SkinRepo, userService us
 		txRepo:      txRepo,
 		skinRepo:    skinRepo,
 		userService: userService,
+		appStore:    appstore.New(),
 	}
 }

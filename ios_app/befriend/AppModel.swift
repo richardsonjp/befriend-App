@@ -35,6 +35,15 @@ final class AppModel {
     let pomodoro = PomodoroRunner(saved: SharedStore.loadPomodoro(), save: SharedStore.savePomodoro)
 
     @ObservationIgnored let api = AppConfig.makeAPIClient()
+    /// Paid skins; a purchase unlocks the skin for the account on every device.
+    @ObservationIgnored private(set) lazy var shop: SkinShop = {
+        let shop = SkinShop(api: api)
+        shop.onUnlocked = { [weak self] in
+            guard let self else { return }
+            Task { await self.skins.sync(api: self.api) }
+        }
+        return shop
+    }()
     @ObservationIgnored private var brain = PetBrain()
     @ObservationIgnored private var surfaces: SurfaceController!
     @ObservationIgnored private var uploader: TriggerLogUploader!
@@ -58,6 +67,7 @@ final class AppModel {
             Task { await self.refresh() }
         }
         PomodoroIntent.handler = { [weak self] in self?.pomodoroCommand($0) }
+        shop.start()
         pomodoro.mayAutoStart = { [weak self] in self?.isForeground ?? false }
         pomodoro.onPhaseEnded = { _, next in PhonePomodoro.chime(next) }
         pomodoro.onChange = { [weak self] in self?.pomodoroChanged() }

@@ -78,14 +78,24 @@ private struct Flipbook: View {
 
 /// A pixel-art PNG scaled up without smoothing, so every pixel stays a crisp square.
 public struct PixelImage: View {
-    let url: URL
+    let source: Source
+
+    enum Source {
+        case file(URL)
+        case data(Data)
+    }
 
     public init(url: URL) {
-        self.url = url
+        source = .file(url)
+    }
+
+    /// A PNG already in memory, e.g. a shop preview.
+    public init(data: Data) {
+        source = .data(data)
     }
 
     public var body: some View {
-        if let image = Self.load(url) {
+        if let image = Self.load(source) {
             image.interpolation(.none).resizable().scaledToFit()
         } else {
             // The file went away mid-switch (another process pruned it); the next redraw finds the new skin.
@@ -93,11 +103,17 @@ public struct PixelImage: View {
         }
     }
 
-    private static func load(_ url: URL) -> Image? {
+    private static func load(_ source: Source) -> Image? {
         #if canImport(UIKit)
-        UIImage(contentsOfFile: url.path).map { Image(uiImage: $0) }
+        switch source {
+        case .file(let url): UIImage(contentsOfFile: url.path).map { Image(uiImage: $0) }
+        case .data(let data): UIImage(data: data).map { Image(uiImage: $0) }
+        }
         #else
-        NSImage(contentsOf: url).map { Image(nsImage: $0) }
+        switch source {
+        case .file(let url): NSImage(contentsOf: url).map { Image(nsImage: $0) }
+        case .data(let data): NSImage(data: data).map { Image(nsImage: $0) }
+        }
         #endif
     }
 }

@@ -39,6 +39,12 @@ final class MacController {
     let walker = FriendWalker()
     /// During focus the friend stays in the menu bar icon unless let out.
     let pomodoro = PomodoroRunner(saved: MacConfig.loadPomodoro(), save: MacConfig.savePomodoro)
+    /// Paid skins; a purchase unlocks the skin for the account on every device.
+    @ObservationIgnored private(set) lazy var shop: SkinShop = {
+        let shop = SkinShop(api: api)
+        shop.onUnlocked = { [weak self] in self?.syncSkins() }
+        return shop
+    }()
 
     @ObservationIgnored let api = MacConfig.makeAPIClient()
     @ObservationIgnored private let uploader: TriggerLogUploader
@@ -64,6 +70,7 @@ final class MacController {
         uploader = TriggerLogUploader(api: api, fileURL: MacConfig.triggerQueueURL)
         pomodoro.onPhaseEnded = MacPomodoro.announce
         pomodoro.onMoment = { [weak self] in self?.pomodoroMoment($0) }
+        shop.start()
         if let saved = MacConfig.loadSettings() { apply(saved) }
     }
 
@@ -183,6 +190,7 @@ final class MacController {
         show(brain.quickReaction(to: .returned(afterSeconds: 0)))
 
         backgroundRefresh = Task { [weak self] in
+            await self?.shop.load()
             await self?.refreshSettingsUntilLoaded()
             while !Task.isCancelled {
                 if let self { await self.skins.sync(api: self.api) }

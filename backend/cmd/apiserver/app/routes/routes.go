@@ -9,6 +9,9 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 )
 
+// appStoreNotificationsPerMinute bounds the unauthenticated notification endpoint (each call checks a signature).
+const appStoreNotificationsPerMinute = 60
+
 func Ping(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "pong"})
 }
@@ -39,6 +42,9 @@ func NewHTTPServer(appStore *store.Store) *fiber.App {
 	app.Use(middlewares.Cors())
 
 	app.Get("/ping", Ping)
+
+	// App Store Server Notifications (refunds): Apple can't send the static key; its signature is the check.
+	app.Post("/appstore/notifications", middlewares.RateLimit(appStoreNotificationsPerMinute), appStore.SkinHandler.AppStoreNotification)
 
 	// Everything below requires the static API key; protected routes add PASETO auth per route.
 	app.Use(middlewares.CheckHeaderStaticApiKey())

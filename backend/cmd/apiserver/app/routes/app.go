@@ -8,10 +8,13 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// initAppRoute registers the signed-in app endpoints.
 // submissionsPerMinute caps skin uploads per client; each one is unzipped and built.
 const submissionsPerMinute = 5
 
+// purchasesPerMinute bounds purchase checks per client; restoring sends one per past purchase.
+const purchasesPerMinute = 30
+
+// initAppRoute registers the signed-in app endpoints.
 func initAppRoute(api fiber.Router, appStore *store.Store) {
 	auth := appStore.MiddlewarePasetoAuth.MiddlewarePasetoAuth
 	// Pairing codes are short: limit guessing them even for signed-in users.
@@ -36,5 +39,7 @@ func initAppRoute(api fiber.Router, appStore *store.Store) {
 	api.Get("/skins", auth, appStore.SkinHandler.List)
 	api.Get("/skins/:id/archive", auth, appStore.SkinHandler.Archive)
 	api.Get("/skins/submissions", auth, appStore.SkinHandler.Submissions)
+	api.Get("/skins/catalog", auth, appStore.SkinHandler.Catalog)
+	api.Post("/skins/purchases", middlewares.RateLimit(purchasesPerMinute), auth, appStore.SkinHandler.Purchase)
 	api.Post("/skins/submissions", middlewares.RateLimit(submissionsPerMinute), auth, appStore.SkinHandler.Submit)
 }

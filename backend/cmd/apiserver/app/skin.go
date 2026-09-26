@@ -73,11 +73,29 @@ func SkinSubmission(id, out string) {
 	fmt.Printf("skin submission: %s (%s, %s) → %s\n", m.SkinID, m.Name, m.Status, out)
 }
 
-func SkinApprove(id string) {
+func SkinApprove(id string, tier int) {
 	store.Init()
 	pkg, version, err := store.App.SkinService.Approve(context.Background(), id)
 	exitOnError("skin approve", err)
-	fmt.Printf("skin approve: %s published as version %d (%d bytes); grant it to accounts with `skin grant`\n", pkg.ID, version, len(pkg.Zip))
+	fmt.Printf("skin approve: %s published as version %d (%d bytes)\n", pkg.ID, version, len(pkg.Zip))
+	if tier == 0 {
+		fmt.Println("  not for sale: grant it with `skin grant`, or sell it with `skin price`")
+		return
+	}
+	SkinPrice(pkg.ID, tier)
+}
+
+// SkinPrice puts a skin on sale and says which product to create in App Store Connect.
+func SkinPrice(skinID string, tier int) {
+	store.Init()
+	product, err := store.App.SkinService.SetTier(context.Background(), skinID, tier)
+	exitOnError("skin price", err)
+	if product == "" {
+		fmt.Printf("skin price: %s is no longer for sale (owners keep it)\n", skinID)
+		return
+	}
+	fmt.Printf("skin price: %s sells as %s (tier %d)\n", skinID, product, tier)
+	fmt.Println("  create it in App Store Connect as a non-consumable at that tier's price, then submit it for review")
 }
 
 func SkinReject(id, note string) {

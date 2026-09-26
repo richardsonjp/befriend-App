@@ -4,6 +4,7 @@
 //
 
 import PetCore
+import StoreKit
 import SwiftUI
 
 struct HatchingView: View {
@@ -234,6 +235,23 @@ struct SettingsView: View {
                     Text("Your friend looks the same on your iPhone and Mac. Skins you're given show up here. A new look takes a minute: your friend learns what it can do in it first.")
                 }
 
+                if !model.shop.items.isEmpty {
+                    Section {
+                        ForEach(model.shop.items) { item in
+                            shopRow(item)
+                        }
+                        Button("Restore purchases") { Task { await model.shop.restore() } }
+                            .disabled(model.shop.busy != nil)
+                        if let message = model.shop.message {
+                            Text(message).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text("Shop")
+                    } footer: {
+                        Text("A bought skin is yours on every device you sign in to befriend with.")
+                    }
+                }
+
                 Section {
                     if let sync {
                         Toggle("Pause activity sync", isOn: Binding(
@@ -297,6 +315,7 @@ struct SettingsView: View {
                 }
             }
             .task { await model.skins.sync(api: model.api) }
+            .task { await model.shop.load() }
             .confirmationDialog("Delete your synced activity?", isPresented: $confirmDeleteActivity, titleVisibility: .visible) {
                 Button("Delete activity", role: .destructive) {
                     Task { await perform { try await model.api.deleteTriggerEvents() } }
@@ -313,6 +332,28 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("Your friend will be gone for good.")
+            }
+        }
+    }
+
+    private func shopRow(_ item: SkinShop.Item) -> some View {
+        HStack(spacing: 12) {
+            if let preview = item.skin.preview {
+                PixelImage(data: preview).frame(width: 32, height: 32)
+            }
+            Text(item.skin.name)
+            Spacer()
+            if item.skin.owned {
+                Text("Owned").foregroundStyle(.secondary)
+            } else if model.shop.busy == item.id {
+                ProgressView()
+            } else if let product = item.product {
+                Button(product.displayPrice) { Task { await model.shop.buy(item) } }
+                    .buttonStyle(.bordered)
+                    .disabled(model.shop.busy != nil)
+                    .accessibilityLabel("Buy \(item.skin.name) for \(product.displayPrice)")
+            } else {
+                Text("Coming soon").foregroundStyle(.secondary)
             }
         }
     }

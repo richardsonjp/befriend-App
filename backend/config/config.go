@@ -58,6 +58,14 @@ var Config = struct {
 		ResendCooldownSec int `env:"VERIFICATION_RESEND_COOLDOWN_SECONDS" envDefault:"60"`
 	}
 
+	// In-App Purchases of skins. Environments are the App Store environments whose purchases count: Production at
+	// launch; add Sandbox to test with TestFlight or sandbox accounts. Products are <ProductPrefix>.t<tier>.<nnn>.
+	AppStore struct {
+		BundleID      string   `env:"APPSTORE_BUNDLE_ID" envDefault:"com.richardsonjp.befriend"`
+		Environments  []string `env:"APPSTORE_ENVIRONMENTS" envSeparator:"," envDefault:"Production"`
+		ProductPrefix string   `env:"APPSTORE_PRODUCT_PREFIX" envDefault:"com.richardsonjp.befriend.skin"`
+	}
+
 	// Sign in with Apple. BundleIDs are the accepted token audiences; empty disables Apple sign-in.
 	// TeamID/KeyID/PrivateKey (.p8) enable exchanging codes for Apple refresh tokens (needed to revoke on
 	// account deletion). JWKSURL/Issuers only change for local end-to-end tests.

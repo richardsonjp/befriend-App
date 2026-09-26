@@ -63,7 +63,7 @@ func (s *skinService) Publish(ctx context.Context, pkg *skinpack.Package, artist
 		}
 		version, changed, err = s.skinRepo.Publish(ctx, model.Skin{
 			ID: pkg.ID, Name: pkg.Name, SHA256: pkg.SHA256, Archive: pkg.Zip, Clips: ct.JSONB[[]string]{Data: clips},
-			ArtistUserID: artistID,
+			ArtistUserID: artistID, Preview: pkg.Preview,
 		})
 		if err != nil || !changed {
 			return err

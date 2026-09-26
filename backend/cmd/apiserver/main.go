@@ -110,10 +110,21 @@ var (
 
 	skinApproveCMD = &cobra.Command{
 		Use:   "approve <submission id>",
-		Short: "Publish a submission as its artist's skin",
+		Short: "Publish a submission as its artist's skin (--tier N also puts it on sale)",
 		Args:  cobra.ExactArgs(1),
-		Run: func(_ *cobra.Command, args []string) {
-			app.SkinApprove(args[0])
+		Run: func(c *cobra.Command, args []string) {
+			tier, _ := c.Flags().GetInt("tier")
+			app.SkinApprove(args[0], tier)
+		},
+	}
+
+	skinPriceCMD = &cobra.Command{
+		Use:   "price <skin id>",
+		Short: "Put a published skin on sale in a price tier (--tier 0 takes it off sale)",
+		Args:  cobra.ExactArgs(1),
+		Run: func(c *cobra.Command, args []string) {
+			tier, _ := c.Flags().GetInt("tier")
+			app.SkinPrice(args[0], tier)
 		},
 	}
 
@@ -227,10 +238,13 @@ func main() {
 	}
 	skinSubmissionCMD.Flags().StringP("out", "o", "", "zip file to write")
 	_ = skinSubmissionCMD.MarkFlagRequired("out")
+	skinApproveCMD.Flags().Int("tier", 0, "price tier 1-9 to sell it in; 0 grants it only")
+	skinPriceCMD.Flags().Int("tier", 0, "price tier 1-9; 0 takes it off sale")
+	_ = skinPriceCMD.MarkFlagRequired("tier")
 	skinRejectCMD.Flags().String("note", "", "why, for the artist (max 500 characters)")
 	_ = skinRejectCMD.MarkFlagRequired("note")
 	skinCMD.AddCommand(skinBuildCMD, skinPublishCMD, skinGrantCMD, skinRevokeCMD,
-		skinSubmissionsCMD, skinSubmissionCMD, skinApproveCMD, skinRejectCMD)
+		skinSubmissionsCMD, skinSubmissionCMD, skinApproveCMD, skinRejectCMD, skinPriceCMD)
 	artistCMD.AddCommand(artistAddCMD, artistRemoveCMD)
 
 	harvestInputsCMD.Flags().IntP("count", "n", 1200, "how many synthetic users")
