@@ -33,6 +33,12 @@ final class AppModel {
     let skins = SkinStore(root: SharedStore.skinsRoot)
     /// This iPhone's own pomodoro; during focus the friend studies alongside instead of talking.
     let pomodoro = PomodoroRunner(saved: SharedStore.loadPomodoro(), save: SharedStore.savePomodoro)
+    /// Records each focus phase as a 1-minute timelapse when the pomodoro's setting is on (M11). The camera only
+    /// runs while the app is on screen; time away is skipped.
+    @ObservationIgnored private(set) lazy var timelapse = TimelapseController(
+        library: TimelapseLibrary(folder: URL.documentsDirectory.appending(path: "Timelapses", directoryHint: .isDirectory)),
+        skin: { [weak self] in self?.skins.current }
+    )
 
     @ObservationIgnored let api = AppConfig.makeAPIClient()
     /// Paid skins; a purchase unlocks the skin for the account on every device.
@@ -71,6 +77,7 @@ final class AppModel {
         pomodoro.mayAutoStart = { [weak self] in self?.isForeground ?? false }
         pomodoro.onPhaseEnded = { _, next in PhonePomodoro.chime(next) }
         pomodoro.onChange = { [weak self] in self?.pomodoroChanged() }
+        timelapse.recorder.onStateChange = { [weak self] in self?.timelapseChanged() }
         // Focusing together is quiet; otherwise the friend reacts (a break, being let out).
         pomodoro.onMoment = { [weak self] moment in
             guard let self, !self.pomodoro.state.friendHome, self.friend != nil else { return }
@@ -95,7 +102,19 @@ final class AppModel {
 
     private func pomodoroChanged() {
         PhonePomodoro.schedule(pomodoro.state)
-        surfaces.pomodoroChanged(PomodoroSurface(pomodoro.state, at: .now))
+        timelapse.sync(pomodoro.state)
+        timelapseChanged()
+    }
+
+    /// The Live Activity says whether this focus is being recorded, or paused while the app is away.
+    private func timelapseChanged() {
+        let status: PomodoroSurface.TimelapseStatus? = switch timelapse.recorder.state {
+        case .idle: nil
+        case .recording: .recording
+        case .paused: .paused
+        }
+        surfaces.pomodoroChanged(PomodoroSurface(pomodoro.state, at: .now, timelapse: status))
+        UIApplication.shared.isIdleTimerDisabled = status == .recording // the camera needs the screen on
     }
 
     var friend: FriendProfile? {
@@ -163,6 +182,7 @@ final class AppModel {
     }
 
     private func signedOut() {
+        timelapse.setSignedIn(false) // the camera never outlives the account
         uploader.stop()
         uploader.clear()
         hatchPoll?.cancel()
@@ -193,6 +213,7 @@ final class AppModel {
         SharedStore.saveFriend(latest)
         phase = .ready(latest)
         if isNewVersion {
+            timelapse.setSignedIn(true)
             brain = PetBrain(friend: latest)
             brain.onReaction = { [weak self] in self?.show($0) }
             brain.context = { [pomodoro] in pomodoro.state.promptContext(at: .now) }
@@ -285,6 +306,10 @@ final class AppModel {
     func scenePhaseChanged(_ scenePhase: ScenePhase) {
         // Before isForeground flips: phases that ended while suspended don't auto-start in the past.
         if scenePhase == .active { pomodoro.settle() }
+        if scenePhase != .inactive {
+            timelapse.setAway(scenePhase != .active)
+            timelapseChanged()
+        }
         if scenePhase != .inactive { isForeground = scenePhase == .active }
         if scenePhase == .active, api.isSignedIn {
             Task { await skins.sync(api: api) } // a skin picked on the Mac, granted, or revoked meanwhile

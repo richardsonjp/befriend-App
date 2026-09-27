@@ -141,6 +141,8 @@ struct PomodoroRow: View {
     private var title: String {
         let phase = pomodoro.phase.title
         if isStale { return "\(phase) done 🍅" }
+        if pomodoro.timelapse == .paused { return "Recording paused · open befriend" }
+        if pomodoro.timelapse == .recording { return "● Recording · \(phase)" }
         if pomodoro.paused { return "Paused · \(phase)" }
         if pomodoro.endsAt == nil { return "Up next: \(phase)" }
         return pomodoro.focusing ? "Focusing together · round \(pomodoro.round) of \(pomodoro.rounds)"

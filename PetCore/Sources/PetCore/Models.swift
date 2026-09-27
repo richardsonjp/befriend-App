@@ -306,9 +306,15 @@ public nonisolated struct PomodoroSurface: Codable, Hashable, Sendable {
     public let paused: Bool
     /// The friend focuses alongside the user instead of talking.
     public let focusing: Bool
+    /// A timelapse is recording this focus (M11); paused while the app is off screen. Nil when not recording.
+    public let timelapse: TimelapseStatus?
+
+    public enum TimelapseStatus: String, Codable, Hashable, Sendable {
+        case recording, paused
+    }
 
     /// Nil for a session that hasn't started, so the activity shows just the friend.
-    public init?(_ pomodoro: Pomodoro, at now: Date) {
+    public init?(_ pomodoro: Pomodoro, at now: Date, timelapse: TimelapseStatus? = nil) {
         if pomodoro.status == .ready, pomodoro.phase == .focus, pomodoro.round == 1 { return nil }
         phase = pomodoro.phase
         round = pomodoro.round
@@ -317,6 +323,7 @@ public nonisolated struct PomodoroSurface: Codable, Hashable, Sendable {
         remaining = pomodoro.remaining(at: now)
         paused = pomodoro.status == .paused
         focusing = pomodoro.friendHome
+        self.timelapse = timelapse
     }
 
     public var endDate: Date? { endsAt.map(Date.init(timeIntervalSince1970:)) }

@@ -3,6 +3,7 @@
 //  befriend
 //
 
+import AVKit
 import PetCore
 import StoreKit
 import SwiftUI
@@ -23,6 +24,59 @@ struct HatchingView: View {
     }
 }
 
+private struct PlayingVideo: Identifiable {
+    let url: URL
+    var id: URL { url }
+}
+
+/// A recorded focus, full screen: the camera, the friend focusing alongside, the countdown. The screen stays on
+/// while it records; leaving the app pauses the recording and the gap is skipped.
+struct RecordingView: View {
+    let model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let recorder = model.timelapse.recorder
+        let state = model.pomodoro.state
+        ZStack {
+            Color.black.ignoresSafeArea()
+            CameraPreview(session: recorder.camera.session).ignoresSafeArea()
+            VStack {
+                HStack {
+                    Label(recorder.state == .paused ? "Paused" : "REC", systemImage: "record.circle")
+                        .font(.headline).foregroundStyle(.red)
+                        .padding(8).background(.ultraThinMaterial, in: Capsule())
+                    Spacer()
+                    Button { dismiss() } label: { Image(systemName: "chevron.down").font(.title2) }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Hide; keeps recording")
+                }
+                Spacer()
+                HStack(alignment: .bottom) {
+                    CharacterView(skin: model.skins.current, action: .idle, mood: model.pet.mood, focusing: true)
+                    Spacer()
+                    VStack(alignment: .trailing) {
+                        Text("befriend").font(.caption.bold()).opacity(0.85)
+                        Text(Pomodoro.clock(state.remaining(at: model.pomodoro.now)))
+                            .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
+                    }
+                    .foregroundStyle(.white)
+                    .shadow(radius: 4)
+                }
+                Button(state.status == .running ? "Pause" : "Resume") {
+                    state.status == .running ? model.pomodoro.pause() : model.pomodoro.start()
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top)
+            }
+            .padding()
+        }
+        .onChange(of: model.timelapse.isRecording) { _, recording in
+            if !recording { dismiss() } // the focus ended: the video is in the list
+        }
+    }
+}
+
 private struct PairingCodeItem: Identifiable {
     let id: String
 }
@@ -32,6 +86,8 @@ struct HomeView: View {
     let friend: FriendProfile
 
     @State private var showSettings = false
+    @State private var playing: PlayingVideo?
+    @State private var showRecording = false
 
     var body: some View {
         NavigationStack {
@@ -63,7 +119,7 @@ struct HomeView: View {
                         }
                     }
 
-                    PomodoroControls(pomodoro: model.pomodoro)
+                    PomodoroControls(pomodoro: model.pomodoro, timelapse: model.timelapse, play: { playing = PlayingVideo(url: $0) })
                         .padding()
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
 
@@ -92,6 +148,15 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView(model: model)
+            }
+            .sheet(item: $playing) { video in
+                VideoPlayer(player: AVPlayer(url: video.url)).ignoresSafeArea()
+            }
+            .fullScreenCover(isPresented: $showRecording) {
+                RecordingView(model: model)
+            }
+            .onChange(of: model.timelapse.isRecording) { _, recording in
+                showRecording = recording // a recorded focus opens the recording view; closing it keeps recording
             }
             .sheet(item: Binding(
                 get: { model.pendingPairingCode.map(PairingCodeItem.init) },
