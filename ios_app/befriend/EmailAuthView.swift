@@ -6,7 +6,8 @@
 import PetCore
 import SwiftUI
 
-/// Email sign-in and registration (with the 6-digit verification code).
+/// Email sign-in and registration. EMAIL_VERIFICATION_OFF: a new account signs in straight away; the
+/// 6-digit code step is kept but unreachable until the backend sends codes again.
 struct EmailAuthView: View {
     let model: AppModel
 
@@ -48,10 +49,11 @@ struct EmailAuthView: View {
 
                     Button(isNewAccount ? "Create account" : "Sign in") { Task { await submit() } }
                         .disabled(busy || !email.contains("@") || password.count < (isNewAccount ? 8 : 1))
-                    if !isNewAccount {
-                        Button("I have a verification code") { step = .verify }
-                            .disabled(busy || !email.contains("@") || password.isEmpty)
-                    }
+                    // EMAIL_VERIFICATION_OFF
+                    // if !isNewAccount {
+                    //     Button("I have a verification code") { step = .verify }
+                    //         .disabled(busy || !email.contains("@") || password.isEmpty)
+                    // }
 
                 case .verify:
                     Section {
@@ -88,7 +90,9 @@ struct EmailAuthView: View {
         await perform {
             if isNewAccount {
                 try await model.api.register(email: email, password: password)
-                step = .verify
+                // EMAIL_VERIFICATION_OFF: was `step = .verify`
+                try await model.api.login(email: email, password: password, device: .current)
+                await finish()
             } else {
                 try await model.api.login(email: email, password: password, device: .current)
                 await finish()
@@ -124,7 +128,7 @@ struct EmailAuthView: View {
         do {
             try await action()
         } catch APIError.server(status: 401, _, _) where step == .credentials {
-            self.error = "Wrong email or password, or the email isn't verified yet."
+            self.error = "Wrong email or password."
         } catch {
             self.error = AppModel.message(for: error)
         }

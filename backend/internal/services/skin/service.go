@@ -148,5 +148,11 @@ func (s *skinService) resolveUser(ctx context.Context, payload GrantPayload) (st
 	if err != nil {
 		return "", err
 	}
+	// An unproven email may belong to whoever registered it first, not its owner (verification is off): an
+	// operator must name that account by its user ID instead.
+	if payload.Email != "" && account.EmailVerifiedAt == nil {
+		return "", fmt.Errorf("%s was never verified, so it may not be its owner's account; use --user-id %s once you've confirmed who it is",
+			payload.Email, account.ID)
+	}
 	return account.ID, nil
 }

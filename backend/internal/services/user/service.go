@@ -22,7 +22,9 @@ func (s *userService) CreateUser(ctx context.Context, payload CreatePayload) (*m
 	return s.userRepo.Create(ctx, &model.User{
 		Email:        &email,
 		PasswordHash: &passwordHash,
-		Status:       enum.UNVERIFIED,
+		// EMAIL_VERIFICATION_OFF: no SMTP yet, so accounts are active at once. The email stays unproven
+		// (email_verified_at is NULL), which Apple/Google linking respects. Restore enum.UNVERIFIED to turn it on.
+		Status: enum.ACTIVE,
 	})
 }
 

@@ -14,11 +14,10 @@ import (
 
 const verificationCodeTTL = 10 * time.Minute
 
-// Register creates an unverified email/password user and emails the verification code
+// Register creates an email/password user who can log in right away.
+// EMAIL_VERIFICATION_OFF: the verification code and its email are commented out until SMTP is set up.
 func (s *userApplicationService) Register(ctx context.Context, payload RegisterPayload) error {
-	var newUser *model.User
-	var code *model.VerificationCode
-	err := s.txRepo.Run(ctx, func(ctx context.Context) error {
+	return s.txRepo.Run(ctx, func(ctx context.Context) error {
 		_, err := s.userService.GetUserByEmail(ctx, payload.Email)
 		if err == nil {
 			return errors.From("USER").WithDetail("email is already registered")
@@ -27,7 +26,7 @@ func (s *userApplicationService) Register(ctx context.Context, payload RegisterP
 			return err
 		}
 
-		newUser, err = s.userService.CreateUser(ctx, user.CreatePayload{
+		_, err = s.userService.CreateUser(ctx, user.CreatePayload{
 			Email:    payload.Email,
 			Password: payload.Password,
 		})
@@ -38,24 +37,21 @@ func (s *userApplicationService) Register(ctx context.Context, payload RegisterP
 			}
 			return err
 		}
+		return nil
 
-		code, err = s.verificationCodeService.Create(ctx, verification_code.CreatePayload{
-			UserID:    newUser.ID,
-			TableType: verification_code.USER_EMAIL_VERIFICATION,
-			ExpiresAt: time.Now().Add(verificationCodeTTL),
-		})
-		return err
+		// EMAIL_VERIFICATION_OFF: restore to email a code again (and restore `newUser`/`code` above).
+		// code, err = s.verificationCodeService.Create(ctx, verification_code.CreatePayload{
+		// 	UserID:    newUser.ID,
+		// 	TableType: verification_code.USER_EMAIL_VERIFICATION,
+		// 	ExpiresAt: time.Now().Add(verificationCodeTTL),
+		// })
+		// return err
 	})
-	if err != nil {
-		return err
-	}
 
-	// Mail after commit: a slow or failing SMTP server must never hold the transaction open.
-	if err := s.verificationCodeService.SendVerificationEmail(ctx, *newUser.Email, code); err != nil {
-		return errors.From("VERIFICATION_CODE").WithDetail("account created, but the verification email could not be sent")
-	}
-
-	return nil
+	// EMAIL_VERIFICATION_OFF: mail after commit, so a slow SMTP server never holds the transaction open.
+	// if err := s.verificationCodeService.SendVerificationEmail(ctx, *newUser.Email, code); err != nil {
+	// 	return errors.From("VERIFICATION_CODE").WithDetail("account created, but the verification email could not be sent")
+	// }
 }
 
 // VerifyUserEmail activates the account when the latest emailed code matches
@@ -68,7 +64,8 @@ func (s *userApplicationService) VerifyUserEmail(ctx context.Context, payload Ve
 		return err
 	}
 	// Same answer as a wrong code, so this endpoint can't reveal which accounts are verified.
-	if userData.Status != enum.UNVERIFIED {
+	// Accounts registered while verification was off are active with an unproven email; they can verify too.
+	if userData.Status != enum.UNVERIFIED && userData.EmailVerifiedAt != nil {
 		return verification_code.InvalidCodeError()
 	}
 

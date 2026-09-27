@@ -30,10 +30,11 @@ func (s *authenticationService) AuthenticateUser(ctx context.Context, params Log
 	if user.PasswordHash == nil || bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(params.Password)) != nil {
 		return nil, errors.From("UNAUTHORIZED").WithDetail("Invalid credentials")
 	}
-	if user.Status == enum.UNVERIFIED {
-		return nil, errors.From("UNAUTHORIZED").WithDetail("Email not verified")
-	}
-	if user.Status != enum.ACTIVE {
+	// EMAIL_VERIFICATION_OFF: accounts registered before it was switched off may still be unverified; let them in.
+	// if user.Status == enum.UNVERIFIED {
+	// 	return nil, errors.From("UNAUTHORIZED").WithDetail("Email not verified")
+	// }
+	if user.Status != enum.ACTIVE && user.Status != enum.UNVERIFIED {
 		return nil, errors.From("UNAUTHORIZED").WithDetail("Account is not active")
 	}
 
@@ -71,7 +72,8 @@ func (s *authenticationService) RefreshSession(ctx context.Context, payload Refr
 		}
 		return nil, err
 	}
-	if user.Status != enum.ACTIVE {
+	// EMAIL_VERIFICATION_OFF: older unverified accounts may log in, so their sessions must refresh too.
+	if user.Status != enum.ACTIVE && user.Status != enum.UNVERIFIED {
 		return nil, errors.From("UNAUTHORIZED").WithDetail("Account is not active")
 	}
 

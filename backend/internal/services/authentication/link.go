@@ -24,7 +24,11 @@ func decideLink(identityLinked bool, emailUser *model.User, providerEmailVerifie
 		return linkSignIn
 	case !providerEmailVerified || emailUser == nil:
 		return linkCreateUser
-	case emailUser.Status == enum.UNVERIFIED:
+	// An account whose email was never proven (unverified, or registered while verification is off) is taken
+	// over by the provider that did prove it, never joined: otherwise whoever registered someone else's email
+	// with a password would get their Apple/Google sign-in.
+	// A suspended account is never taken over: the takeover would reactivate it.
+	case emailUser.Status == enum.UNVERIFIED || (emailUser.Status == enum.ACTIVE && emailUser.EmailVerifiedAt == nil):
 		return linkTakeOverUnverified
 	default:
 		return linkToExistingUser
