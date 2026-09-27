@@ -3,6 +3,7 @@ package personality
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -162,14 +163,43 @@ func Validate(g *Generated, skin vocabulary.Skin) (*Personality, Phrasebook, err
 		}
 		book[entry.Trigger][entry.Mood] = lines
 	}
+	if err := fillMissing(book, skin); err != nil {
+		return nil, nil, err
+	}
+	return &p, book, nil
+}
+
+// maxMissingShare is how much of the phrasebook may be absent before the output is judged broken rather than
+// merely incomplete. Free models regularly drop one entry of 72; losing a quarter means something went wrong.
+const maxMissingShare = 0.25
+
+// fillMissing gives a skipped trigger × mood the lines of another mood for the same trigger, which is what the
+// apps would play anyway. A trigger with no lines at all, or too many gaps overall, still fails the generation.
+func fillMissing(book Phrasebook, skin vocabulary.Skin) error {
+	var missing []string
 	for _, trigger := range vocabulary.TriggerKinds {
+		var donor []PhraseLine
+		for _, mood := range skin.Moods {
+			if lines, ok := book[trigger][mood]; ok {
+				donor = lines
+				break
+			}
+		}
+		if donor == nil {
+			return fmt.Errorf("phrasebook %s: missing", trigger)
+		}
 		for _, mood := range skin.Moods {
 			if _, ok := book[trigger][mood]; !ok {
-				return nil, nil, fmt.Errorf("phrasebook %s/%s: missing", trigger, mood)
+				book[trigger][mood] = slices.Clone(donor)
+				missing = append(missing, trigger+"/"+mood)
 			}
 		}
 	}
-	return &p, book, nil
+	slots := len(vocabulary.TriggerKinds) * len(skin.Moods)
+	if float64(len(missing)) > maxMissingShare*float64(slots) {
+		return fmt.Errorf("phrasebook: %d of %d entries missing (%s…)", len(missing), slots, missing[0])
+	}
+	return nil
 }
 
 // clean strips invisible and control characters (LLM output is repaired, not rejected, for these) and

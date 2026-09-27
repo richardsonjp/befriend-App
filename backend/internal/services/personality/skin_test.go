@@ -42,7 +42,7 @@ func TestValidateForASkin(t *testing.T) {
 		"an action the skin doesn't have": func(g *Generated) { g.Phrasebook[0].Lines[0].Action = "wave" },
 		"an app-played clip":              func(g *Generated) { g.Phrasebook[0].Lines[0].Action = "walk" },
 		"a mood the skin doesn't have":    func(g *Generated) { g.Phrasebook[0].Mood = "content" },
-		"a missing mood":                  func(g *Generated) { g.Phrasebook = g.Phrasebook[1:] },
+		"a trigger with no lines":         func(g *Generated) { g.Phrasebook = g.Phrasebook[2:] }, // both of its moods
 	} {
 		g := ghostGenerated()
 		mutate(g)

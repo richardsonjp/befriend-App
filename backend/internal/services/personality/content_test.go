@@ -87,7 +87,7 @@ func TestValidate(t *testing.T) {
 		{name: "summary breaks character", mutate: func(g *Generated) { g.Summary = "An AI companion for your desktop." }, wantErr: "being an AI"},
 		{name: "line breaks character", mutate: func(g *Generated) { g.Phrasebook[3].Lines[1].Text = "As a language model, hi." }, wantErr: "being an AI"},
 		{name: "words merely containing 'ai' are fine", mutate: func(g *Generated) { g.Phrasebook[3].Lines[1].Text = "Rainy days are nice." }},
-		{name: "missing slot", mutate: func(g *Generated) { g.Phrasebook = g.Phrasebook[1:] }, wantErr: "missing"},
+		{name: "most slots missing", mutate: func(g *Generated) { g.Phrasebook = g.Phrasebook[:10] }, wantErr: "missing"},
 		{name: "duplicate slot", mutate: func(g *Generated) { g.Phrasebook[1] = g.Phrasebook[0] }, wantErr: "more than once"},
 		{name: "unknown mood", mutate: func(g *Generated) { g.Phrasebook[0].Mood = "furious" }, wantErr: "unknown trigger or mood"},
 		{name: "unknown trigger", mutate: func(g *Generated) { g.Phrasebook[0].Trigger = "sneezed" }, wantErr: "unknown trigger or mood"},
@@ -136,5 +136,41 @@ func TestValidate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestValidateFillsAFewMissingEntries(t *testing.T) {
+	g := validGenerated()
+	var kept []PhraseEntry
+	for _, e := range g.Phrasebook {
+		if !(e.Trigger == "returned" && e.Mood == "shy") {
+			kept = append(kept, e)
+		}
+	}
+	g.Phrasebook = kept
+	_, book, err := Validate(g, vocabulary.Skin{})
+	if err != nil {
+		t.Fatalf("one entry missing of 72: %v", err)
+	}
+	if len(book["returned"]["shy"]) == 0 {
+		t.Error("returned/shy wasn't filled from another mood")
+	}
+
+	mostlyEmpty := validGenerated()
+	mostlyEmpty.Phrasebook = mostlyEmpty.Phrasebook[:40] // 32 of 72 missing
+	if _, _, err := Validate(mostlyEmpty, vocabulary.Skin{}); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Errorf("most of the phrasebook missing: %v", err)
+	}
+
+	noTrigger := validGenerated()
+	var others []PhraseEntry
+	for _, e := range noTrigger.Phrasebook {
+		if e.Trigger != "poked" {
+			others = append(others, e)
+		}
+	}
+	noTrigger.Phrasebook = others
+	if _, _, err := Validate(noTrigger, vocabulary.Skin{}); err == nil {
+		t.Error("a trigger with no lines at all was accepted")
 	}
 }
