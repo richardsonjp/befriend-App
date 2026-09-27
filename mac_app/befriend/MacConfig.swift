@@ -65,6 +65,9 @@ enum MacConfig {
         try? data.write(to: url, options: .atomic)
     }
 
+    /// Timelapses recorded on this Mac (M11); never uploaded.
+    static var timelapseFolder: URL { supportDirectory.appending(path: "Timelapses", directoryHint: .isDirectory) }
+
     /// This Mac's pomodoro (M10); never synced.
     static func loadPomodoro() -> Pomodoro? {
         guard let data = try? Data(contentsOf: supportDirectory.appending(path: "pomodoro.json")) else { return nil }

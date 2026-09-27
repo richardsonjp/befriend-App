@@ -6,14 +6,23 @@
 import SwiftUI
 
 /// The pomodoro's controls: the Mac's menu bar popover and the iPhone's Home screen card. `more`, when given, adds
-/// a "…" button (the Mac's old menu).
+/// a "…" button (the Mac's old menu). With `timelapse`, focus phases can be recorded (M11); `preview` shows the
+/// camera while recording, and `play` opens a finished video.
 public struct PomodoroControls: View {
     let pomodoro: PomodoroRunner
+    let timelapse: TimelapseController?
+    let preview: Bool
+    let play: (URL) -> Void
     let more: (() -> Void)?
     @State private var showsSettings = false
+    @State private var cameraDenied = false
 
-    public init(pomodoro: PomodoroRunner, more: (() -> Void)? = nil) {
+    public init(pomodoro: PomodoroRunner, timelapse: TimelapseController? = nil, preview: Bool = false,
+                play: @escaping (URL) -> Void = { _ in }, more: (() -> Void)? = nil) {
         self.pomodoro = pomodoro
+        self.timelapse = timelapse
+        self.preview = preview
+        self.play = play
         self.more = more
     }
 
@@ -37,6 +46,9 @@ public struct PomodoroControls: View {
             if state.friendHome {
                 Button("Let friend out") { pomodoro.letFriendOut() }
             }
+            if let timelapse {
+                timelapseSection(timelapse, state)
+            }
             Divider()
             HStack {
                 Button { showsSettings.toggle() } label: { Image(systemName: "gearshape") }
@@ -50,6 +62,36 @@ public struct PomodoroControls: View {
                 }
             }
             if showsSettings { settings(state.settings) }
+        }
+    }
+
+    @ViewBuilder
+    private func timelapseSection(_ timelapse: TimelapseController, _ state: Pomodoro) -> some View {
+        Toggle("Record a timelapse of each focus", isOn: Binding(
+            get: { state.settings.recordTimelapse },
+            set: { on in
+                guard on else { return pomodoro.update(state.settings.with(recordTimelapse: false)) }
+                Task {
+                    cameraDenied = !(await TimelapseCamera.requestAccess())
+                    if !cameraDenied { pomodoro.update(pomodoro.state.settings.with(recordTimelapse: true)) }
+                }
+            }
+        ))
+        if cameraDenied || (state.settings.recordTimelapse && !TimelapseCamera.permitted) {
+            Text("befriend can't use the camera. Allow it in System Settings › Privacy & Security › Camera.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        if preview, timelapse.isRecording {
+            CameraPreview(session: timelapse.recorder.camera.session)
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(alignment: .topLeading) {
+                    Label(timelapse.recorder.state == .paused ? "Paused" : "REC", systemImage: "record.circle")
+                        .font(.caption.bold()).foregroundStyle(.red).padding(6)
+                }
+        }
+        if !timelapse.library.videos.isEmpty {
+            TimelapseList(library: timelapse.library, play: play)
         }
     }
 

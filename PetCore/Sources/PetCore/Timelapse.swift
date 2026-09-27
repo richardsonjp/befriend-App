@@ -113,8 +113,12 @@ struct TimelapseOverlay: View {
 public final class TimelapseRecorder {
     public enum State { case idle, recording, paused }
 
-    public private(set) var state = State.idle
+    public private(set) var state = State.idle {
+        didSet { if state != oldValue { onStateChange() } }
+    }
     public let camera = TimelapseCamera()
+    /// After every state change, including a finish that completes later (the iPhone updates its Live Activity).
+    @ObservationIgnored public var onStateChange: () -> Void = {}
 
     @ObservationIgnored private var writer: TimelapseWriter?
     @ObservationIgnored private var ticker: Task<Void, Never>?
@@ -208,6 +212,8 @@ public final class TimelapseController {
     /// The device can't record right now (asleep, locked, or the iPhone app isn't on screen).
     @ObservationIgnored public private(set) var away = false
     @ObservationIgnored private var recordingPhase: Int?
+    /// Nobody is signed in: nothing records, whatever the pomodoro says.
+    @ObservationIgnored private var signedOut = false
     @ObservationIgnored private var last = Pomodoro()
 
     public init(library: TimelapseLibrary, skin: @escaping () -> InstalledSkin?) {
@@ -227,7 +233,9 @@ public final class TimelapseController {
 
     public func sync(_ pomodoro: Pomodoro) {
         last = pomodoro
-        let action = Self.action(for: pomodoro, recorder: recorder.state, recordingPhase: recordingPhase, away: away)
+        let action = signedOut
+            ? (isRecording ? Action.finish : .none)
+            : Self.action(for: pomodoro, recorder: recorder.state, recordingPhase: recordingPhase, away: away)
         switch action {
         case .none: break
         case .start:
@@ -243,6 +251,12 @@ public final class TimelapseController {
                 self?.sync(self?.last ?? pomodoro) // a new focus that started meanwhile
             }
         }
+    }
+
+    /// Signing out stops the camera and files what was recorded; signing in lets the pomodoro drive it again.
+    public func setSignedIn(_ signedIn: Bool) {
+        signedOut = !signedIn
+        sync(last)
     }
 
     public func setAway(_ away: Bool) {

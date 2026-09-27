@@ -28,6 +28,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(rootView: PomodoroControls(
             pomodoro: controller.pomodoro,
+            timelapse: controller.timelapse,
+            preview: true,
+            play: { NSWorkspace.shared.open($0) },
             more: { [weak self] in self?.showMenu() }
         ).padding(16).frame(width: 290))
         if let button = item.button {
@@ -69,7 +72,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func updateIcon() {
         withObservationTracking {
             item.button?.image = icon()
-            item.button?.title = countdown()
+            item.button?.attributedTitle = countdown()
         } onChange: { [weak self] in
             Task { @MainActor in self?.updateIcon() }
         }
@@ -89,11 +92,17 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return image
     }
 
-    /// " 18:42" while a pomodoro phase runs or is paused; nothing otherwise.
-    private func countdown() -> String {
+    /// " 18:42" while a pomodoro phase runs or is paused, with a red " ●" first while a timelapse records.
+    private func countdown() -> NSAttributedString {
         let pomodoro = controller.pomodoro
-        guard controller.stage == .ready, pomodoro.state.status != .ready else { return "" }
-        return " " + Pomodoro.clock(pomodoro.state.remaining(at: pomodoro.now))
+        guard controller.stage == .ready, pomodoro.state.status != .ready else { return NSAttributedString() }
+        let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        let title = NSMutableAttributedString()
+        if controller.timelapse.recorder.state == .recording {
+            title.append(NSAttributedString(string: " ●", attributes: [.foregroundColor: NSColor.systemRed, .font: font]))
+        }
+        title.append(NSAttributedString(string: " " + Pomodoro.clock(pomodoro.state.remaining(at: pomodoro.now)), attributes: [.font: font]))
+        return title
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

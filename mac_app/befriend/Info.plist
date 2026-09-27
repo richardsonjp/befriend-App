@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>befriend records a timelapse of your focus sessions when you turn it on. Videos stay on this Mac.</string>
 	<key>APIBaseURL</key>
 	<string>$(API_BASE_URL)</string>
 	<key>StaticAPIKey</key>

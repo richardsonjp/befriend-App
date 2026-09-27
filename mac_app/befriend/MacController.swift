@@ -39,6 +39,12 @@ final class MacController {
     let walker = FriendWalker()
     /// During focus the friend stays in the menu bar icon unless let out.
     let pomodoro = PomodoroRunner(saved: MacConfig.loadPomodoro(), save: MacConfig.savePomodoro)
+    /// Records each focus phase as a 1-minute timelapse when the pomodoro's setting is on (M11).
+    @ObservationIgnored private(set) lazy var timelapse = TimelapseController(
+        library: TimelapseLibrary(folder: MacConfig.timelapseFolder),
+        skin: { [weak self] in self?.skins.current }
+    )
+    @ObservationIgnored private var sleepObservers: [NSObjectProtocol] = []
     /// Paid skins; a purchase unlocks the skin for the account on every device.
     @ObservationIgnored private(set) lazy var shop: SkinShop = {
         let shop = SkinShop(api: api)
@@ -166,7 +172,13 @@ final class MacController {
         walker.panel = panel
         walker.canWander = { [pet] in pet.action == .idle && pet.dialogue == nil }
         walker.onSettled = { [weak self] in self?.showHeldReaction() }
-        pomodoro.onChange = { [weak self] in self?.updateVisibility() }
+        pomodoro.onChange = { [weak self] in
+            guard let self else { return }
+            self.updateVisibility()
+            self.timelapse.sync(self.pomodoro.state)
+        }
+        observeSleep()
+        timelapse.setSignedIn(true)
         // A focus phase that outlived a relaunch or sign-out keeps the friend home.
         friendVisible = !pomodoro.state.friendHome
         if friendVisible { walker.comeOut() }
@@ -229,6 +241,24 @@ final class MacController {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.goodbyeDuration))
             self?.updateVisibility()
+        }
+    }
+
+    /// Sleep, screens off or a locked screen pause the timelapse; that time is skipped in the video.
+    private func observeSleep() {
+        guard sleepObservers.isEmpty else { return }
+        let workspace = NSWorkspace.shared.notificationCenter
+        let distributed = DistributedNotificationCenter.default()
+        let away: [(NotificationCenter, Notification.Name, Bool)] = [
+            (workspace, NSWorkspace.willSleepNotification, true), (workspace, NSWorkspace.didWakeNotification, false),
+            (workspace, NSWorkspace.screensDidSleepNotification, true), (workspace, NSWorkspace.screensDidWakeNotification, false),
+            (distributed, Notification.Name("com.apple.screenIsLocked"), true),
+            (distributed, Notification.Name("com.apple.screenIsUnlocked"), false),
+        ]
+        sleepObservers = away.map { center, name, isAway in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.timelapse.setAway(isAway) }
+            }
         }
     }
 
@@ -433,6 +463,7 @@ final class MacController {
     }
 
     private func signedOut() {
+        timelapse.setSignedIn(false) // the camera never outlives the account
         friendPoll?.cancel()
         friendPoll = nil
         backgroundRefresh?.cancel()
