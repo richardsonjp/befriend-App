@@ -38,14 +38,13 @@ func TestCompleteSendsStructuredRequest(t *testing.T) {
 		t.Fatalf("response = %+v", resp)
 	}
 
-	models, _ := got["models"].([]interface{})
 	format, _ := got["response_format"].(map[string]interface{})
 	schema, _ := format["json_schema"].(map[string]interface{})
 	plugins, _ := got["plugins"].([]interface{})
 	reasoning, _ := got["reasoning"].(map[string]interface{})
 	switch {
-	case len(models) != 2 || models[0] != "primary:free":
-		t.Errorf("models = %v", got["models"])
+	case got["model"] != "primary:free" || got["models"] != nil:
+		t.Errorf("model = %v, models = %v", got["model"], got["models"])
 	case format["type"] != "json_schema" || schema["name"] != "friend_personality" || schema["strict"] != true:
 		t.Errorf("response_format = %v", got["response_format"])
 	case len(plugins) != 1 || plugins[0].(map[string]interface{})["id"] != "response-healing":
@@ -116,6 +115,31 @@ func TestCompleteErrors(t *testing.T) {
 				t.Fatalf("error = %v; want one containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestCompleteFallsBackToTheNextModel(t *testing.T) {
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var got map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		asked = append(asked, got["model"].(string))
+		if got["model"] == "anthropic/claude-haiku" {
+			w.WriteHeader(402)
+			_, _ = w.Write([]byte(`{"error":{"origin":"router","message":"Your organization's balance is too low"}}`))
+			return
+		}
+		// A router without response-healing passes the model's fence through.
+		_, _ = w.Write([]byte("{\"model\":\"gemma\",\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\" {\\\"ok\\\": true}\\n```\"}}]}"))
+	}))
+	defer srv.Close()
+
+	resp, err := New(Config{BaseURL: srv.URL, APIKey: "k", Models: []string{"anthropic/claude-haiku", "google/gemma"}}).Complete(t.Context(), testRequest())
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if len(asked) != 2 || asked[1] != "google/gemma" || resp.Content != `{"ok": true}` || resp.Model != "gemma" {
+		t.Fatalf("asked %v, response %+v", asked, resp)
 	}
 }
 

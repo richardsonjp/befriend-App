@@ -88,9 +88,11 @@ var Config = struct {
 	// OpenRouter generates personalities. Without an API key the generation queue simply waits.
 	// BaseURL only changes for local end-to-end tests.
 	OpenRouter struct {
-		APIKey  string   `env:"OPENROUTER_API_KEY" envDefault:""`
-		Models  []string `env:"OPENROUTER_MODELS" envSeparator:"," envDefault:"google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free"`
-		BaseURL string   `env:"OPENROUTER_BASE_URL" envDefault:"https://openrouter.ai/api/v1"`
+		APIKey string `env:"OPENROUTER_API_KEY" envDefault:""`
+		// Free on Requesty; tried in order. leanstral hatches a friend in ~40 s; nemotron-3-ultra is slower and
+		// sometimes skips a moment. gemma-4-31b and nemotron-3-super run out of tokens on the full prompt.
+		Models  []string `env:"OPENROUTER_MODELS" envSeparator:"," envDefault:"mistral/leanstral-1-5,nvidia/nemotron-3-ultra-550b-a55b"`
+		BaseURL string   `env:"OPENROUTER_BASE_URL" envDefault:"https://router.requesty.ai/v1"` // any OpenAI-compatible router
 	}
 
 	// LLM request budget and generation worker. Caps sit under OpenRouter's free-tier limits (about

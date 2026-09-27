@@ -72,9 +72,26 @@ func New(cfg Config) *Client {
 	return &Client{cfg: cfg, http: &http.Client{Timeout: cfg.Timeout}}
 }
 
+// Complete asks each configured model in turn until one answers: one "model" per request, which OpenRouter and
+// OpenAI-compatible routers like Requesty all accept (Requesty rejects OpenRouter's "models" list). A rate limit
+// on the last model is returned as such, so the job waits instead of failing.
 func (c *Client) Complete(ctx context.Context, req Request) (*Response, error) {
+	var err error
+	for _, model := range c.cfg.Models {
+		var resp *Response
+		if resp, err = c.completeWith(ctx, model, req); err == nil {
+			return resp, nil
+		}
+		if ctx.Err() != nil {
+			return nil, err
+		}
+	}
+	return nil, err
+}
+
+func (c *Client) completeWith(ctx context.Context, model string, req Request) (*Response, error) {
 	body, err := json.Marshal(map[string]interface{}{
-		"models": c.cfg.Models,
+		"model": model,
 		"messages": []map[string]string{
 			{"role": "system", "content": req.System},
 			{"role": "user", "content": req.User},
@@ -151,7 +168,18 @@ func (c *Client) Complete(ctx context.Context, req Request) (*Response, error) {
 	case out.Choices[0].FinishReason == "length":
 		return nil, fmt.Errorf("openrouter: response truncated by max_tokens")
 	}
-	return &Response{Content: out.Choices[0].Message.Content, Model: out.Model}, nil
+	return &Response{Content: jsonObject(out.Choices[0].Message.Content), Model: out.Model}, nil
+}
+
+// jsonObject cuts the JSON object out of a reply that wraps it in markdown fences or prose, which routers
+// without OpenRouter's response-healing pass through (Requesty returned "{…}\n```"). A reply without braces is
+// returned as it is, for the caller's parse error to report.
+func jsonObject(content string) string {
+	start, end := strings.Index(content, "{"), strings.LastIndex(content, "}")
+	if start < 0 || end < start {
+		return content
+	}
+	return content[start : end+1]
 }
 
 // retryAfter prefers Retry-After (seconds), then X-RateLimit-Reset (epoch seconds or milliseconds),
