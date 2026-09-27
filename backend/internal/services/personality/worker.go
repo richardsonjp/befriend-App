@@ -100,6 +100,7 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 		// A new look, the same friend: the model's copy of the personality is discarded, so it can't fail the job.
 		generated.Personality = *input.Previous
 	}
+	Repair(&generated, input.Skin)
 	personality, phrasebook, err := Validate(&generated, input.Skin)
 	if err != nil {
 		s.fail(ctx, job, fmt.Errorf("model output rejected: %w", err))
