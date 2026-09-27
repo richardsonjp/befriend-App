@@ -43,9 +43,12 @@ public nonisolated struct PomodoroSettings: Codable, Equatable, Sendable {
     public let sound: Bool
     /// The friend goes home (Mac) or focuses alongside you (iPhone) during focus.
     public let friendStaysHome: Bool
+    /// Each focus phase records a 1-minute timelapse with the device's camera (M11).
+    public let recordTimelapse: Bool
 
     public init(focus: TimeInterval = 25 * 60, shortBreak: TimeInterval = 5 * 60, longBreak: TimeInterval = 15 * 60,
-                longBreakEvery: Int = 4, autoStart: Bool = false, sound: Bool = true, friendStaysHome: Bool = true) {
+                longBreakEvery: Int = 4, autoStart: Bool = false, sound: Bool = true, friendStaysHome: Bool = true,
+                recordTimelapse: Bool = false) {
         self.focus = focus.clamped(to: Self.durations)
         self.shortBreak = shortBreak.clamped(to: Self.durations)
         self.longBreak = longBreak.clamped(to: Self.durations)
@@ -53,6 +56,7 @@ public nonisolated struct PomodoroSettings: Codable, Equatable, Sendable {
         self.autoStart = autoStart
         self.sound = sound
         self.friendStaysHome = friendStaysHome
+        self.recordTimelapse = recordTimelapse
     }
 
     /// Stored settings go through the same clamps: a longBreakEvery of 0 would divide by zero.
@@ -64,17 +68,20 @@ public nonisolated struct PomodoroSettings: Codable, Equatable, Sendable {
                   longBreakEvery: try c.decode(Int.self, forKey: .longBreakEvery),
                   autoStart: try c.decode(Bool.self, forKey: .autoStart),
                   sound: try c.decode(Bool.self, forKey: .sound),
-                  friendStaysHome: try c.decode(Bool.self, forKey: .friendStaysHome))
+                  friendStaysHome: try c.decode(Bool.self, forKey: .friendStaysHome),
+                  // saved before timelapses existed
+                  recordTimelapse: try c.decodeIfPresent(Bool.self, forKey: .recordTimelapse) ?? false)
     }
 
     /// A copy with some settings changed, clamped like any other.
     public func with(focus: TimeInterval? = nil, shortBreak: TimeInterval? = nil, longBreak: TimeInterval? = nil,
                      longBreakEvery: Int? = nil, autoStart: Bool? = nil, sound: Bool? = nil,
-                     friendStaysHome: Bool? = nil) -> PomodoroSettings {
+                     friendStaysHome: Bool? = nil, recordTimelapse: Bool? = nil) -> PomodoroSettings {
         PomodoroSettings(focus: focus ?? self.focus, shortBreak: shortBreak ?? self.shortBreak,
                          longBreak: longBreak ?? self.longBreak, longBreakEvery: longBreakEvery ?? self.longBreakEvery,
                          autoStart: autoStart ?? self.autoStart, sound: sound ?? self.sound,
-                         friendStaysHome: friendStaysHome ?? self.friendStaysHome)
+                         friendStaysHome: friendStaysHome ?? self.friendStaysHome,
+                         recordTimelapse: recordTimelapse ?? self.recordTimelapse)
     }
 
     public func duration(_ phase: PomodoroPhase) -> TimeInterval {
@@ -95,6 +102,9 @@ public nonisolated struct Pomodoro: Codable, Equatable, Sendable {
     public private(set) var endsAt: Date?
     private var pausedRemaining: TimeInterval?
     private var friendLetOut = false
+    /// Counts every phase change, so a phase can be told from the same phase a cycle later (nil in a pomodoro
+    /// saved before it existed).
+    private var phases: Int?
     private var completed = 0
     private var completedDay: Date?
 
@@ -229,8 +239,12 @@ public nonisolated struct Pomodoro: Codable, Equatable, Sendable {
     }
 
     /// The next phase, not started. `completedAt` counts a finished focus round toward that day.
+    /// Which phase this is, over the pomodoro's life: a timelapse belongs to exactly one focus.
+    public var phaseID: Int { phases ?? 0 }
+
     private func advanced(completedAt: Date?) -> Pomodoro {
         var copy = self
+        copy.phases = phaseID + 1
         if phase == .focus, let completedAt {
             let day = Calendar.current.startOfDay(for: completedAt)
             copy.completed = (completedDay == day ? completed : 0) + 1
