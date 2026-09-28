@@ -163,6 +163,10 @@ public nonisolated struct FriendProfile: Codable, Equatable, Sendable {
     public let phrasebook: Phrasebook?
 
     public var isReady: Bool { personality.status == "ready" && personality.content != nil }
+    /// A hatch request is writing it right now (maybe from before the app was relaunched).
+    public var isBeingWritten: Bool { personality.status == "running" }
+    /// The last hatch failed; nothing retries until the user taps Try again.
+    public var hatchFailed: Bool { personality.status == "failed" }
 }
 
 public nonisolated struct Birthplace: Codable, Equatable, Sendable {

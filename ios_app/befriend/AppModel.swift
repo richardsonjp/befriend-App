@@ -20,7 +20,8 @@ final class AppModel {
         case launching
         case signedOut
         case onboarding(QuestionSet)
-        case hatching(name: String)
+        /// `failure` is nil while the personality is being written, else why the last try failed.
+        case hatching(name: String, failure: String?)
         case ready(FriendProfile)
     }
 
@@ -53,7 +54,8 @@ final class AppModel {
     @ObservationIgnored private var brain = PetBrain()
     @ObservationIgnored private var surfaces: SurfaceController!
     @ObservationIgnored private var uploader: TriggerLogUploader!
-    @ObservationIgnored private var hatchPoll: Task<Void, Never>?
+    /// The hatch request, or the wait for one already running on the server.
+    @ObservationIgnored private var hatchTask: Task<Void, Never>?
     @ObservationIgnored private var backgroundedAt: Date?
     @ObservationIgnored private var isForeground = false
     @ObservationIgnored private var presenceClaim: Task<Void, Never>?
@@ -136,7 +138,7 @@ final class AppModel {
         guard api.isSignedIn else { return signedOut() }
         do {
             if let latest = try await api.friend() {
-                if latest.isReady { adopt(latest) } else { startHatching(latest) }
+                if latest.isReady { adopt(latest) } else { resumeHatching(latest) }
             } else {
                 phase = .onboarding(try await api.questions())
             }
@@ -163,7 +165,8 @@ final class AppModel {
 
     func completeOnboarding(_ payload: CompleteOnboarding) async throws {
         let created = try await api.completeOnboarding(payload)
-        if created.isReady { adopt(created) } else { startHatching(created) }
+        await skins.sync(api: api) // the picked look shows while it hatches
+        if created.isReady { adopt(created) } else { resumeHatching(created) }
     }
 
     func signOut() async {
@@ -185,7 +188,8 @@ final class AppModel {
         timelapse.setSignedIn(false) // the camera never outlives the account
         uploader.stop()
         uploader.clear()
-        hatchPoll?.cancel()
+        hatchTask?.cancel()
+        hatchTask = nil
         presenceClaim?.cancel()
         presenceClaim = nil
         peer?.stop()
@@ -208,7 +212,8 @@ final class AppModel {
     // MARK: Friend
 
     private func adopt(_ latest: FriendProfile) {
-        hatchPoll?.cancel()
+        hatchTask?.cancel()
+        hatchTask = nil
         let isNewVersion = friend?.personality.version != latest.personality.version
         SharedStore.saveFriend(latest)
         phase = .ready(latest)
@@ -274,19 +279,60 @@ final class AppModel {
         }
     }
 
-    private func startHatching(_ hatching: FriendProfile) {
-        phase = .hatching(name: hatching.name)
-        hatchPoll?.cancel()
-        hatchPoll = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
-                guard let self, case .hatching = self.phase else { return }
-                if let latest = try? await self.api.friend(), latest.isReady {
-                    self.adopt(latest)
-                    return
-                }
+    /// Picks up a friend that hasn't hatched: one never tried hatches now, one being written is waited for, and
+    /// one that failed waits for Try again. A hatch already under way here is left alone.
+    private func resumeHatching(_ friend: FriendProfile) {
+        guard hatchTask == nil else { return }
+        if friend.hatchFailed {
+            phase = .hatching(name: friend.name, failure: Self.hatchFailed(friend.name))
+        } else {
+            startHatchTask(name: friend.name, request: !friend.isBeingWritten)
+        }
+    }
+
+    /// Try again on the hatching screen.
+    func retryHatch() {
+        guard case .hatching(let name, _) = phase, hatchTask == nil else { return }
+        startHatchTask(name: name, request: true)
+    }
+
+    private func startHatchTask(name: String, request: Bool) {
+        phase = .hatching(name: name, failure: nil)
+        hatchTask = Task { [weak self] in
+            await self?.hatch(name: name, request: request)
+            self?.hatchTask = nil
+        }
+    }
+
+    /// Asks the server to write the personality (or, with `request` false, waits for the write already running).
+    /// A dropped connection doesn't mean the write failed, so any error is checked against the server first.
+    private func hatch(name: String, request: Bool) async {
+        var failure = Self.hatchFailed(name)
+        if request {
+            do {
+                return adopt(try await api.hatch())
+            } catch APIError.signedOut {
+                return signedOut()
+            } catch APIError.server(_, "GENERATION_RUNNING", _) {
+                // another request is writing it: wait for that one below
+            } catch APIError.server(_, "GENERATION_FAILED", _) {
+                // the model's words didn't pass: the default failure
+            } catch {
+                failure = Self.message(for: error) // busy, offline, …
             }
         }
+        while !Task.isCancelled {
+            guard let latest = try? await api.friend() else { break }
+            if latest.isReady { return adopt(latest) }
+            guard latest.isBeingWritten else { break }
+            try? await Task.sleep(for: .seconds(3))
+        }
+        guard !Task.isCancelled, case .hatching = phase else { return }
+        phase = .hatching(name: name, failure: failure)
+    }
+
+    private static func hatchFailed(_ name: String) -> String {
+        "\(name) couldn't hatch this time. The words didn't come out right, so let's try again."
     }
 
     func poke() async {

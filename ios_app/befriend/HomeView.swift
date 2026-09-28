@@ -8,17 +8,31 @@ import PetCore
 import StoreKit
 import SwiftUI
 
+/// The friend's personality being written, or why it couldn't be (with Try again). Log out is always there, so a
+/// stuck account can be swapped for another.
 struct HatchingView: View {
+    let model: AppModel
     let name: String
+    let failure: String?
 
     var body: some View {
         VStack(spacing: 20) {
-            CharacterView(skin: SkinInstaller.current(in: SharedStore.skinsRoot), action: .sleep, mood: .sleepy)
-            Text("\(name) is hatching…").font(.title2.bold())
-            Text("Your friend's personality is being written. This can take a minute.")
-                .multilineTextAlignment(.center)
+            Spacer()
+            CharacterView(skin: model.skins.current, action: .sleep, mood: .sleepy)
+            if let failure {
+                Text("\(name) is still in the egg").font(.title2.bold())
+                Text(failure).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                Button("Try again", action: model.retryHatch).buttonStyle(.borderedProminent)
+            } else {
+                Text("\(name) is hatching…").font(.title2.bold())
+                Text("Your friend's personality is being written. This usually takes under a minute; keep the app open.")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                ProgressView()
+            }
+            Spacer()
+            Button("Log out") { Task { await model.signOut() } }
                 .foregroundStyle(.secondary)
-            ProgressView()
         }
         .padding(32)
     }

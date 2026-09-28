@@ -50,8 +50,8 @@ struct RootView: View {
             SignInView(model: model)
         case .onboarding(let questions):
             OnboardingView(model: model, questions: questions)
-        case .hatching(let name):
-            HatchingView(name: name)
+        case .hatching(let name, let failure):
+            HatchingView(model: model, name: name, failure: failure)
         case .ready(let friend):
             HomeView(model: model, friend: friend)
         }

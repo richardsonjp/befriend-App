@@ -88,6 +88,15 @@ public final class APIClient {
         try await send("POST", "onboarding/complete", body: payload)
     }
 
+    /// Writes the friend's first personality and returns it ready. Waits for the model, so it can take minutes;
+    /// throws GENERATION_FAILED (try again) or GENERATION_RUNNING (another hatch is under way: watch `friend()`).
+    public func hatch() async throws -> FriendProfile {
+        try await send("POST", "friend/hatch", timeout: Self.generationTimeout)
+    }
+
+    /// A request that waits for the model: two models at up to 3 minutes each, plus slack.
+    static let generationTimeout: TimeInterval = 8 * 60
+
     /// Nil until onboarding is complete.
     public func friend() async throws -> FriendProfile? {
         do {
@@ -112,8 +121,9 @@ public final class APIClient {
         tokens.save(session)
     }
 
-    func send<Response: Decodable>(_ method: String, _ path: String, body: (any Encodable)? = nil, authorized: Bool = true) async throws -> Response {
-        let data = try await sendRaw(method, path, body: body, authorized: authorized)
+    func send<Response: Decodable>(_ method: String, _ path: String, body: (any Encodable)? = nil, authorized: Bool = true,
+                                   timeout: TimeInterval? = nil) async throws -> Response {
+        let data = try await sendRaw(method, path, body: body, authorized: authorized, timeout: timeout)
         guard let value = try Wire.decoder.decode(Envelope<Response>.self, from: data).data else { throw APIError.invalidResponse }
         return value
     }
@@ -122,9 +132,10 @@ public final class APIClient {
         _ = try await sendRaw(method, path, body: body, authorized: authorized)
     }
 
-    func sendRaw(_ method: String, _ path: String, body: (any Encodable)?, authorized: Bool) async throws -> Data {
+    func sendRaw(_ method: String, _ path: String, body: (any Encodable)?, authorized: Bool, timeout: TimeInterval? = nil) async throws -> Data {
         var request = URLRequest(url: baseURL.appending(path: "api/" + path))
         request.httpMethod = method
+        if let timeout { request.timeoutInterval = timeout }
         request.setValue(staticAPIKey, forHTTPHeaderField: "STATIC-API-KEY")
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
