@@ -15,8 +15,11 @@ import (
 )
 
 type PersonalityService interface {
-	// ProcessDue generates up to limit queued personality versions and returns how many it took.
+	// ProcessDue generates up to limit due evolutions and returns how many it took (the evolve job).
 	ProcessDue(ctx context.Context, limit int) (int, error)
+	// Hatch writes the user's friend's first personality while the caller waits. Nothing retries a failed hatch:
+	// the error goes back to the app, which offers Try again. Already hatched is a success.
+	Hatch(ctx context.Context, userID string) error
 }
 
 type personalityService struct {
@@ -28,7 +31,7 @@ type personalityService struct {
 	triggerEventService       trigger_event.TriggerEventService
 	userService               user.UserService
 	skinService               skin.SkinService
-	openRouter                *openrouter.Client // nil when no API key is configured: the queue waits
+	openRouter                *openrouter.Client // nil when no API key is configured: nothing can be written
 }
 
 func NewPersonalityService(

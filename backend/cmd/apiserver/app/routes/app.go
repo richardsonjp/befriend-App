@@ -14,6 +14,9 @@ const submissionsPerMinute = 5
 // purchasesPerMinute bounds purchase checks per client; restoring sends one per past purchase.
 const purchasesPerMinute = 30
 
+// hatchesPerMinute bounds hatch attempts per client; each one is a full LLM generation.
+const hatchesPerMinute = 5
+
 // initAppRoute registers the signed-in app endpoints.
 func initAppRoute(api fiber.Router, appStore *store.Store) {
 	auth := appStore.MiddlewarePasetoAuth.MiddlewarePasetoAuth
@@ -28,6 +31,7 @@ func initAppRoute(api fiber.Router, appStore *store.Store) {
 	api.Get("/onboarding/questions", auth, appStore.OnboardingHandler.GetQuestions)
 	api.Post("/onboarding/complete", auth, appStore.OnboardingHandler.Complete)
 	api.Get("/friend", auth, appStore.FriendHandler.GetFriend)
+	api.Post("/friend/hatch", middlewares.RateLimit(hatchesPerMinute), auth, appStore.FriendHandler.Hatch)
 	api.Get("/pairing/:code", codeLimit, auth, appStore.PairingHandler.Get)
 	api.Post("/pairing/:code/confirm", codeLimit, auth, appStore.PairingHandler.Confirm)
 	api.Post("/trigger-events", auth, appStore.TriggerEventHandler.Record)

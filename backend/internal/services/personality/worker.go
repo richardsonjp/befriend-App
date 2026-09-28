@@ -17,11 +17,34 @@ import (
 	"befriend/pkg/utils/vocabulary"
 )
 
-// claimLockFor must outlast one job (OpenRouter's client timeout is 3 minutes); an expired lock lets
-// another pass reclaim a job whose worker died.
-const claimLockFor = 5 * time.Minute
+// claimLockFor must outlast one job (up to two models at the router client's 3-minute timeout each); an expired
+// lock lets a later request or evolve run reclaim a job whose process died.
+const claimLockFor = 7 * time.Minute
 
-// ProcessDue claims one job at a time, so a claim's lock only has to outlast its own job.
+// Hatch claims the friend's first version and writes it now. A second request while one runs gets
+// GENERATION_RUNNING; the app waits for the first through GET /friend.
+func (s *personalityService) Hatch(ctx context.Context, userID string) error {
+	if s.openRouter == nil {
+		return errors.From("GENERATION_FAILED").WithDetail("no LLM is configured")
+	}
+	f, err := s.friendService.GetByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if f.CurrentVersionID != nil {
+		return nil
+	}
+	job, err := s.personalityVersionService.ClaimForFriend(ctx, f.ID, enum.REASON_ONBOARDING, claimLockFor)
+	if err != nil {
+		return err
+	}
+	if job == nil {
+		return errors.From("GENERATION_RUNNING")
+	}
+	return s.process(ctx, job)
+}
+
+// ProcessDue claims one evolution at a time, so a claim's lock only has to outlast its own job.
 func (s *personalityService) ProcessDue(ctx context.Context, limit int) (int, error) {
 	if s.openRouter == nil {
 		return 0, nil
@@ -37,18 +60,18 @@ func (s *personalityService) ProcessDue(ctx context.Context, limit int) (int, er
 		if len(jobs) == 0 {
 			return done, nil
 		}
-		s.process(ctx, &jobs[0])
+		_ = s.process(ctx, &jobs[0]) // recorded on the row and logged; the next evolution goes on
 	}
 	return limit, nil
 }
 
 // process runs one claimed job to an outcome recorded on its row: ready, deferred (budget, rate limit or
-// shutdown; no attempt counted) or failed (retried with backoff). Outcomes are written even when ctx was
-// cancelled mid-job, so a shutdown doesn't leave the row locked.
-func (s *personalityService) process(ctx context.Context, job *model.PersonalityVersion) {
+// shutdown; no attempt counted) or failed, and returns what the waiting app should see (nil when ready).
+// Outcomes are written even when ctx was cancelled mid-job, so a shutdown doesn't leave the row locked.
+func (s *personalityService) process(ctx context.Context, job *model.PersonalityVersion) (outcome error) {
 	defer func() {
 		if r := recover(); r != nil {
-			s.fail(ctx, job, fmt.Errorf("panic: %v", r))
+			outcome = s.fail(ctx, job, fmt.Errorf("panic: %v", r))
 		}
 	}()
 
@@ -59,18 +82,15 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 	}
 	ok, retryAt, err := s.consumeBudget(ctx, now, config.Config.LLM.MinuteCap, dailyCap)
 	if err != nil {
-		s.fail(ctx, job, fmt.Errorf("check LLM budget: %w", err))
-		return
+		return s.fail(ctx, job, fmt.Errorf("check LLM budget: %w", err))
 	}
 	if !ok {
-		s.deferJob(ctx, job, retryAt, "LLM request budget reached")
-		return
+		return s.deferJob(ctx, job, retryAt, "LLM request budget reached")
 	}
 
 	input, err := s.promptInput(ctx, job)
 	if err != nil {
-		s.fail(ctx, job, fmt.Errorf("load prompt input: %w", err))
-		return
+		return s.fail(ctx, job, fmt.Errorf("load prompt input: %w", err))
 	}
 	system, user := Prompt(*input)
 	resp, err := s.openRouter.Complete(ctx, openrouter.Request{
@@ -83,18 +103,15 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 	})
 	var rateLimited *openrouter.RateLimitError
 	if stderrors.As(err, &rateLimited) {
-		s.deferJob(ctx, job, now.Add(rateLimited.RetryAfter), rateLimited.Error())
-		return
+		return s.deferJob(ctx, job, now.Add(rateLimited.RetryAfter), rateLimited.Error())
 	}
 	if err != nil {
-		s.fail(ctx, job, err)
-		return
+		return s.fail(ctx, job, err)
 	}
 
 	var generated Generated
 	if err := json.Unmarshal([]byte(resp.Content), &generated); err != nil {
-		s.fail(ctx, job, fmt.Errorf("model returned invalid JSON: %w", err))
-		return
+		return s.fail(ctx, job, fmt.Errorf("model returned invalid JSON: %w", err))
 	}
 	if job.Reason == enum.REASON_RESKIN {
 		// A new look, the same friend: the model's copy of the personality is discarded, so it can't fail the job.
@@ -103,18 +120,15 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 	Repair(&generated, input.Skin)
 	personality, phrasebook, err := Validate(&generated, input.Skin)
 	if err != nil {
-		s.fail(ctx, job, fmt.Errorf("model output rejected: %w", err))
-		return
+		return s.fail(ctx, job, fmt.Errorf("model output rejected: %w", err))
 	}
 	personalityJSON, err := json.Marshal(personality)
 	if err != nil {
-		s.fail(ctx, job, err)
-		return
+		return s.fail(ctx, job, err)
 	}
 	phrasebookJSON, err := json.Marshal(phrasebook)
 	if err != nil {
-		s.fail(ctx, job, err)
-		return
+		return s.fail(ctx, job, err)
 	}
 
 	err = s.txRepo.Run(context.WithoutCancel(ctx), func(ctx context.Context) error {
@@ -125,7 +139,7 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 			return err
 		}
 		if job.Reason != enum.REASON_RESKIN {
-			return s.reskinIfSwitched(ctx, job, input)
+			return nil
 		}
 		// The phrasebook fits the picked skin now: switch to it. Fails if the grant was revoked meanwhile.
 		if err := s.userService.UpdateSkin(ctx, input.userID, job.SkinID); err != nil {
@@ -134,15 +148,15 @@ func (s *personalityService) process(ctx context.Context, job *model.Personality
 		return s.skinService.NotifyUser(ctx, input.userID)
 	})
 	if errors.Is(err, "SKIN_NOT_FOUND") {
-		s.fail(ctx, job, fmt.Errorf("the picked skin is no longer granted"))
-		return
+		return s.fail(ctx, job, fmt.Errorf("the picked skin is no longer granted"))
 	}
 	if err != nil {
-		// Most likely the claim expired and another pass owns the row now; leave it to that pass.
+		// Most likely the claim expired and another request owns the row now; leave it to that one.
 		logs.Log.Errorf("personality %s v%d: store result: %v", job.FriendID, job.Version, err)
-		return
+		return errors.From("GENERATION_RUNNING")
 	}
 	logs.Log.Infof("personality %s v%d ready (%s, model %s)", job.FriendID, job.Version, job.Reason, resp.Model)
+	return nil
 }
 
 func (s *personalityService) promptInput(ctx context.Context, job *model.PersonalityVersion) (*PromptInput, error) {
@@ -206,20 +220,6 @@ func (s *personalityService) promptInput(ctx context.Context, job *model.Persona
 	return input, nil
 }
 
-// reskinIfSwitched catches a skin picked while this job ran for the old one (the pick applies at once while the
-// friend is hatching): the lines just written don't fit, so write them again for the skin the user has now.
-func (s *personalityService) reskinIfSwitched(ctx context.Context, job *model.PersonalityVersion, input *PromptInput) error {
-	owner, err := s.userService.GetUserByID(ctx, input.userID)
-	if err != nil {
-		return err
-	}
-	if sameSkin(owner.SkinID, input.skinID) {
-		return nil
-	}
-	_, err = s.personalityVersionService.CreateReskin(ctx, job.FriendID, owner.SkinID)
-	return err
-}
-
 func sameSkin(a, b *string) bool {
 	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
 }
@@ -278,23 +278,28 @@ func activityLines(events []model.TriggerEvent, timezone string) []ActivityLine 
 	return lines
 }
 
-// fail records a failed attempt, retried with backoff. A job cut short by shutdown is deferred instead, to
-// run again right away on the next start. A failed reskin isn't retried: the user keeps the skin they had,
-// and their apps stop waiting for the new one.
-func (s *personalityService) fail(ctx context.Context, job *model.PersonalityVersion, cause error) {
+// fail records a failed attempt and returns GENERATION_FAILED for the waiting app; the cause stays in the log and
+// on the row. An evolution is retried by the evolve job with backoff; a hatch waits for its user to try again. A
+// job cut short by shutdown is deferred instead. A failed reskin is abandoned: the user keeps the skin they had.
+func (s *personalityService) fail(ctx context.Context, job *model.PersonalityVersion, cause error) error {
+	failed := errors.From("GENERATION_FAILED")
 	if ctx.Err() != nil {
-		s.deferJob(ctx, job, time.Now(), fmt.Sprintf("interrupted by shutdown: %v", cause))
-		return
+		s.deferJob(ctx, job, time.Now(), fmt.Sprintf("interrupted: %v", cause))
+		return failed
 	}
 	if job.Reason == enum.REASON_RESKIN {
 		s.abandonReskin(ctx, job, cause)
-		return
+		return failed
 	}
-	retryAt := time.Now().Add(retryDelay(job.Attempts))
-	logs.Log.Errorf("personality %s v%d attempt %d failed, retry at %s: %v", job.FriendID, job.Version, job.Attempts, retryAt.Format(time.RFC3339), cause)
+	retryAt := time.Now()
+	if job.Reason == enum.REASON_EVOLUTION {
+		retryAt = retryAt.Add(retryDelay(job.Attempts))
+	}
+	logs.Log.Errorf("personality %s v%d (%s) attempt %d failed: %v", job.FriendID, job.Version, job.Reason, job.Attempts, cause)
 	if err := s.personalityVersionService.Fail(context.WithoutCancel(ctx), job, retryAt, cause.Error()); err != nil {
 		logs.Log.Errorf("personality %s v%d: record failure: %v", job.FriendID, job.Version, err)
 	}
+	return failed
 }
 
 func (s *personalityService) abandonReskin(ctx context.Context, job *model.PersonalityVersion, cause error) {
@@ -314,13 +319,15 @@ func (s *personalityService) abandonReskin(ctx context.Context, job *model.Perso
 	}
 }
 
-func (s *personalityService) deferJob(ctx context.Context, job *model.PersonalityVersion, until time.Time, reason string) {
+// deferJob puts the job back without counting the attempt and tells the waiting app to come back later.
+func (s *personalityService) deferJob(ctx context.Context, job *model.PersonalityVersion, until time.Time, reason string) error {
 	if err := s.personalityVersionService.Defer(context.WithoutCancel(ctx), job, until, reason); err != nil {
 		logs.Log.Errorf("personality %s v%d: defer: %v", job.FriendID, job.Version, err)
 	}
+	return errors.From("TOO_MANY_REQUESTS").WithMessage("Lots of friends are hatching right now. Try again in a minute.")
 }
 
-// retryDelay backs off failed generations: 5 minutes, 30 minutes, 2 hours, then every 12 hours.
+// retryDelay backs off failed evolutions: 5 minutes, 30 minutes, 2 hours, then every 12 hours.
 // attempts counts the attempt that just failed.
 func retryDelay(attempts int) time.Duration {
 	switch {

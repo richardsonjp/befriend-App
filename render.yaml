@@ -2,7 +2,7 @@
 # Secrets marked `sync: false` are asked for when the Blueprint is created.
 #
 # The API runs on a paid instance: free web services sleep after 15 minutes idle, which would drop the Mac's
-# presence WebSocket and stop the presence sweeper and personality worker.
+# presence WebSocket and stop the presence sweeper.
 
 envVarGroups:
   - name: befriend-shared

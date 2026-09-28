@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"befriend/config"
-	"befriend/internal/services/personality"
 	"befriend/internal/services/presence"
 	"befriend/internal/services/skin"
 	"befriend/pkg/clients/db"
@@ -13,15 +12,6 @@ import (
 )
 
 const defaultWorkerInterval = 10 * time.Second
-
-// runPersonalityWorker drains the personality generation queue until ctx is cancelled.
-func runPersonalityWorker(ctx context.Context, service personality.PersonalityService) {
-	interval := time.Duration(config.Config.LLM.WorkerIntervalSec) * time.Second
-	runEvery(ctx, interval, "personality worker", func(ctx context.Context) error {
-		_, err := service.ProcessDue(ctx, config.Config.LLM.BatchSize)
-		return err
-	})
-}
 
 // runPresenceSweeper re-decides owners whose Mac went quiet or whose phone claim lapsed, and sends pushes that
 // were debounced.

@@ -260,7 +260,7 @@ func Init() {
 		UserAuthHandler:     handlerUserAuth.NewUserAuthHandler(authenticationService),
 		UserHandler:         handlerUser.NewUserHandler(userApplicationService),
 		OnboardingHandler:   handlerOnboarding.NewOnboardingHandler(onboardingService),
-		FriendHandler:       handlerFriend.NewFriendHandler(friendService),
+		FriendHandler:       handlerFriend.NewFriendHandler(friendService, personalityService),
 		DeviceHandler:       handlerDevice.NewDeviceHandler(deviceService),
 		PairingHandler:      handlerPairing.NewPairingHandler(pairingCodeService, authenticationService),
 		TriggerEventHandler: handlerTriggerEvent.NewTriggerEventHandler(triggerEventService),

@@ -95,13 +95,11 @@ var Config = struct {
 		BaseURL string   `env:"OPENROUTER_BASE_URL" envDefault:"https://router.requesty.ai/v1"` // any OpenAI-compatible router
 	}
 
-	// LLM request budget and generation worker. Caps sit under OpenRouter's free-tier limits (about
+	// LLM request budget. Caps sit under OpenRouter's free-tier limits (about
 	// 20/minute and 50/day without purchased credits; check your account) and count every request.
 	LLM struct {
-		MinuteCap         int `env:"LLM_MINUTE_CAP" envDefault:"16"`
-		DailyCap          int `env:"LLM_DAILY_CAP" envDefault:"45"`
-		WorkerIntervalSec int `env:"LLM_WORKER_INTERVAL_SECONDS" envDefault:"10"`
-		BatchSize         int `env:"LLM_WORKER_BATCH_SIZE" envDefault:"2"`
+		MinuteCap int `env:"LLM_MINUTE_CAP" envDefault:"16"`
+		DailyCap  int `env:"LLM_DAILY_CAP" envDefault:"45"`
 		// Weekly evolutions stop this many requests short of the daily cap, so new users can still hatch.
 		OnboardingReserve int `env:"LLM_ONBOARDING_RESERVE" envDefault:"10"`
 	}

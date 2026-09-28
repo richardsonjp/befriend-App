@@ -2,14 +2,17 @@ package friend
 
 import (
 	"befriend/internal/services/friend"
+	"befriend/internal/services/personality"
 )
 
 type FriendHandler struct {
-	friendService friend.FriendService
+	friendService      friend.FriendService
+	personalityService personality.PersonalityService
 }
 
-func NewFriendHandler(friendService friend.FriendService) *FriendHandler {
+func NewFriendHandler(friendService friend.FriendService, personalityService personality.PersonalityService) *FriendHandler {
 	return &FriendHandler{
-		friendService: friendService,
+		friendService:      friendService,
+		personalityService: personalityService,
 	}
 }

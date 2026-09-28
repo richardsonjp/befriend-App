@@ -32,14 +32,10 @@ func Run() {
 	// Initialize Store (DB, Repos, Services, Middleware)
 	store.Init()
 
-	// Generate personalities in the background (queue: personality_version)
+	// Background loops. Personalities aren't among them: a hatch or reskin is written while its user waits
+	// (POST /friend/hatch, PUT /settings), and weekly evolutions by the hourly `apiserver evolve`.
 	workerCtx, stopWorker := context.WithCancel(context.Background())
 	defer stopWorker()
-	workerDone := make(chan struct{})
-	go func() {
-		defer close(workerDone)
-		runPersonalityWorker(workerCtx, store.App.PersonalityService)
-	}()
 	go runPresenceSweeper(workerCtx, store.App.PresenceService)
 	go runSkinListener(workerCtx, store.App.PresenceService)
 
@@ -69,13 +65,7 @@ func Run() {
 		logs.Log.Errorf("Graceful shutdown error: %v", err)
 	}
 
-	// Let an in-flight personality job record its outcome (it is deferred, not failed).
 	stopWorker()
-	select {
-	case <-workerDone:
-	case <-ctx.Done():
-		logs.Log.Warn("Personality worker did not stop in time; its job unlocks after the claim expires")
-	}
 
 	logs.Log.Warn("Server gracefully stopped.")
 }

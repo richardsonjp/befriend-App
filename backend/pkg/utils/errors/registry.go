@@ -39,5 +39,8 @@ var Registry = map[string]AppError{
 	"TOO_MANY_SUBMISSIONS": {Code: "TOO_MANY_SUBMISSIONS", Status: http.StatusTooManyRequests, Message: "Wait for your submissions to be reviewed first"},
 	"PURCHASE_INVALID":     {Code: "PURCHASE_INVALID", Status: http.StatusUnprocessableEntity, Message: "The App Store purchase couldn't be verified"},
 	"PURCHASE_TAKEN":       {Code: "PURCHASE_TAKEN", Status: http.StatusConflict, Message: "This purchase already unlocked the skin on another account"},
+	// # personality: the model's answer couldn't be used (the user can try again), or another request is writing it
+	"GENERATION_FAILED":    {Code: "GENERATION_FAILED", Status: http.StatusBadGateway, Message: "Your friend's personality couldn't be written. Try again."},
+	"GENERATION_RUNNING":   {Code: "GENERATION_RUNNING", Status: http.StatusConflict, Message: "Your friend's personality is already being written"},
 	"SUBMISSION_NOT_FOUND": {Code: "SUBMISSION_NOT_FOUND", Status: http.StatusNotFound, Message: "Submission not found"},
 }

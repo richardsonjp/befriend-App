@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"befriend/internal/model"
+	"befriend/internal/model/enum"
 	repoPersonalityVersion "befriend/internal/repositories/personality_version"
 	"befriend/internal/repositories/tx"
 )
@@ -24,7 +25,10 @@ type PersonalityVersionService interface {
 	Abandon(ctx context.Context, job *model.PersonalityVersion, reason string) error
 	GetByID(ctx context.Context, id string) (*model.PersonalityVersion, error)
 	GetLatestByFriend(ctx context.Context, friendID string) (*model.PersonalityVersion, error)
+	// ClaimDue takes due evolutions (the evolve job).
 	ClaimDue(ctx context.Context, limit int, lockFor time.Duration) ([]model.PersonalityVersion, error)
+	// ClaimForFriend takes the friend's newest claimable job of this reason for a request that waits on it.
+	ClaimForFriend(ctx context.Context, friendID string, reason enum.PersonalityReason, lockFor time.Duration) (*model.PersonalityVersion, error)
 	MarkReady(ctx context.Context, job *model.PersonalityVersion, llmModel string, vocabularyVersion int, personality, phrasebook json.RawMessage) error
 	Defer(ctx context.Context, job *model.PersonalityVersion, until time.Time, reason string) error
 	Fail(ctx context.Context, job *model.PersonalityVersion, retryAt time.Time, reason string) error

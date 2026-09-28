@@ -13,7 +13,7 @@ import (
 
 const maxErrorLength = 500
 
-// CreateInitial queues version 1 for generation; the worker picks up pending rows.
+// CreateInitial queues version 1; the app then asks for it to be written (POST /friend/hatch).
 func (s *personalityVersionService) CreateInitial(ctx context.Context, friendID string) (*model.PersonalityVersion, error) {
 	return s.personalityVersionRepo.Create(ctx, &model.PersonalityVersion{
 		FriendID: friendID,
@@ -88,6 +88,11 @@ func (s *personalityVersionService) ClaimDue(ctx context.Context, limit int, loc
 	return s.personalityVersionRepo.ClaimDue(ctx, now, limit, now.Add(lockFor))
 }
 
+func (s *personalityVersionService) ClaimForFriend(ctx context.Context, friendID string, reason enum.PersonalityReason, lockFor time.Duration) (*model.PersonalityVersion, error) {
+	now := time.Now()
+	return s.personalityVersionRepo.ClaimForFriend(ctx, friendID, reason, now, now.Add(lockFor))
+}
+
 func (s *personalityVersionService) MarkReady(ctx context.Context, job *model.PersonalityVersion, llmModel string, vocabularyVersion int, personality, phrasebook json.RawMessage) error {
 	return s.personalityVersionRepo.MarkReady(ctx, claimOf(job), llmModel, vocabularyVersion, personality, phrasebook, time.Now())
 }
@@ -97,7 +102,7 @@ func (s *personalityVersionService) Defer(ctx context.Context, job *model.Person
 	return s.personalityVersionRepo.Reschedule(ctx, claimOf(job), enum.PERSONALITY_PENDING, until, truncate(reason), false, time.Now())
 }
 
-// Fail marks a claimed job failed; it is retried at retryAt.
+// Fail marks a claimed job failed. The evolve job retries an evolution at retryAt; a hatch waits for its user.
 func (s *personalityVersionService) Fail(ctx context.Context, job *model.PersonalityVersion, retryAt time.Time, reason string) error {
 	return s.personalityVersionRepo.Reschedule(ctx, claimOf(job), enum.PERSONALITY_FAILED, retryAt, truncate(reason), true, time.Now())
 }

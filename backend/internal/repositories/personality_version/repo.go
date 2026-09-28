@@ -12,17 +12,34 @@ import (
 	"gorm.io/gorm"
 )
 
-// claimDueSQL atomically takes due jobs: pending/failed rows whose retry time has passed, plus running rows
-// whose lock expired (a worker died mid-job). SKIP LOCKED lets several workers claim without blocking.
+// claimDueSQL atomically takes due evolutions: pending/failed rows whose retry time has passed, plus running rows
+// whose lock expired (the job died mid-run). Hatches and reskins run while their user waits (ClaimForFriend), so
+// the evolve job never touches them. SKIP LOCKED lets overlapping runs claim without blocking.
 const claimDueSQL = `
 UPDATE personality_version
 SET status = 'running', locked_until = @locked_until, attempts = attempts + 1, updated_at = @now
 WHERE id IN (
 	SELECT id FROM personality_version
-	WHERE (status IN ('pending', 'failed') AND next_attempt_at <= @now)
-	   OR (status = 'running' AND locked_until < @now)
+	WHERE reason = 'evolution'
+	  AND ((status IN ('pending', 'failed') AND next_attempt_at <= @now)
+	    OR (status = 'running' AND locked_until < @now))
 	ORDER BY next_attempt_at
 	LIMIT @limit
+	FOR UPDATE SKIP LOCKED
+)
+RETURNING *`
+
+// claimForFriendSQL takes the friend's newest job of one reason that isn't running under a live lock, whatever
+// its retry time: the user asked for it now.
+const claimForFriendSQL = `
+UPDATE personality_version
+SET status = 'running', locked_until = @locked_until, attempts = attempts + 1, updated_at = @now
+WHERE id = (
+	SELECT id FROM personality_version
+	WHERE friend_id = @friend_id AND reason = @reason
+	  AND (status IN ('pending', 'failed') OR (status = 'running' AND locked_until < @now))
+	ORDER BY version DESC
+	LIMIT 1
 	FOR UPDATE SKIP LOCKED
 )
 RETURNING *`
@@ -101,6 +118,17 @@ func (r *personalityVersionRepo) ClaimDue(ctx context.Context, now time.Time, li
 		Raw(claimDueSQL, map[string]interface{}{"now": now, "limit": limit, "locked_until": lockedUntil}).
 		Scan(&jobs).Error
 	return jobs, err
+}
+
+func (r *personalityVersionRepo) ClaimForFriend(ctx context.Context, friendID string, reason enum.PersonalityReason, now time.Time, lockedUntil time.Time) (*model.PersonalityVersion, error) {
+	var jobs []model.PersonalityVersion
+	err := r.dbdget.Get(ctx).
+		Raw(claimForFriendSQL, map[string]interface{}{"now": now, "friend_id": friendID, "reason": reason.String(), "locked_until": lockedUntil}).
+		Scan(&jobs).Error
+	if err != nil || len(jobs) == 0 {
+		return nil, err
+	}
+	return &jobs[0], nil
 }
 
 // MarkReady stores the result, but only while the row is still running under this claim.
