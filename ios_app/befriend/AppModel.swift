@@ -405,6 +405,7 @@ final class AppModel {
     static func message(for error: Error) -> String {
         switch error {
         case APIError.server(_, "VALIDATION_FAILED", _): "Please check what you entered."
+        case APIError.server(_, "GENERATION_FAILED", _): "Your friend's words didn't come out right this time. Try again."
         case APIError.server(_, _, let message) where !message.isEmpty: message
         case is URLError: "Can't reach befriend right now. Check your connection."
         default: "Something went wrong. Please try again."

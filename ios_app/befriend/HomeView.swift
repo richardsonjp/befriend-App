@@ -447,7 +447,7 @@ struct SettingsView: View {
                 Spacer()
                 if model.skins.pending.map({ $0.skinId == id }) ?? false {
                     ProgressView()
-                    Text("Getting dressed…").font(.footnote).foregroundStyle(.secondary)
+                    Text("Teaching \(model.friend?.name ?? "your friend") new moves…").font(.footnote).foregroundStyle(.secondary)
                 } else if model.skins.current?.pickID == id {
                     Image(systemName: "checkmark").foregroundStyle(.tint)
                 }

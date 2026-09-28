@@ -429,6 +429,11 @@ final class MacController {
     func selectSkin(_ id: String?) async {
         do {
             try await skins.select(id, api: api)
+        } catch APIError.server(_, "GENERATION_FAILED", _) {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't switch skins"
+            alert.informativeText = "Your friend's lines for that skin didn't come out right. Pick it again to try again."
+            alert.runModal()
         } catch {
             NSSound.beep()
         }

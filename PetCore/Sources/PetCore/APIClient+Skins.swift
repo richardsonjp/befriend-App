@@ -29,9 +29,11 @@ public extension APIClient {
         try await send("POST", "skins/purchases", body: PurchaseBody(signedTransaction: signedTransaction))
     }
 
-    /// Picks the account's skin on every device; nil picks the built-in one.
+    /// Picks the account's skin on every device; nil picks the built-in one. Once the friend has hatched, this waits
+    /// while its lines are rewritten for the skin (minutes at worst) and throws GENERATION_FAILED if they couldn't
+    /// be, keeping the skin it had.
     func updateSkin(_ id: String?) async throws -> SyncSettings {
-        try await send("PATCH", "me/settings", body: SkinPatch(skinId: id ?? ""))
+        try await send("PATCH", "me/settings", body: SkinPatch(skinId: id ?? ""), timeout: APIClient.generationTimeout)
     }
 }
 

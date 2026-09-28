@@ -23,7 +23,7 @@ public final class SkinStore {
     public private(set) var current: InstalledSkin?
     /// Skins the account was granted, as of the last sync.
     public private(set) var granted: [SkinSummary] = []
-    /// A pick getting dressed: `current` switches to it once the friend's lines fit it.
+    /// A pick getting dressed on this device's request: `current` switches to it once the friend's lines fit it.
     public private(set) var pending: PendingSkin?
     /// Called after `current` changes (the iPhone redraws its widget and Live Activity).
     @ObservationIgnored public var onChange: (() -> Void)?
@@ -31,10 +31,6 @@ public final class SkinStore {
     private let root: URL
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private var syncAgain = false
-    @ObservationIgnored private var dressingPoll: Task<Void, Never>?
-    @ObservationIgnored private var dressingGeneration = 0
-    private static let dressingPollInterval: Duration = .seconds(5)
-    private static let dressingPollLimit = 120 // 10 minutes; the backend gives up on a failed pick much sooner
 
     public init(root: URL) {
         self.root = root
@@ -64,21 +60,21 @@ public final class SkinStore {
         await task.value
     }
 
-    /// Saves the pick for the whole account (nil = the built-in skin). Once the friend has lines, the pick gets
-    /// dressed first (`pending`) and this device switches when that's done; otherwise it switches now. Throws
-    /// `SkinSelectionError.notApplied` when a pick that isn't pending couldn't be applied here yet.
+    /// Saves the pick for the whole account (nil = the built-in skin). Once the friend has lines, the request waits
+    /// while they're rewritten for it (`pending` meanwhile) and throws if they couldn't be; the old skin stays.
+    /// Throws `SkinSelectionError.notApplied` when the saved pick couldn't be applied here yet.
     public func select(_ id: String?, api: APIClient) async throws {
-        pending = try await api.updateSkin(id).pendingSkin
+        pending = PendingSkin(skinId: id)
+        defer { pending = nil }
+        _ = try await api.updateSkin(id)
         await sync(api: api)
-        guard pending != nil || current?.pickID == id else { throw SkinSelectionError.notApplied }
+        guard current?.pickID == id else { throw SkinSelectionError.notApplied }
     }
 
     /// Back to the built-in skin, e.g. after signing out.
     public func reset() {
         granted = []
         pending = nil
-        dressingPoll?.cancel()
-        dressingPoll = nil
         use(Self.installBuiltIn(root: root))
     }
 
@@ -86,8 +82,6 @@ public final class SkinStore {
         do {
             let settings = try await api.syncSettings()
             let pick = settings.skinId
-            pending = settings.pendingSkin
-            if pending != nil { pollWhileDressing(api: api) }
             granted = try await api.skins()
             guard let pick, let summary = granted.first(where: { $0.id == pick }) else {
                 return use(Self.installBuiltIn(root: root))
@@ -104,22 +98,6 @@ public final class SkinStore {
             return
         } catch {
             Self.log.error("Skin sync failed: \(String(describing: error), privacy: .public)")
-        }
-    }
-
-    /// Checks back until the pick is dressed; Macs also hear it over the presence socket, but the iPhone doesn't.
-    private func pollWhileDressing(api: APIClient) {
-        guard dressingPoll == nil else { return }
-        dressingGeneration += 1
-        let generation = dressingGeneration
-        dressingPoll = Task { [weak self] in
-            for _ in 0..<Self.dressingPollLimit {
-                try? await Task.sleep(for: Self.dressingPollInterval)
-                guard let self, !Task.isCancelled, self.pending != nil else { break }
-                await self.sync(api: api)
-            }
-            // A reset may have started a newer poll meanwhile: only clear our own.
-            if self?.dressingGeneration == generation { self?.dressingPoll = nil }
         }
     }
 

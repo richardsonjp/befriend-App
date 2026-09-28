@@ -140,13 +140,17 @@ public nonisolated struct CompleteOnboarding: Encodable, Equatable, Sendable {
     public let timezone: String
     public let location: OnboardingLocation?
     public let consent: Bool
+    /// The friend's look: "cat" (the built-in skin) or "dog" (granted free by the server).
+    public let species: String?
 
-    public init(questionSetVersion: Int, answers: [OnboardingAnswer], timezone: String, location: OnboardingLocation?, consent: Bool) {
+    public init(questionSetVersion: Int, answers: [OnboardingAnswer], timezone: String, location: OnboardingLocation?, consent: Bool,
+                species: String? = nil) {
         self.questionSetVersion = questionSetVersion
         self.answers = answers
         self.timezone = timezone
         self.location = location
         self.consent = consent
+        self.species = species
     }
 }
 
