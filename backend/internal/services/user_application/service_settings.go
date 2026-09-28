@@ -16,14 +16,6 @@ type SettingsResponse struct {
 	LogSyncPaused bool     `json:"log_sync_paused"`
 	ExcludedApps  []string `json:"excluded_apps"`
 	SkinID        *string  `json:"skin_id"` // null = the built-in skin
-	userID        string
-	// PendingSkin is a pick whose phrasebook is still being written ("getting dressed"); null when none.
-	PendingSkin *PendingSkin `json:"pending_skin"`
-}
-
-// PendingSkin names the skin a pick switches to once its phrasebook is ready.
-type PendingSkin struct {
-	SkinID *string `json:"skin_id"` // null = the built-in skin
 }
 
 // UpdateSettingsPayload changes only the fields present. SkinID "" picks the built-in skin.
@@ -38,15 +30,19 @@ func (s *userApplicationService) GetSettings(ctx context.Context, userID string)
 	if err != nil {
 		return nil, err
 	}
-	return s.withPending(ctx, toSettings(owner))
+	return toSettings(owner), nil
 }
 
 // UpdateSettings saves the sync settings and skin pick. Excluding an app also deletes the events already stored
-// for it; picking another skin tells the account's other devices once the change commits.
+// for it; picking another skin tells the account's other devices once the change commits. A skin pick for a
+// hatched friend waits while its phrasebook is rewritten (see pickSkin); if that fails, the other fields are
+// saved and the skin stays as it was.
 func (s *userApplicationService) UpdateSettings(ctx context.Context, userID string, payload UpdateSettingsPayload) (*SettingsResponse, error) {
-	var response *SettingsResponse
+	var owner *model.User
+	var reskin *pendingReskin
 	err := s.txRepo.Run(ctx, func(ctx context.Context) error {
-		owner, err := s.userService.GetUserByID(ctx, userID)
+		var err error
+		owner, err = s.userService.GetUserByID(ctx, userID)
 		if err != nil {
 			return err
 		}
@@ -64,31 +60,27 @@ func (s *userApplicationService) UpdateSettings(ctx context.Context, userID stri
 			return err
 		}
 		if payload.SkinID != nil {
-			if err := s.updateSkin(ctx, owner, *payload.SkinID); err != nil {
-				return err
-			}
+			reskin, err = s.pickSkin(ctx, owner, *payload.SkinID)
 		}
-		response, err = s.withPending(ctx, toSettings(owner))
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return response, nil
+	// Outside the transaction: writing a phrasebook takes up to several minutes.
+	if reskin != nil {
+		if err := s.personalityService.Reskin(ctx, reskin.friendID, reskin.skinID); err != nil {
+			return nil, err
+		}
+		owner.SkinID = reskin.skinID
+	}
+	return toSettings(owner), nil
 }
 
-// withPending adds the skin pick still being written for, if any.
-func (s *userApplicationService) withPending(ctx context.Context, settings *SettingsResponse) (*SettingsResponse, error) {
-	f, err := s.readyFriend(ctx, settings.userID)
-	if err != nil || f == nil {
-		return settings, err
-	}
-	job, err := s.personalityVersionService.GetActiveReskin(ctx, f.ID)
-	if err != nil || job == nil {
-		return settings, err
-	}
-	settings.PendingSkin = &PendingSkin{SkinID: job.SkinID}
-	return settings, nil
+// pendingReskin is a skin pick that needs the friend's phrasebook rewritten before it applies.
+type pendingReskin struct {
+	friendID string
+	skinID   *string // nil = the built-in skin
 }
 
 // readyFriend is the account's friend once it has a personality; nil while onboarding or hatching.
@@ -103,43 +95,36 @@ func (s *userApplicationService) readyFriend(ctx context.Context, userID string)
 	return f, nil
 }
 
-// updateSkin starts a switch. Once the friend has a personality, its phrasebook is rewritten for the picked
-// skin first and the switch applies when that's ready (see the personality worker); picking the current skin
-// again cancels a switch in progress. Before then there is no phrasebook to rewrite, so the pick applies at once.
-func (s *userApplicationService) updateSkin(ctx context.Context, owner *model.User, skinID string) error {
+// pickSkin checks the pick. Before the friend hatches there is no phrasebook to rewrite, so the pick applies at
+// once (the hatch then writes for it). After, it returns the rewrite for UpdateSettings to run; the switch
+// applies when that's written. Picking the skin the user has is a no-op.
+func (s *userApplicationService) pickSkin(ctx context.Context, owner *model.User, skinID string) (*pendingReskin, error) {
 	var next *string
 	if skinID != "" {
 		granted, err := s.skinService.IsGranted(ctx, owner.ID, skinID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !granted {
-			return errors.From("SKIN_NOT_FOUND")
+			return nil, errors.From("SKIN_NOT_FOUND")
 		}
 		next = &skinID
 	}
+	if sameSkin(owner.SkinID, next) {
+		return nil, nil
+	}
 	f, err := s.readyFriend(ctx, owner.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	switch {
-	case f == nil && sameSkin(owner.SkinID, next):
-		return nil
-	case f == nil:
-		if err := s.userService.UpdateSkin(ctx, owner.ID, next); err != nil {
-			return err
-		}
-		owner.SkinID = next
-	case sameSkin(owner.SkinID, next):
-		if err := s.personalityVersionService.AbandonReskins(ctx, f.ID, "the user kept their skin"); err != nil {
-			return err
-		}
-	default:
-		if _, err := s.personalityVersionService.CreateReskin(ctx, f.ID, next); err != nil {
-			return err
-		}
+	if f != nil {
+		return &pendingReskin{friendID: f.ID, skinID: next}, nil
 	}
-	return s.skinService.NotifyUser(ctx, owner.ID) // other devices show the switch, pending or done
+	if err := s.userService.UpdateSkin(ctx, owner.ID, next); err != nil {
+		return nil, err
+	}
+	owner.SkinID = next
+	return nil, s.skinService.NotifyUser(ctx, owner.ID) // other devices show the switch
 }
 
 func sameSkin(a, b *string) bool {
@@ -167,5 +152,5 @@ func toSettings(owner *model.User) *SettingsResponse {
 	if apps == nil {
 		apps = []string{}
 	}
-	return &SettingsResponse{LogSyncPaused: owner.LogSyncPaused, ExcludedApps: apps, SkinID: owner.SkinID, userID: owner.ID}
+	return &SettingsResponse{LogSyncPaused: owner.LogSyncPaused, ExcludedApps: apps, SkinID: owner.SkinID}
 }

@@ -1,11 +1,11 @@
 package user_application
 
 import (
-	"befriend/internal/services/personality_version"
 	"context"
 
 	"befriend/internal/repositories/tx"
 	"befriend/internal/services/friend"
+	"befriend/internal/services/personality"
 	"befriend/internal/services/skin"
 	"befriend/internal/services/trigger_event"
 	"befriend/internal/services/user"
@@ -22,13 +22,13 @@ type UserApplicationService interface {
 }
 
 type userApplicationService struct {
-	txRepo                    tx.TxRepo
-	userService               user.UserService
-	verificationCodeService   verification_code.VerificationCodeService
-	friendService             friend.FriendService
-	triggerEventService       trigger_event.TriggerEventService
-	skinService               skin.SkinService
-	personalityVersionService personality_version.PersonalityVersionService
+	txRepo                  tx.TxRepo
+	userService             user.UserService
+	verificationCodeService verification_code.VerificationCodeService
+	friendService           friend.FriendService
+	triggerEventService     trigger_event.TriggerEventService
+	skinService             skin.SkinService
+	personalityService      personality.PersonalityService
 }
 
 func NewUserApplicationService(
@@ -38,15 +38,15 @@ func NewUserApplicationService(
 	friendService friend.FriendService,
 	triggerEventService trigger_event.TriggerEventService,
 	skinService skin.SkinService,
-	personalityVersionService personality_version.PersonalityVersionService,
+	personalityService personality.PersonalityService,
 ) UserApplicationService {
 	return &userApplicationService{
-		txRepo:                    txRepo,
-		userService:               userService,
-		verificationCodeService:   verificationCodeService,
-		friendService:             friendService,
-		triggerEventService:       triggerEventService,
-		skinService:               skinService,
-		personalityVersionService: personalityVersionService,
+		txRepo:                  txRepo,
+		userService:             userService,
+		verificationCodeService: verificationCodeService,
+		friendService:           friendService,
+		triggerEventService:     triggerEventService,
+		skinService:             skinService,
+		personalityService:      personalityService,
 	}
 }

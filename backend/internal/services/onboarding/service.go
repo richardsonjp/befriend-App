@@ -7,6 +7,7 @@ import (
 	"befriend/internal/model"
 	ct "befriend/internal/model/custom_type"
 	"befriend/internal/services/friend"
+	"befriend/internal/services/skin"
 	"befriend/pkg/utils/astro"
 	"befriend/pkg/utils/errors"
 )
@@ -15,6 +16,8 @@ const (
 	friendNameQuestion   = "friend_name"
 	userNicknameQuestion = "user_nickname"
 	evolutionInterval    = 7 * 24 * time.Hour
+	// dogSkin is the published skin a "dog" pick is granted, free.
+	dogSkin = "pixel-dog"
 )
 
 func (s *onboardingService) GetQuestions(ctx context.Context) (*QuestionsResponse, error) {
@@ -25,8 +28,8 @@ func (s *onboardingService) GetQuestions(ctx context.Context) (*QuestionsRespons
 	return &QuestionsResponse{Version: set.Version, Questions: set.Questions.Data}, nil
 }
 
-// Complete stores the answers and creates the friend: born now, with its chart, and version 1 of its
-// personality queued for generation. Onboarding can only be completed once.
+// Complete stores the answers, applies the cat-or-dog pick, and creates the friend: born now, with its chart, and
+// version 1 of its personality queued for POST /friend/hatch. Onboarding can only be completed once.
 func (s *onboardingService) Complete(ctx context.Context, userID string, payload CompletePayload) (*friend.ProfileResponse, error) {
 	if !payload.Consent {
 		return nil, errors.From("VALIDATION_FAILED").WithDetail("consent is required")
@@ -84,6 +87,9 @@ func (s *onboardingService) Complete(ctx context.Context, userID string, payload
 			return err
 		}
 
+		if err := s.pickSpecies(ctx, userID, payload.Species); err != nil {
+			return err
+		}
 		newFriend, err := s.friendService.Create(ctx, create)
 		if err != nil {
 			return err
@@ -96,6 +102,21 @@ func (s *onboardingService) Complete(ctx context.Context, userID string, payload
 	}
 
 	return s.friendService.GetProfile(ctx, userID)
+}
+
+// pickSpecies sets the skin the friend hatches in. The dog is granted first: only a granted skin can be picked.
+func (s *onboardingService) pickSpecies(ctx context.Context, userID, species string) error {
+	switch species {
+	case "cat":
+		return s.userService.UpdateSkin(ctx, userID, nil)
+	case "dog":
+		if err := s.skinService.Grant(ctx, skin.GrantPayload{SkinID: dogSkin, UserID: userID}); err != nil {
+			return err
+		}
+		id := dogSkin
+		return s.userService.UpdateSkin(ctx, userID, &id)
+	}
+	return nil
 }
 
 func textAnswer(answers []model.Answer, questionID string) string {

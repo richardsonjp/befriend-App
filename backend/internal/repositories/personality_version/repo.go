@@ -94,18 +94,7 @@ func (r *personalityVersionRepo) activeReskin(ctx context.Context, friendID stri
 			[]enum.PersonalityStatus{enum.PERSONALITY_PENDING, enum.PERSONALITY_RUNNING, enum.PERSONALITY_FAILED})
 }
 
-func (r *personalityVersionRepo) GetActiveReskin(ctx context.Context, friendID string) (*model.PersonalityVersion, error) {
-	var jobs []model.PersonalityVersion
-	if err := r.activeReskin(ctx, friendID).Order("version DESC").Limit(1).Find(&jobs).Error; err != nil {
-		return nil, err
-	}
-	if len(jobs) == 0 {
-		return nil, nil
-	}
-	return &jobs[0], nil
-}
-
-// AbandonReskins ends every active reskin for good; a running one's worker then finds its claim gone.
+// AbandonReskins ends every active reskin for good; a request still running one then finds its claim gone.
 func (r *personalityVersionRepo) AbandonReskins(ctx context.Context, friendID, reason string, now time.Time) error {
 	return r.activeReskin(ctx, friendID).Updates(map[string]interface{}{
 		"status": enum.PERSONALITY_ABANDONED, "locked_until": nil, "error": reason, "updated_at": now,

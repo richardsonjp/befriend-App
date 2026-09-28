@@ -61,10 +61,6 @@ func (s *personalityVersionService) CreateReskin(ctx context.Context, friendID s
 	})
 }
 
-func (s *personalityVersionService) GetActiveReskin(ctx context.Context, friendID string) (*model.PersonalityVersion, error) {
-	return s.personalityVersionRepo.GetActiveReskin(ctx, friendID)
-}
-
 func (s *personalityVersionService) AbandonReskins(ctx context.Context, friendID, reason string) error {
 	return s.personalityVersionRepo.AbandonReskins(ctx, friendID, truncate(reason), time.Now())
 }

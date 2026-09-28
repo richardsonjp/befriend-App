@@ -204,6 +204,8 @@ func Init() {
 		questionSetService,
 		friendService,
 		personalityVersionService,
+		skinService,
+		userService,
 	)
 	personalityService := servicePersonality.NewPersonalityService(
 		txRepo,
@@ -231,7 +233,7 @@ func Init() {
 		friendService,
 		triggerEventService,
 		skinService,
-		personalityVersionService,
+		personalityService,
 	)
 	authenticationService := serviceAuthentication.NewAuthenticationService(
 		txRepo,

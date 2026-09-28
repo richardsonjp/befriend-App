@@ -8,6 +8,8 @@ import (
 	"befriend/internal/services/friend"
 	"befriend/internal/services/personality_version"
 	"befriend/internal/services/question_set"
+	"befriend/internal/services/skin"
+	"befriend/internal/services/user"
 )
 
 type OnboardingService interface {
@@ -22,6 +24,8 @@ type onboardingService struct {
 	questionSetService        question_set.QuestionSetService
 	friendService             friend.FriendService
 	personalityVersionService personality_version.PersonalityVersionService
+	skinService               skin.SkinService
+	userService               user.UserService
 }
 
 func NewOnboardingService(
@@ -30,6 +34,8 @@ func NewOnboardingService(
 	questionSetService question_set.QuestionSetService,
 	friendService friend.FriendService,
 	personalityVersionService personality_version.PersonalityVersionService,
+	skinService skin.SkinService,
+	userService user.UserService,
 ) OnboardingService {
 	return &onboardingService{
 		txRepo:                    txRepo,
@@ -37,5 +43,7 @@ func NewOnboardingService(
 		questionSetService:        questionSetService,
 		friendService:             friendService,
 		personalityVersionService: personalityVersionService,
+		skinService:               skinService,
+		userService:               userService,
 	}
 }

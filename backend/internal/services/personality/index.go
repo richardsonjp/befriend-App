@@ -20,6 +20,9 @@ type PersonalityService interface {
 	// Hatch writes the user's friend's first personality while the caller waits. Nothing retries a failed hatch:
 	// the error goes back to the app, which offers Try again. Already hatched is a success.
 	Hatch(ctx context.Context, userID string) error
+	// Reskin rewrites a hatched friend's phrasebook for the picked skin (nil = built-in) while the caller waits,
+	// then switches the user to it. On failure the user keeps the skin they had.
+	Reskin(ctx context.Context, friendID string, skinID *string) error
 }
 
 type personalityService struct {

@@ -44,6 +44,27 @@ func (s *personalityService) Hatch(ctx context.Context, userID string) error {
 	return s.process(ctx, job)
 }
 
+func (s *personalityService) Reskin(ctx context.Context, friendID string, skinID *string) error {
+	if s.openRouter == nil {
+		return errors.From("GENERATION_FAILED").WithDetail("no LLM is configured")
+	}
+	err := s.txRepo.Run(ctx, func(ctx context.Context) error {
+		_, err := s.personalityVersionService.CreateReskin(ctx, friendID, skinID) // supersedes an earlier pick
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	job, err := s.personalityVersionService.ClaimForFriend(ctx, friendID, enum.REASON_RESKIN, claimLockFor)
+	if err != nil {
+		return err
+	}
+	if job == nil {
+		return errors.From("GENERATION_RUNNING") // a later pick took over
+	}
+	return s.process(ctx, job)
+}
+
 // ProcessDue claims one evolution at a time, so a claim's lock only has to outlast its own job.
 func (s *personalityService) ProcessDue(ctx context.Context, limit int) (int, error) {
 	if s.openRouter == nil {

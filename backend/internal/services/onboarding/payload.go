@@ -8,6 +8,9 @@ type CompletePayload struct {
 	Timezone           string           `json:"timezone" validate:"required,max=64"` // IANA name, e.g. Asia/Jakarta
 	Location           *LocationPayload `json:"location"`                            // optional: city-level birthplace
 	Consent            bool             `json:"consent" validate:"required"`         // must be true
+	// Species picks the friend's look before it hatches: "cat" is the built-in skin, "dog" is granted free.
+	// Omitted (older apps) keeps whatever skin the account has.
+	Species string `json:"species" validate:"omitempty,oneof=cat dog"`
 }
 
 type AnswerPayload struct {
