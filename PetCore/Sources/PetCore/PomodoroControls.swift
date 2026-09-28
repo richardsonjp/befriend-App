@@ -82,7 +82,7 @@ public struct PomodoroControls: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         if preview, timelapse.isRecording {
-            CameraPreview(session: timelapse.recorder.camera.session)
+            CameraPreview(camera: timelapse.recorder.camera)
                 .aspectRatio(16 / 9, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(alignment: .topLeading) {

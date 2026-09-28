@@ -54,7 +54,7 @@ struct RecordingView: View {
         let state = model.pomodoro.state
         ZStack {
             Color.black.ignoresSafeArea()
-            CameraPreview(session: recorder.camera.session).ignoresSafeArea()
+            CameraPreview(camera: recorder.camera).ignoresSafeArea()
             VStack {
                 HStack {
                     Label(recorder.state == .paused ? "Paused" : "REC", systemImage: "record.circle")

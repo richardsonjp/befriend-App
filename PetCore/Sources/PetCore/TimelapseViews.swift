@@ -48,10 +48,10 @@ public struct TimelapseList: View {
 
 /// The camera, live.
 public struct CameraPreview {
-    let session: AVCaptureSession
+    let camera: TimelapseCamera
 
-    public init(session: AVCaptureSession) {
-        self.session = session
+    public init(camera: TimelapseCamera) {
+        self.camera = camera
     }
 }
 
@@ -66,7 +66,7 @@ extension CameraPreview: UIViewRepresentable {
 
     public func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
-        view.previewLayer.session = session
+        camera.attach(view.previewLayer)
         view.previewLayer.videoGravity = .resizeAspectFill
         return view
     }
@@ -79,7 +79,8 @@ import AppKit
 extension CameraPreview: NSViewRepresentable {
     public func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        let layer = AVCaptureVideoPreviewLayer(session: session)
+        let layer = AVCaptureVideoPreviewLayer()
+        camera.attach(layer)
         layer.videoGravity = .resizeAspectFill
         view.wantsLayer = true // layer-backed first, or AppKit replaces the layer it's given
         view.layer = layer

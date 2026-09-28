@@ -29,6 +29,12 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
         await AVCaptureDevice.requestAccess(for: .video)
     }
 
+    /// Hooks a preview layer up to the session. Waits out a configuration in progress on the camera queue:
+    /// attaching mid-configuration raises an Objective-C exception, which aborts the app.
+    public func attach(_ layer: AVCaptureVideoPreviewLayer) {
+        queue.sync { layer.session = session }
+    }
+
     public func start() {
         queue.async { [self] in
             if !configured { configure() }
