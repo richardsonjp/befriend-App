@@ -49,7 +49,7 @@ struct RecordingView: View {
         let state = model.pomodoro.state
         ZStack {
             Color.black.ignoresSafeArea()
-            CameraPreview(camera: recorder.camera).ignoresSafeArea()
+            FramedPreview(camera: recorder.camera, framing: recorder.framing).ignoresSafeArea()
             VStack {
                 HStack {
                     Label(recorder.state == .paused ? "Paused" : "REC", systemImage: "record.circle")
@@ -105,6 +105,7 @@ struct HomeView: View {
     @State private var showSettings = false
     @State private var showRecording = false
     @State private var showTimelapses = false
+    @State private var showFraming = false
 
     var body: some View {
         NavigationStack {
@@ -142,7 +143,8 @@ struct HomeView: View {
 
                     PomodoroControls(pomodoro: model.pomodoro, timelapse: model.timelapse,
                                      openRecording: { showRecording = true },
-                                     openTimelapses: { showTimelapses = true })
+                                     openTimelapses: { showTimelapses = true },
+                                     openFraming: { showFraming = true })
                         .padding()
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
 
@@ -175,6 +177,10 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView(model: model)
+            }
+            .sheet(isPresented: $showFraming) {
+                TimelapseFramingView(pomodoro: model.pomodoro, camera: model.timelapse.recorder.camera,
+                                     recording: model.timelapse.isRecording)
             }
             .navigationDestination(isPresented: $showTimelapses) {
                 TimelapseGallery(library: model.timelapse.library).navigationTitle("Timelapses")

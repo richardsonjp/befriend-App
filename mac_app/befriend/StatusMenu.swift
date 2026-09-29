@@ -22,6 +22,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let popover = NSPopover()
     private var timelapsesWindow: NSWindow?
     private var calibrationWindow: NSWindow?
+    private var framingWindow: NSWindow?
 
     init(controller: MacController) {
         self.controller = controller
@@ -34,6 +35,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 timelapse: controller.timelapse,
                 preview: true,
                 openTimelapses: { [weak self] in self?.showTimelapses() },
+                openFraming: { [weak self] in self?.showFraming() },
                 more: { [weak self] in self?.showMenu() }
             )
             Divider()
@@ -93,6 +95,24 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         ))
         window.center()
         calibrationWindow = window
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// The timelapse's format and framing in its own window, like posture calibration.
+    private func showFraming() {
+        popover.performClose(nil)
+        framingWindow?.close()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 600),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "Video Format"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: TimelapseFramingView(
+            pomodoro: controller.pomodoro, camera: controller.timelapse.recorder.camera,
+            recording: controller.timelapse.isRecording, finish: { [weak window] in window?.close() }
+        ))
+        window.center()
+        framingWindow = window
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }

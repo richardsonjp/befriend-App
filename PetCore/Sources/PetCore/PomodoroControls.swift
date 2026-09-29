@@ -15,16 +15,19 @@ public struct PomodoroControls: View {
     let preview: Bool
     let openRecording: (() -> Void)?
     let openTimelapses: (() -> Void)?
+    let openFraming: (() -> Void)?
     let more: (() -> Void)?
     @State private var cameraDenied = false
 
     public init(pomodoro: PomodoroRunner, timelapse: TimelapseController? = nil, preview: Bool = false,
-                openRecording: (() -> Void)? = nil, openTimelapses: (() -> Void)? = nil, more: (() -> Void)? = nil) {
+                openRecording: (() -> Void)? = nil, openTimelapses: (() -> Void)? = nil, openFraming: (() -> Void)? = nil,
+                more: (() -> Void)? = nil) {
         self.pomodoro = pomodoro
         self.timelapse = timelapse
         self.preview = preview
         self.openRecording = openRecording
         self.openTimelapses = openTimelapses
+        self.openFraming = openFraming
         self.more = more
     }
 
@@ -89,8 +92,21 @@ public struct PomodoroControls: View {
             Text("befriend can't use the camera. Allow it in System Settings › Privacy & Security › Camera.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+        if state.settings.recordTimelapse, let openFraming {
+            Button(action: openFraming) {
+                HStack {
+                    Label("Video format", systemImage: "crop")
+                    Spacer()
+                    Text(state.settings.framing.format.title).foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Video format, \(state.settings.framing.format.title)")
+        }
         if preview, timelapse.isRecording {
-            CameraPreview(camera: timelapse.recorder.camera)
+            FramedPreview(camera: timelapse.recorder.camera, framing: timelapse.recorder.framing)
                 .aspectRatio(16 / 9, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(alignment: .topLeading) {

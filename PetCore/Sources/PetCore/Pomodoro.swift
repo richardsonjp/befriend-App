@@ -27,12 +27,16 @@ public nonisolated struct PomodoroSettings: Codable, Equatable, Sendable {
     public let friendStaysHome: Bool
     /// Each focus records a 1-minute timelapse with the device's camera (M11).
     public let recordTimelapse: Bool
+    /// The timelapse's shape and which part of the camera it keeps (M16).
+    public let framing: TimelapseFraming
 
-    public init(focus: TimeInterval = 25 * 60, sound: Bool = true, friendStaysHome: Bool = true, recordTimelapse: Bool = false) {
+    public init(focus: TimeInterval = 25 * 60, sound: Bool = true, friendStaysHome: Bool = true, recordTimelapse: Bool = false,
+                framing: TimelapseFraming = TimelapseFraming()) {
         self.focus = focus.clamped(to: Self.durations)
         self.sound = sound
         self.friendStaysHome = friendStaysHome
         self.recordTimelapse = recordTimelapse
+        self.framing = framing
     }
 
     /// Stored settings go through the same clamps. Settings saved before M13 carry break keys, which are ignored.
@@ -41,15 +45,16 @@ public nonisolated struct PomodoroSettings: Codable, Equatable, Sendable {
         self.init(focus: try c.decode(TimeInterval.self, forKey: .focus),
                   sound: try c.decodeIfPresent(Bool.self, forKey: .sound) ?? true,
                   friendStaysHome: try c.decodeIfPresent(Bool.self, forKey: .friendStaysHome) ?? true,
-                  recordTimelapse: try c.decodeIfPresent(Bool.self, forKey: .recordTimelapse) ?? false)
+                  recordTimelapse: try c.decodeIfPresent(Bool.self, forKey: .recordTimelapse) ?? false,
+                  framing: try c.decodeIfPresent(TimelapseFraming.self, forKey: .framing) ?? TimelapseFraming())
     }
 
     /// A copy with some settings changed, clamped like any other.
     public func with(focus: TimeInterval? = nil, sound: Bool? = nil, friendStaysHome: Bool? = nil,
-                     recordTimelapse: Bool? = nil) -> PomodoroSettings {
+                     recordTimelapse: Bool? = nil, framing: TimelapseFraming? = nil) -> PomodoroSettings {
         PomodoroSettings(focus: focus ?? self.focus, sound: sound ?? self.sound,
                          friendStaysHome: friendStaysHome ?? self.friendStaysHome,
-                         recordTimelapse: recordTimelapse ?? self.recordTimelapse)
+                         recordTimelapse: recordTimelapse ?? self.recordTimelapse, framing: framing ?? self.framing)
     }
 }
 

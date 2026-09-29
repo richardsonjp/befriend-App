@@ -171,7 +171,11 @@ public final class TimelapseRecorder {
 
     private var workFolder: URL { FileManager.default.temporaryDirectory.appending(path: "befriend-timelapse", directoryHint: .isDirectory) }
 
-    func start(planned: TimeInterval) {
+    /// The shape and part of the camera this recording keeps; fixed when it starts (M16).
+    public private(set) var framing = TimelapseFraming()
+
+    func start(planned: TimeInterval, framing: TimelapseFraming) {
+        self.framing = framing
         try? FileManager.default.createDirectory(at: workFolder, withIntermediateDirectories: true)
         writer = TimelapseWriter(rawURL: workFolder.appending(path: "raw-\(UUID().uuidString).mp4"))
         startedAt = .now
@@ -228,7 +232,8 @@ public final class TimelapseRecorder {
     // ponytail: renders on the main actor, a few ms once per ≥0.5 s; move it to a background actor if it ever
     // shows as a hitch.
     private func tick() {
-        guard state == .recording, let writer, let frame = camera.latest else { return }
+        guard state == .recording, let writer, let full = camera.latest else { return }
+        let frame = full.cropped(to: framing.crop(in: full.extent))
         // The video keeps the size it opened with; the overlay must match it even if the camera turns.
         let size = writer.size ?? TimelapsePlan.size(for: frame.extent)
         let second = Int(Double(ticks) * interval)
@@ -279,7 +284,7 @@ public final class TimelapseController {
         case .none: break
         case .start:
             recordingPhase = pomodoro.phaseID
-            recorder.start(planned: pomodoro.settings.focus)
+            recorder.start(planned: pomodoro.settings.focus, framing: pomodoro.settings.framing)
         case .pause: recorder.pause()
         case .resume: recorder.resume()
         case .finish:
