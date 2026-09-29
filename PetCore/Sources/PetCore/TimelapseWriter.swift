@@ -22,9 +22,9 @@ public nonisolated enum TimelapsePlan {
         max(minInterval, planned / Double(frames))
     }
 
-    /// 1280×720, or 720×1280 for a portrait camera.
+    /// The camera's own frame size, full resolution; H.264 wants even dimensions.
     public static func size(for frame: CGRect) -> CGSize {
-        frame.height > frame.width ? CGSize(width: 720, height: 1280) : CGSize(width: 1280, height: 720)
+        CGSize(width: (frame.width / 2).rounded(.down) * 2, height: (frame.height / 2).rounded(.down) * 2)
     }
 }
 

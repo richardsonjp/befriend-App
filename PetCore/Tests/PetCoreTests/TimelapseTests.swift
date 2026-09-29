@@ -31,8 +31,8 @@ struct TimelapseTests {
         #expect(abs(TimelapsePlan.interval(for: 25 * 60) - 0.8333) < 0.001)
         #expect(TimelapsePlan.interval(for: 180 * 60) == 6)
         #expect(TimelapsePlan.interval(for: 60) == TimelapsePlan.minInterval, "a 1-minute focus plays slower instead")
-        #expect(TimelapsePlan.size(for: CGRect(x: 0, y: 0, width: 1920, height: 1080)) == CGSize(width: 1280, height: 720))
-        #expect(TimelapsePlan.size(for: CGRect(x: 0, y: 0, width: 1080, height: 1920)) == CGSize(width: 720, height: 1280))
+        #expect(TimelapsePlan.size(for: CGRect(x: 0, y: 0, width: 3840, height: 2160)) == CGSize(width: 3840, height: 2160), "full resolution")
+        #expect(TimelapsePlan.size(for: CGRect(x: 0, y: 0, width: 1081, height: 1921)) == CGSize(width: 1080, height: 1920), "even for H.264")
     }
 
     // A 2-second "minute" keeps the test fast; the maths is the same.
@@ -64,7 +64,7 @@ struct TimelapseTests {
         writer.cancel()
     }
 
-    @Test func theLibraryKeepsTheNewestTen() throws {
+    @Test func theLibraryKeepsTheNewestNine() throws {
         let dir = scratch()
         let library = TimelapseLibrary(folder: dir.appending(path: "Timelapses"))
         for i in 0..<12 {
@@ -75,10 +75,24 @@ struct TimelapseTests {
         }
         #expect(library.videos.count == TimelapseLibrary.keep)
         #expect(library.videos.first?.startedAt == Date(timeIntervalSince1970: 1_800_000_000 + 11 * 3600), "newest first")
-        #expect(library.totalBytes == 30)
+        #expect(library.totalBytes == 27)
         library.delete(try #require(library.videos.first))
-        #expect(library.videos.count == 9)
-        #expect(TimelapseLibrary(folder: dir.appending(path: "Timelapses")).videos.count == 9, "survives a relaunch")
+        #expect(library.videos.count == 8)
+        #expect(TimelapseLibrary(folder: dir.appending(path: "Timelapses")).videos.count == 8, "survives a relaunch")
+    }
+
+    @Test func aLibraryFromWhenTenWereKeptDropsTheOldest() throws {
+        let folder = scratch().appending(path: "Timelapses", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for i in 0..<10 {
+            let meta = Timelapse(id: "v\(i)", startedAt: Date(timeIntervalSince1970: 1_800_000_000 + Double(i) * 3600),
+                                 plannedSeconds: 1500, recordedSeconds: 1500)
+            try JSONEncoder().encode(meta).write(to: folder.appending(path: "v\(i).json"))
+            try Data([0]).write(to: folder.appending(path: "v\(i).mp4"))
+        }
+        let library = TimelapseLibrary(folder: folder)
+        #expect(library.videos.count == 9 && library.videos.last?.id == "v1", "v0, the oldest, is gone")
+        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "v0.mp4").path))
     }
 
     @Test func theControllerFollowsTheFocus() {

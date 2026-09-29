@@ -22,6 +22,12 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
     private var configured = false
     /// Who needs the camera now; touched only on `queue`.
     private var users: Set<String> = []
+    /// The rotation the frames should have (iPhone: follows how the phone is held); read under `lock`.
+    private var rotationAngle: CGFloat = 0
+    #if os(iOS)
+    private var rotation: AVCaptureDevice.RotationCoordinator?
+    private var rotationObservation: NSKeyValueObservation?
+    #endif
 
     public var latest: CIImage? { lock.withLock { frame } }
 
@@ -60,7 +66,8 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
         configured = true
         session.beginConfiguration()
         defer { session.commitConfiguration() }
-        session.sessionPreset = .hd1280x720
+        // Full resolution: the best the camera films at (M15).
+        session.sessionPreset = [.hd4K3840x2160, .hd1920x1080, .high].first(where: session.canSetSessionPreset) ?? .high
         #if os(iOS)
         let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
         #else
@@ -74,17 +81,34 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
         #if os(iOS)
-        // Held upright on a stand: portrait, mirrored like a selfie.
+        // Upright the way the phone is held (portrait on a stand), mirrored like a selfie. A fixed 90° left some
+        // recordings landscape; the rotation coordinator follows the real orientation instead.
         if let connection = output.connection(with: .video) {
-            if connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
             if connection.isVideoMirroringSupported { connection.isVideoMirrored = true }
+            let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+            rotate(connection, to: coordinator.videoRotationAngleForHorizonLevelCapture)
+            rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.new]) { [weak self] coordinator, _ in
+                let angle = coordinator.videoRotationAngleForHorizonLevelCapture
+                self?.queue.async { self?.rotate(connection, to: angle) }
+            }
+            rotation = coordinator
         }
         #endif
     }
 
+    private func rotate(_ connection: AVCaptureConnection, to angle: CGFloat) {
+        if connection.isVideoRotationAngleSupported(angle) { connection.videoRotationAngle = angle }
+        lock.withLock { rotationAngle = angle }
+    }
+
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let image = CIImage(cvPixelBuffer: pixels)
+        var image = CIImage(cvPixelBuffer: pixels)
+        let angle = lock.withLock { rotationAngle }
+        // Belt and braces: a portrait angle must give a portrait frame, even if the connection didn't rotate it.
+        if angle == 90 || angle == 270, image.extent.width > image.extent.height {
+            image = image.oriented(angle == 90 ? .right : .left)
+        }
         lock.withLock { frame = image }
     }
 }

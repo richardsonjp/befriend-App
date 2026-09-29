@@ -21,7 +21,7 @@ public nonisolated struct Timelapse: Codable, Equatable, Identifiable, Sendable 
 /// This device's timelapses, newest first. Never uploaded; only the newest `keep` are kept.
 @Observable
 public final class TimelapseLibrary {
-    public static let keep = 10
+    public static let keep = 9
 
     public private(set) var videos: [Timelapse] = []
     public let folder: URL
@@ -29,6 +29,7 @@ public final class TimelapseLibrary {
     public init(folder: URL) {
         self.folder = folder
         reload()
+        prune() // a library from when more were kept
     }
 
     public var totalBytes: Int {
@@ -43,6 +44,10 @@ public final class TimelapseLibrary {
         let meta = Timelapse(id: id, startedAt: startedAt, plannedSeconds: plannedSeconds, recordedSeconds: recordedSeconds)
         try JSONEncoder().encode(meta).write(to: folder.appending(path: "\(id).json"), options: .atomic)
         reload()
+        prune()
+    }
+
+    private func prune() {
         for old in videos.dropFirst(Self.keep) {
             delete(old)
         }
