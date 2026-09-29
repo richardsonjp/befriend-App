@@ -68,6 +68,58 @@ enum FrameSize {
     }
 }
 
+/// Exactly what will be recorded, live: the kept part of the camera at the video's shape, with the watermark and
+/// clock where the video draws them.
+struct LiveCropPreview: View {
+    let camera: TimelapseCamera
+    let framing: TimelapseFraming
+    let focus: TimeInterval
+    @State private var image: CGImage?
+    @State private var shape = CGSize(width: 9, height: 16)
+
+    private static let context = CIContext()
+    private static let maxSide: CGFloat = 480
+    private static let refresh: Duration = .milliseconds(100)
+
+    var body: some View {
+        Rectangle()
+            .fill(.black)
+            .overlay {
+                if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() }
+            }
+            .overlay {
+                GeometryReader { geo in
+                    TimelapseOverlay(size: geo.size, friend: nil, clock: "00:00 / " + Pomodoro.clock(focus))
+                }
+            }
+            .clipped()
+            .aspectRatio(shape.width / shape.height, contentMode: .fit)
+            .frame(maxHeight: 360)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityElement()
+            .accessibilityLabel("Live preview of what's recorded, \(framing.format.title)")
+            .task(id: framing) {
+                while !Task.isCancelled {
+                    if let full = camera.latest {
+                        let crop = framing.crop(in: full.extent)
+                        shape = crop.size
+                        image = await Self.render(full.cropped(to: crop))
+                    }
+                    try? await Task.sleep(for: Self.refresh)
+                }
+            }
+    }
+
+    /// Scaled down off the main thread: a preview doesn't need 4K.
+    private static func render(_ image: CIImage) async -> CGImage? {
+        await Task.detached(priority: .userInitiated) {
+            let scale = min(1, maxSide / max(image.extent.width, image.extent.height))
+            let small = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            return context.createCGImage(small, from: small.extent)
+        }.value
+    }
+}
+
 /// "Video format": pick a shape, drag the box onto yourself, pick a zoom preset. Done saves it for the next
 /// recording; while one runs, it keeps its framing and this applies from the next focus.
 public struct TimelapseFramingView: View {
@@ -100,7 +152,16 @@ public struct TimelapseFramingView: View {
             .pickerStyle(.segmented)
             Text("\(framing.format.title) · \(framing.format.platforms)")
                 .font(.callout).foregroundStyle(.secondary)
-            preview
+            HStack(alignment: .top, spacing: 12) {
+                VStack(spacing: 6) {
+                    preview
+                    Text("Camera").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                VStack(spacing: 6) {
+                    LiveCropPreview(camera: camera, framing: framing, focus: pomodoro.state.settings.focus)
+                    Label("Recorded", systemImage: "record.circle").font(.caption.weight(.semibold)).foregroundStyle(.red)
+                }
+            }
             if framing.format != .original {
                 Picker("Zoom", selection: $framing.placement.zoom) {
                     ForEach(TimelapseZoom.allCases) { Text($0.title).tag($0) }
@@ -128,7 +189,9 @@ public struct TimelapseFramingView: View {
             .controlSize(.large)
         }
         .padding(24)
-        .frame(minWidth: 380)
+        #if os(macOS)
+        .frame(minWidth: 520) // camera and result side by side
+        #endif
         .onAppear { camera.start(for: Self.cameraUser) }
         .onDisappear { camera.stop(for: Self.cameraUser) }
         .task { await FrameSize.follow(camera) { frameSize = $0 } }
@@ -139,7 +202,7 @@ public struct TimelapseFramingView: View {
         let size = frameSize ?? CGSize(width: 16, height: 9)
         return CameraPreview(camera: camera)
             .aspectRatio(size.width / size.height, contentMode: .fit)
-            .frame(maxHeight: 420)
+            .frame(maxHeight: 360)
             .overlay {
                 if framing.format != .original {
                     GeometryReader { geo in
