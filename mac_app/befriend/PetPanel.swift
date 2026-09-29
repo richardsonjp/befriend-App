@@ -35,7 +35,7 @@ final class PetPanel: NSPanel {
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         hidesOnDeactivate = false
-        isMovableByWindowBackground = true
+        isMovableByWindowBackground = false // dragged by hand: see DraggableHostingView
 
         let hostingView = DraggableHostingView(rootView: content(self))
         hostingView.sizingOptions = [] // keep the fixed frame; SwiftUI content lays out inside it
@@ -117,7 +117,39 @@ final class PetPanel: NSPanel {
     }
 }
 
-/// SwiftUI content doesn't let the window drag by default; this makes the whole pet a drag handle.
+/// Less movement than this is a click (a poke), not a drag.
+private let dragThreshold: CGFloat = 3
+
+/// Makes the friend a drag handle that goes anywhere, other displays and under the menu bar included. The panel is
+/// moved by hand: AppKit's own window drag keeps a window's top below the menu bar, and the friend stands at the
+/// bottom of a tall panel, so it could never reach the top of the screen.
 private final class DraggableHostingView<Content: View>: NSHostingView<Content> {
-    override var mouseDownCanMoveWindow: Bool { true }
+    private var grab: (mouse: NSPoint, origin: NSPoint)?
+    private var dragged = false
+
+    override func mouseDown(with event: NSEvent) {
+        grab = (NSEvent.mouseLocation, window?.frame.origin ?? .zero)
+        dragged = false
+        super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let grab, let window else { return super.mouseDragged(with: event) }
+        let mouse = NSEvent.mouseLocation
+        let dx = mouse.x - grab.mouse.x, dy = mouse.y - grab.mouse.y
+        guard dragged || hypot(dx, dy) >= dragThreshold else { return }
+        dragged = true
+        window.setFrameOrigin(NSPoint(x: grab.origin.x + dx, y: grab.origin.y + dy))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        grab = nil
+        // A drag isn't a poke: end the press far outside the friend, so SwiftUI's tap gesture fails instead of firing.
+        guard dragged, let away = NSEvent.mouseEvent(
+            with: .leftMouseUp, location: NSPoint(x: -10_000, y: -10_000), modifierFlags: event.modifierFlags,
+            timestamp: event.timestamp, windowNumber: event.windowNumber, context: nil,
+            eventNumber: event.eventNumber, clickCount: event.clickCount, pressure: 0
+        ) else { return super.mouseUp(with: event) }
+        super.mouseUp(with: away)
+    }
 }
