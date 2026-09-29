@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs><clipPath id="squircle"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath></defs>
+  <g clip-path="url(#squircle)"><g transform="translate(100 100) scale(0.8046875)">
+  <rect width="1024" height="1024" fill="#FBF3E4"/>
+  <g fill="none" stroke="#2B2F36" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <!-- cat ears (small, rounded, folded forward) -->
+    <path d="M262 420 C262 370 280 340 300 332 C318 326 335 352 345 385" fill="#FBF3E4"/>
+    <path d="M375 385 C385 352 402 326 420 332 C440 340 458 370 458 420" fill="#FBF3E4"/>
+    <!-- cat head -->
+    <path d="M222 495 C222 415 285 370 360 370 C435 370 498 415 498 495 C498 580 437 630 360 630 C283 630 222 580 222 495 Z" fill="#FBF3E4"/>
+    <!-- cat eyes -->
+    <path d="M288 490 C302 468 330 468 344 490 C330 510 302 510 288 490 Z" fill="#2B2F36"/>
+    <path d="M376 490 C390 468 418 468 432 490 C418 510 390 510 376 490 Z" fill="#2B2F36"/>
+    <!-- cat nose + mouth -->
+    <path d="M347 533 L373 533 L360 548 Z" fill="#2B2F36"/>
+    <path d="M360 548 C360 568 337 570 330 558"/>
+    <path d="M360 548 C360 568 383 570 390 558"/>
+    <!-- whiskers -->
+    <line x1="296" y1="552" x2="244" y2="544"/>
+    <line x1="424" y1="552" x2="476" y2="544"/>
+    <!-- dog ears -->
+    <path d="M578 440 L552 240 L675 375" fill="#FBF3E4"/>
+    <path d="M750 375 L872 240 L846 440" fill="#FBF3E4"/>
+    <path d="M580 400 L570 312 L622 368"/>
+    <path d="M803 368 L854 312 L844 400"/>
+    <!-- dog head -->
+    <path d="M556 485 C556 408 626 368 712 368 C798 368 868 408 868 485 C868 555 828 588 796 612 C770 630 742 638 712 638 C682 638 654 630 628 612 C596 588 556 555 556 485 Z" fill="#FBF3E4"/>
+    <!-- blaze -->
+    <path d="M693 374 C700 410 700 440 694 468"/>
+    <path d="M731 374 C724 410 724 440 730 468"/>
+    <!-- dog eyes -->
+    <circle cx="640" cy="488" r="16" fill="#2B2F36"/>
+    <circle cx="784" cy="488" r="16" fill="#2B2F36"/>
+    <!-- nose, mouth, tongue -->
+    <path d="M692 532 C692 514 732 514 732 532 C732 546 721 554 712 554 C703 554 692 546 692 532 Z" fill="#2B2F36"/>
+    <path d="M712 554 C712 578 690 582 680 570"/>
+    <path d="M712 554 C712 578 734 582 744 570"/>
+    <path d="M692 574 C692 628 732 628 732 574" fill="#F2D14B"/>
+    <!-- sofa -->
+    <path d="M110 710 Q110 660 160 660 L864 660 Q914 660 914 710 L914 750 L110 750 Z" fill="#F2D14B"/>
+    <line x1="512" y1="660" x2="512" y2="750"/>
+    <!-- paws resting on the sofa -->
+    <ellipse cx="300" cy="660" rx="30" ry="20" fill="#FBF3E4"/>
+    <ellipse cx="420" cy="660" rx="30" ry="20" fill="#FBF3E4"/>
+    <ellipse cx="640" cy="660" rx="30" ry="20" fill="#FBF3E4"/>
+    <ellipse cx="784" cy="660" rx="30" ry="20" fill="#FBF3E4"/>
+  </g>
+  <text x="512" y="900" text-anchor="middle" font-family="Avenir Next" font-weight="bold" font-size="140" letter-spacing="2" fill="#2B2F36">befriend</text>
+  </g></g>
+</svg>
