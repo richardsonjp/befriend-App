@@ -63,11 +63,8 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
     }
 
     private func configure() {
-        configured = true
         session.beginConfiguration()
         defer { session.commitConfiguration() }
-        // Full resolution: the best the camera films at (M15).
-        session.sessionPreset = [.hd4K3840x2160, .hd1920x1080, .high].first(where: session.canSetSessionPreset) ?? .high
         #if os(iOS)
         let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
         #else
@@ -80,6 +77,10 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
         output.setSampleBufferDelegate(self, queue: queue)
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
+        // Full resolution: the best this camera films at (M15). Chosen once the camera is attached: with no input
+        // the session accepts 4K, and a 1080p webcam is then refused, leaving no picture at all.
+        session.sessionPreset = [.hd4K3840x2160, .hd1920x1080, .high].first(where: session.canSetSessionPreset) ?? .high
+        configured = true // a camera that couldn't be attached (no permission yet) is tried again on the next start
         #if os(iOS)
         // Upright the way the phone is held (portrait on a stand), mirrored like a selfie. A fixed 90° left some
         // recordings landscape; the rotation coordinator follows the real orientation instead.
