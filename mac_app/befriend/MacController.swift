@@ -44,6 +44,12 @@ final class MacController {
         library: TimelapseLibrary(folder: MacConfig.timelapseFolder),
         skin: { [weak self] in self?.skins.current }
     )
+    /// Green/red posture light (M14), sharing the timelapse camera; paused while the Mac sleeps or is locked.
+    @ObservationIgnored private(set) lazy var posture: PostureChecker = {
+        let checker = PostureChecker(camera: timelapse.recorder.camera)
+        checker.onNudge = { [weak self] in self?.postureNudge() }
+        return checker
+    }()
     @ObservationIgnored private var sleepObservers: [NSObjectProtocol] = []
     /// Paid skins; a purchase unlocks the skin for the account on every device.
     @ObservationIgnored private(set) lazy var shop: SkinShop = {
@@ -179,6 +185,7 @@ final class MacController {
         }
         observeSleep()
         timelapse.setSignedIn(true)
+        _ = posture // turns itself back on if it was on
         // A focus that outlived a relaunch or sign-out keeps the friend home.
         friendVisible = !pomodoro.state.friendHome
         if friendVisible { walker.comeOut() }
@@ -244,7 +251,14 @@ final class MacController {
         }
     }
 
-    /// Sleep, screens off or a locked screen pause the timelapse; that time is skipped in the video.
+    /// A long slouch: the friend invites the user to sit up, unless it's home for a focus.
+    private func postureNudge() {
+        guard friend != nil, friendVisible, !pomodoro.state.friendHome else { return }
+        brain.handle(.slouching)
+    }
+
+    /// Sleep, screens off or a locked screen pause the timelapse (that time is skipped in the video) and the
+    /// posture check.
     private func observeSleep() {
         guard sleepObservers.isEmpty else { return }
         let workspace = NSWorkspace.shared.notificationCenter
@@ -257,7 +271,10 @@ final class MacController {
         ]
         sleepObservers = away.map { center, name, isAway in
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.timelapse.setAway(isAway) }
+                MainActor.assumeIsolated {
+                    self?.timelapse.setAway(isAway)
+                    self?.posture.setAway(isAway)
+                }
             }
         }
     }
@@ -469,6 +486,7 @@ final class MacController {
 
     private func signedOut() {
         timelapse.setSignedIn(false) // the camera never outlives the account
+        posture.setOn(false)
         friendPoll?.cancel()
         friendPoll = nil
         backgroundRefresh?.cancel()

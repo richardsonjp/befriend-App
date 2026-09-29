@@ -21,19 +21,24 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let popover = NSPopover()
     private var timelapsesWindow: NSWindow?
+    private var calibrationWindow: NSWindow?
 
     init(controller: MacController) {
         self.controller = controller
         super.init()
         menu.delegate = self
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: PomodoroControls(
-            pomodoro: controller.pomodoro,
-            timelapse: controller.timelapse,
-            preview: true,
-            openTimelapses: { [weak self] in self?.showTimelapses() },
-            more: { [weak self] in self?.showMenu() }
-        ).padding(16).frame(width: 290))
+        popover.contentViewController = NSHostingController(rootView: VStack(alignment: .leading, spacing: 16) {
+            PomodoroControls(
+                pomodoro: controller.pomodoro,
+                timelapse: controller.timelapse,
+                preview: true,
+                openTimelapses: { [weak self] in self?.showTimelapses() },
+                more: { [weak self] in self?.showMenu() }
+            )
+            Divider()
+            PostureControls(checker: controller.posture) { [weak self] turnOn in self?.showCalibration(turnOnAfter: turnOn) }
+        }.padding(16).frame(width: 290))
         if let button = item.button {
             button.target = self
             button.action = #selector(clicked)
@@ -74,6 +79,28 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         timelapsesWindow?.makeKeyAndOrderFront(nil)
     }
 
+    /// Posture calibration in its own window: a transient popover can't host a sheet.
+    private func showCalibration(turnOnAfter: Bool) {
+        popover.performClose(nil)
+        calibrationWindow?.close()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 520),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "Posture"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: PostureCalibrationView(
+            checker: controller.posture, turnOnAfter: turnOnAfter,
+            finish: { [weak window] in window?.close() }
+        ))
+        window.center()
+        calibrationWindow = window
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func recalibratePosture() {
+        showCalibration(turnOnAfter: false)
+    }
+
     /// Opens the menu under the icon: attached only while it's open, so a normal click reaches `clicked`.
     private func showMenu() {
         popover.performClose(nil)
@@ -112,12 +139,22 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return image
     }
 
-    /// " 18:42" while a focus runs or is paused, with a red " ●" first while a timelapse records.
+    /// The posture light while the check is on (a green or red figure; gray when it can't see you), then " 18:42"
+    /// while a focus runs or is paused, with a red " ●" first while a timelapse records.
     private func countdown() -> NSAttributedString {
         let pomodoro = controller.pomodoro
-        guard controller.stage == .ready, pomodoro.state.status != .ready else { return NSAttributedString() }
+        guard controller.stage == .ready else { return NSAttributedString() }
         let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         let title = NSMutableAttributedString()
+        let posture = controller.posture.status
+        if posture != .off, let figure = NSImage(systemSymbolName: "figure.stand", accessibilityDescription: "Posture: \(posture.title)")?
+            .withSymbolConfiguration(.init(paletteColors: [NSColor(posture.color)])) {
+            let attachment = NSTextAttachment()
+            attachment.image = figure
+            title.append(NSAttributedString(string: " "))
+            title.append(NSAttributedString(attachment: attachment))
+        }
+        guard pomodoro.state.status != .ready else { return title }
         if controller.timelapse.recorder.state == .recording {
             title.append(NSAttributedString(string: " ●", attributes: [.foregroundColor: NSColor.systemRed, .font: font]))
         }
@@ -137,6 +174,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             let stop = NSMenuItem(title: appName.map { "Stop Tracking “\($0)”" } ?? "Stop Tracking an App", action: appName == nil ? nil : #selector(stopTracking), keyEquivalent: "")
             menu.addItem(stop.targeted(self))
             menu.addItem(NSMenuItem(title: "Delete Synced Activity…", action: #selector(deleteActivity), keyEquivalent: "").targeted(self))
+            if controller.posture.baseline != nil {
+                menu.addItem(NSMenuItem(title: "Re-calibrate Posture…", action: #selector(recalibratePosture), keyEquivalent: "").targeted(self))
+            }
             menu.addItem(.separator())
             menu.addItem(skinMenu())
             #if DEBUG

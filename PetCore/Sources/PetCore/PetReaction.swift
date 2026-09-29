@@ -60,6 +60,7 @@ public nonisolated extension PetReaction {
         case .pomodoro(.focusStarted): PetReaction(action: .cheer, mood: .excited, dialogue: "Let's focus! See you when it's done.")
         case .pomodoro(.focusEnded): PetReaction(action: .celebrate, mood: .proud, dialogue: "Nice work! Stretch with me?")
         case .pomodoro(.calledOut): PetReaction(action: .wave, mood: .shy, dialogue: "Just a quick hi! Keep going.")
+        case .slouching: PetReaction(action: .stretch, mood: .concerned, dialogue: "Sit up with me? Shoulders back!")
         }
     }
 

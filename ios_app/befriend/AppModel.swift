@@ -41,6 +41,13 @@ final class AppModel {
         skin: { [weak self] in self?.skins.current }
     )
 
+    /// Green/red posture light (M14): shares the timelapse camera, only while the app is on screen.
+    @ObservationIgnored private(set) lazy var posture: PostureChecker = {
+        let checker = PostureChecker(camera: timelapse.recorder.camera)
+        checker.onNudge = { [weak self] in self?.postureNudge() }
+        return checker
+    }()
+
     @ObservationIgnored let api = AppConfig.makeAPIClient()
     /// Paid skins; a purchase unlocks the skin for the account on every device.
     @ObservationIgnored private(set) lazy var shop: SkinShop = {
@@ -85,6 +92,13 @@ final class AppModel {
             self.brain.handle(.pomodoro(moment))
         }
         pomodoroChanged()
+        _ = posture // turns itself back on if it was on
+    }
+
+    /// A long slouch: the friend invites the user to sit up, unless it's focusing alongside them.
+    private func postureNudge() {
+        guard friend != nil, !pomodoro.state.friendHome else { return }
+        brain.handle(.slouching)
     }
 
     // MARK: Pomodoro
@@ -184,6 +198,7 @@ final class AppModel {
 
     private func signedOut() {
         timelapse.setSignedIn(false) // the camera never outlives the account
+        posture.setOn(false)
         uploader.stop()
         uploader.clear()
         hatchTask?.cancel()
@@ -351,6 +366,7 @@ final class AppModel {
         if scenePhase == .active { pomodoro.settle() }
         if scenePhase != .inactive {
             timelapse.setAway(scenePhase != .active)
+            posture.setAway(scenePhase != .active)
             timelapseChanged()
         }
         if scenePhase != .inactive { isForeground = scenePhase == .active }

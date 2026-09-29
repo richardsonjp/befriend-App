@@ -15,6 +15,11 @@ public nonisolated enum TriggerKind: String, CaseIterable, Codable, Sendable {
     case checkIn = "check_in"
     /// Pomodoro moments (M10): on-device only, never uploaded or in the phrasebook.
     case pomodoro
+    /// The posture checker saw the user slouch for a while (M14): on-device only, like pomodoro moments.
+    case posture
+
+    /// Never uploaded, and never in the phrasebook: the friend answers with the model or a canned line.
+    public var staysOnDevice: Bool { self == .pomodoro || self == .posture }
 }
 
 /// The pomodoro moments the friend reacts to.
@@ -37,6 +42,8 @@ public nonisolated enum Trigger: Equatable, Sendable {
     /// Periodic check-in while the user is away (background refresh).
     case checkIn
     case pomodoro(PomodoroMoment)
+    /// The user has been slouching for a while (posture checker).
+    case slouching
 
     public var kind: TriggerKind {
         switch self {
@@ -47,6 +54,7 @@ public nonisolated enum Trigger: Equatable, Sendable {
         case .poked: .poked
         case .checkIn: .checkIn
         case .pomodoro: .pomodoro
+        case .slouching: .posture
         }
     }
 }
@@ -79,6 +87,7 @@ public nonisolated extension Trigger {
             "The user just started a \(minutes)-minute focus session. Cheer them on in a few words; you'll stay quiet until it ends."
         case .pomodoro(.focusEnded): "The user just finished a focus session: celebrate with them."
         case .pomodoro(.calledOut): "The user called you out during their focus session. Say a quick hello without distracting them."
+        case .slouching: "The user has been slouching at their desk for a while. Gently invite them to sit up with you, in a few words."
         }
     }
 
@@ -94,6 +103,7 @@ public nonisolated extension Trigger {
         case .pomodoro(.focusStarted): "started focusing"
         case .pomodoro(.focusEnded): "finished a focus session"
         case .pomodoro(.calledOut): "called you out during focus"
+        case .slouching: "was slouching"
         }
     }
 

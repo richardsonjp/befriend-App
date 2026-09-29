@@ -11,7 +11,8 @@ import CoreImage
 import Observation
 import SwiftUI
 
-/// The camera, keeping only its latest frame for the recorder to sample.
+/// The camera, keeping only its latest frame for its users to sample: the timelapse recorder and the posture
+/// checker (M14) share it, and it runs while either needs it.
 public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     /// For a live preview (AVCaptureVideoPreviewLayer).
     public let session = AVCaptureSession()
@@ -19,6 +20,8 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
     private let lock = NSLock()
     private var frame: CIImage?
     private var configured = false
+    /// Who needs the camera now; touched only on `queue`.
+    private var users: Set<String> = []
 
     public var latest: CIImage? { lock.withLock { frame } }
 
@@ -35,15 +38,19 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
         queue.sync { layer.session = session }
     }
 
-    public func start() {
+    public func start(for user: String) {
         queue.async { [self] in
+            users.insert(user)
             if !configured { configure() }
             if !session.isRunning { session.startRunning() }
         }
     }
 
-    public func stop() {
+    /// Stops the camera once no one else needs it.
+    public func stop(for user: String) {
         queue.async { [self] in
+            users.remove(user)
+            guard users.isEmpty else { return }
             session.stopRunning()
             lock.withLock { frame = nil }
         }
@@ -119,6 +126,8 @@ struct TimelapseOverlay: View {
 public final class TimelapseRecorder {
     public enum State { case idle, recording, paused }
 
+    private static let cameraUser = "timelapse"
+
     public private(set) var state = State.idle {
         didSet { if state != oldValue { onStateChange() } }
     }
@@ -147,7 +156,7 @@ public final class TimelapseRecorder {
         ticks = 0
         overlay = (-1, nil)
         state = .recording
-        camera.start()
+        camera.start(for: Self.cameraUser)
         ticker = Task { [weak self] in
             while !Task.isCancelled, let interval = self?.interval { // ends with the recorder, too
                 try? await Task.sleep(for: .seconds(interval))
@@ -160,13 +169,13 @@ public final class TimelapseRecorder {
     func pause() {
         guard state == .recording else { return }
         state = .paused
-        camera.stop()
+        camera.stop(for: Self.cameraUser)
     }
 
     func resume() {
         guard state == .paused else { return }
         state = .recording
-        camera.start()
+        camera.start(for: Self.cameraUser)
     }
 
     /// Ends the recording and files the minute-long video.
@@ -187,7 +196,7 @@ public final class TimelapseRecorder {
     private func stopTicking() {
         ticker?.cancel()
         ticker = nil
-        camera.stop()
+        camera.stop(for: Self.cameraUser)
         state = .idle
         writer = nil
     }

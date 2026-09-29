@@ -56,6 +56,8 @@ struct RecordingView: View {
                         .font(.headline).foregroundStyle(.red)
                         .padding(8).background(.ultraThinMaterial, in: Capsule())
                     Spacer()
+                    if model.posture.isOn { PostureLight(status: model.posture.status) }
+                    Spacer()
                     Button { dismiss() } label: { Image(systemName: "chevron.down").font(.title2) }
                         .buttonStyle(.bordered)
                         .accessibilityLabel("Hide; keeps recording")
@@ -108,6 +110,9 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 28) {
+                    if model.posture.isOn {
+                        PostureLight(status: model.posture.status)
+                    }
                     VStack(spacing: 16) {
                         if let dialogue = model.pet.dialogue, !model.pomodoro.state.friendHome {
                             SpeechBubble(text: dialogue)
@@ -138,6 +143,10 @@ struct HomeView: View {
                     PomodoroControls(pomodoro: model.pomodoro, timelapse: model.timelapse,
                                      openRecording: { showRecording = true },
                                      openTimelapses: { showTimelapses = true })
+                        .padding()
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
+
+                    PostureControls(checker: model.posture)
                         .padding()
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
 

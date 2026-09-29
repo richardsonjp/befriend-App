@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSCameraUsageDescription</key>
-	<string>befriend records a timelapse of your focus sessions when you turn it on. Videos stay on this iPhone.</string>
+	<string>befriend uses the camera for the features you turn on: a timelapse of your focus sessions, and a posture check. Videos and camera images stay on this iPhone.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save a focus timelapse to your photo library.</string>
 	<key>APIBaseURL</key>
