@@ -55,7 +55,7 @@ struct PetReactionTests {
 
     @Test func fallbackCoversEveryKind() {
         let triggers: [Trigger] = [.appSwitched(name: "Notes"), .wentIdle(seconds: 1), .returned(afterSeconds: 1), .leftApp, .poked, .checkIn,
-                                   .pomodoro(.focusStarted(minutes: 25)), .pomodoro(.focusEnded(longBreak: true)), .pomodoro(.breakEnded), .pomodoro(.calledOut)]
+                                   .pomodoro(.focusStarted(minutes: 25)), .pomodoro(.focusEnded), .pomodoro(.calledOut)]
         #expect(Set(triggers.map(\.kind)) == Set(TriggerKind.allCases))
         for trigger in triggers {
             #expect(!PetReaction.fallback(for: trigger).dialogue.isEmpty)

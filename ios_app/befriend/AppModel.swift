@@ -76,8 +76,7 @@ final class AppModel {
         }
         PomodoroIntent.handler = { [weak self] in self?.pomodoroCommand($0) }
         shop.start()
-        pomodoro.mayAutoStart = { [weak self] in self?.isForeground ?? false }
-        pomodoro.onPhaseEnded = { _, next in PhonePomodoro.chime(next) }
+        pomodoro.onFocusEnded = { PhonePomodoro.chime($0) }
         pomodoro.onChange = { [weak self] in self?.pomodoroChanged() }
         timelapse.recorder.onStateChange = { [weak self] in self?.timelapseChanged() }
         // Focusing together is quiet; otherwise the friend reacts (a break, being let out).
@@ -90,14 +89,13 @@ final class AppModel {
 
     // MARK: Pomodoro
 
-    /// A Live Activity button. "start" also begins the phase after one that ended while the app was suspended.
+    /// A Live Activity button: start (also resumes), pause or stop. A focus that ended meanwhile settles first.
     func pomodoroCommand(_ command: String) {
         pomodoro.settle()
         switch command {
         case "start": pomodoro.start()
         case "pause": pomodoro.pause()
-        case "skip": pomodoro.skip()
-        case "stop": pomodoro.reset()
+        case "stop": pomodoro.stop()
         default: break
         }
     }
@@ -350,7 +348,6 @@ final class AppModel {
     }
 
     func scenePhaseChanged(_ scenePhase: ScenePhase) {
-        // Before isForeground flips: phases that ended while suspended don't auto-start in the past.
         if scenePhase == .active { pomodoro.settle() }
         if scenePhase != .inactive {
             timelapse.setAway(scenePhase != .active)

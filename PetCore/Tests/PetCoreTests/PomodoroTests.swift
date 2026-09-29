@@ -6,18 +6,20 @@ struct PomodoroTests {
     let t0 = Date(timeIntervalSince1970: 1_800_000_000)
     let minute: TimeInterval = 60
 
-    @Test func runsAFocusThenWaitsForTheBreak() {
+    @Test func aFocusRunsToZeroThenWaits() {
         let started = Pomodoro().start(at: t0)
         #expect(started.status == .running)
-        #expect(started.phase == .focus && started.round == 1)
         #expect(started.remaining(at: t0 + 10 * minute) == 15 * minute)
         #expect(started.friendHome, "the friend stays home during focus by default")
 
+        #expect(!started.settle(at: t0 + 24 * minute).ended)
         let (after, ended) = started.settle(at: t0 + 26 * minute)
-        #expect(ended == [.focus])
-        #expect(after.phase == .shortBreak && after.status == .ready)
+        #expect(ended && after.status == .ready)
+        #expect(after.remaining(at: t0 + 26 * minute) == 25 * minute, "ready again for the next focus")
         #expect(after.completedToday(at: t0 + 26 * minute) == 1)
         #expect(!after.friendHome)
+        #expect(after.phaseID == started.phaseID + 1, "the next focus is a different one")
+        #expect(Pomodoro.clock(61 * minute + 0.2) == "61:01")
     }
 
     @Test func pauseAndResumeKeepTheRemainingTime() {
@@ -25,55 +27,27 @@ struct PomodoroTests {
         #expect(paused.status == .paused)
         #expect(paused.remaining(at: t0 + 60 * minute) == 20 * minute)
         #expect(paused.friendHome, "pausing keeps the friend where it is")
-        #expect(paused.settle(at: t0 + 60 * minute).ended.isEmpty, "a paused phase never ends")
+        #expect(!paused.settle(at: t0 + 60 * minute).ended, "a paused focus never ends")
 
         let resumed = paused.resume(at: t0 + 60 * minute)
         #expect(resumed.remaining(at: t0 + 60 * minute) == 20 * minute)
-        #expect(resumed.settle(at: t0 + 80 * minute).ended == [.focus])
+        #expect(resumed.settle(at: t0 + 80 * minute).ended)
     }
 
-    @Test func everyFourthFocusEarnsALongBreak() {
-        var pomodoro = Pomodoro(settings: .init(autoStart: true))
-        pomodoro = pomodoro.start(at: t0)
-        // 4 focus rounds and 3 short breaks: 4 × 25 + 3 × 5 = 115 minutes
-        let (after, ended) = pomodoro.settle(at: t0 + 115 * minute + 1)
-        #expect(ended == [.focus, .shortBreak, .focus, .shortBreak, .focus, .shortBreak, .focus])
-        #expect(after.phase == .longBreak && after.status == .running)
-        #expect(after.remaining(at: t0 + 115 * minute) == 15 * minute, "auto-start chains from the real phase end")
-        #expect(after.completedToday(at: t0 + 116 * minute) == 4)
-
-        let (next, _) = after.settle(at: t0 + 131 * minute)
-        #expect(next.phase == .focus && next.round == 1)
-
-        let (caughtUp, stopped) = pomodoro.settle(at: t0 + 115 * minute + 1, autoStart: false)
-        #expect(stopped == [.focus] && caughtUp.status == .ready, "a suspended iPhone doesn't auto-start in the past")
-        #expect(Pomodoro.clock(61 * minute + 0.2) == "61:01")
-    }
-
-    @Test func skipMovesOnWithoutCountingTheRound() {
-        let skipped = Pomodoro().start(at: t0).skip(at: t0 + minute)
-        #expect(skipped.phase == .shortBreak && skipped.status == .ready)
-        #expect(skipped.completedToday(at: t0 + minute) == 0)
-
-        let back = skipped.skip(at: t0 + 2 * minute)
-        #expect(back.phase == .focus && back.round == 2)
-
-        let autoSkipped = Pomodoro(settings: .init(autoStart: true)).skip(at: t0)
-        #expect(autoSkipped.status == .running, "auto-start starts the skipped-to phase")
-    }
-
-    @Test func resetStartsOverButKeepsTodaysCount() {
+    @Test func stoppingEarlyDoesNotCount() {
         let (done, _) = Pomodoro().start(at: t0).settle(at: t0 + 30 * minute)
-        let reset = done.start(at: t0 + 30 * minute).reset()
-        #expect(reset.phase == .focus && reset.round == 1 && reset.status == .ready)
-        #expect(reset.completedToday(at: t0 + 31 * minute) == 1)
+        let running = done.start(at: t0 + 30 * minute)
+        let stopped = running.stop()
+        #expect(stopped.status == .ready && stopped.completedToday(at: t0 + 31 * minute) == 1)
+        #expect(stopped.phaseID == running.phaseID + 1)
+        #expect(stopped.stop() == stopped, "stopping when nothing runs changes nothing")
     }
 
-    @Test func letOutLastsUntilThePhaseChanges() {
-        let out = Pomodoro(settings: .init(autoStart: true)).start(at: t0).letFriendOut()
+    @Test func letOutLastsUntilTheFocusEnds() {
+        let out = Pomodoro().start(at: t0).letFriendOut()
         #expect(!out.friendHome)
-        let (nextFocus, _) = out.settle(at: t0 + 31 * minute)
-        #expect(nextFocus.phase == .focus && nextFocus.friendHome)
+        let next = out.settle(at: t0 + 26 * minute).pomodoro.start(at: t0 + 27 * minute)
+        #expect(next.friendHome)
 
         let stayOut = Pomodoro(settings: .init(friendStaysHome: false)).start(at: t0)
         #expect(!stayOut.friendHome)
@@ -86,46 +60,54 @@ struct PomodoroTests {
     }
 
     @Test func settingsAreClampedAndSurviveARoundTrip() throws {
-        let odd = PomodoroSettings(focus: 0, shortBreak: -5, longBreak: 99_999, longBreakEvery: 0)
-        #expect(odd.focus == 60 && odd.shortBreak == 60 && odd.longBreak == 180 * 60 && odd.longBreakEvery == 1)
+        #expect(PomodoroSettings(focus: 0).focus == 60 && PomodoroSettings(focus: 99_999).focus == 180 * 60)
 
-        // a stored blob with out-of-range values decodes clamped, not as written
-        var raw = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(odd)) as? [String: Any])
-        raw["longBreakEvery"] = 0
+        var raw = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(PomodoroSettings())) as? [String: Any])
         raw["focus"] = -1
         let stored = try JSONDecoder().decode(PomodoroSettings.self, from: JSONSerialization.data(withJSONObject: raw))
-        #expect(stored.longBreakEvery == 1 && stored.focus == 60)
+        #expect(stored.focus == 60, "a stored blob decodes clamped, not as written")
 
-        let edited = PomodoroSettings().with(longBreakEvery: 99, sound: false)
-        #expect(edited.longBreakEvery == 12 && !edited.sound && edited.focus == 25 * 60, "with() changes only what it's given, clamped")
+        let edited = PomodoroSettings().with(sound: false)
+        #expect(!edited.sound && edited.focus == 25 * 60, "with() changes only what it's given")
 
         let running = Pomodoro(settings: .init(focus: 50 * 60)).start(at: t0)
         let decoded = try JSONDecoder().decode(Pomodoro.self, from: JSONEncoder().encode(running))
         #expect(decoded == running)
     }
 
-    @Test func liveActivityShowsOnlyAStartedSession() throws {
+    @Test func aPomodoroSavedWithBreaksStillLoads() throws {
+        let old = """
+        {"settings":{"focus":1800,"shortBreak":300,"longBreak":900,"longBreakEvery":4,"autoStart":true,"sound":false,
+        "friendStaysHome":true},"phase":"shortBreak","round":2,"friendLetOut":false,"completed":3,"phases":5}
+        """
+        let loaded = try JSONDecoder().decode(Pomodoro.self, from: Data(old.utf8))
+        #expect(loaded.settings == PomodoroSettings(focus: 1800, sound: false))
+        #expect(loaded.status == .ready && loaded.phaseID == 5)
+    }
+
+    @Test func liveActivityShowsOnlyAFocusUnderWay() throws {
         #expect(PomodoroSurface(Pomodoro(), at: t0) == nil, "no timer on the Lock Screen until one starts")
         let running = try #require(PomodoroSurface(Pomodoro().start(at: t0), at: t0 + minute))
         #expect(running.endDate == t0 + 25 * minute && running.remaining == 24 * minute && running.focusing && !running.paused)
         let paused = try #require(PomodoroSurface(Pomodoro().start(at: t0).pause(at: t0 + minute), at: t0 + 2 * minute))
         #expect(paused.endsAt == nil && paused.paused && paused.remaining == 24 * minute)
+        #expect(PomodoroSurface(Pomodoro().start(at: t0).stop(), at: t0) == nil, "stopping hides it")
     }
 
     @Test func momentsTheFriendReactsTo() {
         let ready = Pomodoro()
         let running = ready.start(at: t0)
-        #expect(Pomodoro.moment(from: ready, to: running, ended: nil) == .focusStarted(minutes: 25))
+        #expect(Pomodoro.moment(from: ready, to: running, ended: false) == .focusStarted(minutes: 25))
         let paused = running.pause(at: t0 + minute)
-        #expect(Pomodoro.moment(from: running, to: paused, ended: nil) == nil)
-        #expect(Pomodoro.moment(from: paused, to: paused.start(at: t0 + 2 * minute), ended: nil) == nil, "resuming isn't a new start")
-        #expect(Pomodoro.moment(from: running, to: running.letFriendOut(), ended: nil) == .calledOut)
+        #expect(Pomodoro.moment(from: running, to: paused, ended: false) == nil)
+        #expect(Pomodoro.moment(from: paused, to: paused.start(at: t0 + 2 * minute), ended: false) == nil, "resuming isn't a new start")
+        #expect(Pomodoro.moment(from: running, to: running.letFriendOut(), ended: false) == .calledOut)
         let homeOff = running.with(settings: running.settings.with(friendStaysHome: false))
-        #expect(Pomodoro.moment(from: running, to: homeOff, ended: nil) == nil, "a settings change isn't being let out")
+        #expect(Pomodoro.moment(from: running, to: homeOff, ended: false) == nil, "a settings change isn't being let out")
+        #expect(Pomodoro.moment(from: running, to: running.stop(), ended: false) == nil, "stopping isn't a moment")
 
-        let (onBreak, _) = running.settle(at: t0 + 26 * minute)
-        #expect(Pomodoro.moment(from: running, to: onBreak, ended: .focus) == .focusEnded(longBreak: false))
-        #expect(Pomodoro.moment(from: onBreak, to: onBreak, ended: .shortBreak) == .breakEnded)
+        let (done, _) = running.settle(at: t0 + 26 * minute)
+        #expect(Pomodoro.moment(from: running, to: done, ended: true) == .focusEnded)
 
         #expect(running.promptContext(at: t0 + minute) == nil, "home: the friend isn't talking")
         #expect(running.letFriendOut().promptContext(at: t0 + 10 * minute)?.contains("15 minutes left") == true)

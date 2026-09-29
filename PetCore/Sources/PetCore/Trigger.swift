@@ -20,8 +20,7 @@ public nonisolated enum TriggerKind: String, CaseIterable, Codable, Sendable {
 /// The pomodoro moments the friend reacts to.
 public nonisolated enum PomodoroMoment: Equatable, Sendable {
     case focusStarted(minutes: Int)
-    case focusEnded(longBreak: Bool)
-    case breakEnded
+    case focusEnded
     /// The user let the friend out during focus.
     case calledOut
 }
@@ -77,10 +76,8 @@ public nonisolated extension Trigger {
         case .poked: "The user poked you."
         case .checkIn: "It's been a while since you last talked. Check in on the user."
         case .pomodoro(.focusStarted(let minutes)):
-            "The user just started a \(minutes)-minute focus session. Cheer them on in a few words; you'll stay quiet until the break."
-        case .pomodoro(.focusEnded(let longBreak)):
-            "The user just finished a focus session. A \(longBreak ? "long" : "short") break starts now: celebrate with them."
-        case .pomodoro(.breakEnded): "The user's break just ended. Encourage them back to focus."
+            "The user just started a \(minutes)-minute focus session. Cheer them on in a few words; you'll stay quiet until it ends."
+        case .pomodoro(.focusEnded): "The user just finished a focus session: celebrate with them."
         case .pomodoro(.calledOut): "The user called you out during their focus session. Say a quick hello without distracting them."
         }
     }
@@ -96,7 +93,6 @@ public nonisolated extension Trigger {
         case .checkIn: "you checked in"
         case .pomodoro(.focusStarted): "started focusing"
         case .pomodoro(.focusEnded): "finished a focus session"
-        case .pomodoro(.breakEnded): "ended a break"
         case .pomodoro(.calledOut): "called you out during focus"
         }
     }

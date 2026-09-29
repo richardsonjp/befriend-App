@@ -272,7 +272,7 @@ public final class TimelapseController {
 
     /// What the recorder should do next for this pomodoro state.
     public static func action(for pomodoro: Pomodoro, recorder: TimelapseRecorder.State, recordingPhase: Int?, away: Bool) -> Action {
-        let inFocus = pomodoro.phase == .focus && pomodoro.status != .ready
+        let inFocus = pomodoro.status != .ready
         let active = recorder != .idle
         guard pomodoro.settings.recordTimelapse, inFocus, !active || recordingPhase == pomodoro.phaseID else {
             return active ? .finish : .none

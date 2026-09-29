@@ -93,14 +93,11 @@ struct TimelapseTests {
         #expect(action(running.pause(at: t0 + 60), .recording) == .pause)
         #expect(action(running, .paused) == .resume)
         #expect(action(running, .recording, away: true) == .pause, "asleep, or the iPhone app off screen")
-        #expect(action(running.skip(at: t0 + 60), .recording) == .finish, "a break is never recorded")
-        #expect(action(running.reset(), .paused) == .finish)
+        #expect(action(running.stop(), .recording) == .finish, "stopping early files the video")
+        #expect(action(running.stop(), .paused) == .finish)
         #expect(action(running, .recording, phase: 8) == .finish, "another focus ended this one")
-        // A whole cycle later the round is the same again, but the phase isn't.
-        var later = running
-        for _ in 0..<8 { later = later.skip(at: t0) }
-        #expect(later.phase == .focus && later.round == running.round && later.phaseID == 8)
-        #expect(action(later.start(at: t0), .recording) == .finish)
+        let next = running.stop().start(at: t0)
+        #expect(next.phaseID == 1 && action(next, .recording) == .finish, "the next focus gets its own video")
         #expect(action(running.with(settings: running.settings.with(recordTimelapse: false)), .recording) == .finish)
         #expect(action(on, .idle) == .none, "a focus that hasn't started")
     }

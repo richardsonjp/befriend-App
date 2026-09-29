@@ -39,7 +39,7 @@ final class MacController {
     let walker = FriendWalker()
     /// During focus the friend stays in the menu bar icon unless let out.
     let pomodoro = PomodoroRunner(saved: MacConfig.loadPomodoro(), save: MacConfig.savePomodoro)
-    /// Records each focus phase as a 1-minute timelapse when the pomodoro's setting is on (M11).
+    /// Records each focus as a 1-minute timelapse when the pomodoro's setting is on (M11).
     @ObservationIgnored private(set) lazy var timelapse = TimelapseController(
         library: TimelapseLibrary(folder: MacConfig.timelapseFolder),
         skin: { [weak self] in self?.skins.current }
@@ -74,7 +74,7 @@ final class MacController {
 
     init() {
         uploader = TriggerLogUploader(api: api, fileURL: MacConfig.triggerQueueURL)
-        pomodoro.onPhaseEnded = MacPomodoro.announce
+        pomodoro.onFocusEnded = MacPomodoro.announce
         pomodoro.onMoment = { [weak self] in self?.pomodoroMoment($0) }
         shop.start()
         if let saved = MacConfig.loadSettings() { apply(saved) }
@@ -179,7 +179,7 @@ final class MacController {
         }
         observeSleep()
         timelapse.setSignedIn(true)
-        // A focus phase that outlived a relaunch or sign-out keeps the friend home.
+        // A focus that outlived a relaunch or sign-out keeps the friend home.
         friendVisible = !pomodoro.state.friendHome
         if friendVisible { walker.comeOut() }
 

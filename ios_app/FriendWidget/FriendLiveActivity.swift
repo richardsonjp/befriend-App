@@ -95,7 +95,7 @@ struct FriendPose: View {
     }
 }
 
-/// The countdown while a phase runs (the system ticks it), or the time left while paused or waiting.
+/// The countdown while a focus runs (the system ticks it), or the time left while paused or waiting.
 struct PomodoroClock: View {
     let pomodoro: PomodoroSurface
 
@@ -111,10 +111,10 @@ struct PomodoroClock: View {
     }
 }
 
-/// The phase, its countdown and the buttons that move it on, without opening the app.
+/// The focus countdown and its buttons, without opening the app.
 struct PomodoroRow: View {
     let pomodoro: PomodoroSurface
-    /// The running phase's time is up; the app hasn't moved it on yet.
+    /// The focus's time is up; the app hasn't caught up yet.
     let isStale: Bool
 
     var body: some View {
@@ -128,25 +128,24 @@ struct PomodoroRow: View {
                 }
             }
             Spacer()
-            if pomodoro.endsAt != nil, !isStale {
+            if isStale {
+                button("stop", "Done", "checkmark")
+            } else if pomodoro.endsAt != nil {
                 button("pause", "Pause", "pause.fill")
-                button("skip", "Skip", "forward.fill")
+                button("stop", "Stop", "stop.fill")
             } else {
-                button("start", isStale ? "Next" : pomodoro.paused ? "Resume" : "Start", "play.fill")
+                button("start", "Resume", "play.fill")
                 button("stop", "Stop", "stop.fill")
             }
         }
     }
 
     private var title: String {
-        let phase = pomodoro.phase.title
-        if isStale { return "\(phase) done 🍅" }
+        if isStale { return "Focus done 🍅" }
         if pomodoro.timelapse == .paused { return "Recording paused · open befriend" }
-        if pomodoro.timelapse == .recording { return "● Recording · \(phase)" }
-        if pomodoro.paused { return "Paused · \(phase)" }
-        if pomodoro.endsAt == nil { return "Up next: \(phase)" }
-        return pomodoro.focusing ? "Focusing together · round \(pomodoro.round) of \(pomodoro.rounds)"
-            : "\(phase) · round \(pomodoro.round) of \(pomodoro.rounds)"
+        if pomodoro.timelapse == .recording { return "● Recording · Focus" }
+        if pomodoro.paused { return "Paused · Focus" }
+        return pomodoro.focusing ? "Focusing together" : "Focus"
     }
 
     private func button(_ command: String, _ label: String, _ symbol: String) -> some View {

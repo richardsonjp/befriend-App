@@ -35,7 +35,7 @@ extension APIClientTests {
         uploader.record(.appSwitched(name: "Secret Diary"))
         uploader.record(.appSwitched(name: "Notes"))
         #expect(uploader.queue.map(\.appName) == ["Notes"])
-        uploader.record(.pomodoro(.breakEnded))
+        uploader.record(.pomodoro(.focusEnded))
         #expect(uploader.queue.count == 1, "pomodoro moments stay on the device")
 
         uploader.settings.logSyncPaused = true

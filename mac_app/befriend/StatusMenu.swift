@@ -20,6 +20,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
     private let popover = NSPopover()
+    private var timelapsesWindow: NSWindow?
 
     init(controller: MacController) {
         self.controller = controller
@@ -30,7 +31,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             pomodoro: controller.pomodoro,
             timelapse: controller.timelapse,
             preview: true,
-            play: { NSWorkspace.shared.open($0) },
+            openTimelapses: { [weak self] in self?.showTimelapses() },
             more: { [weak self] in self?.showMenu() }
         ).padding(16).frame(width: 290))
         if let button = item.button {
@@ -52,6 +53,25 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate() // so the popover takes keyboard focus and closes on an outside click
         }
+    }
+
+    /// The saved timelapses in their own window (M13), reused while it's open.
+    private func showTimelapses() {
+        popover.performClose(nil)
+        if timelapsesWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
+                                  styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+            window.title = "Timelapses"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: TimelapseGallery(
+                library: controller.timelapse.library,
+                reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) }
+            ))
+            window.center()
+            timelapsesWindow = window
+        }
+        NSApp.activate()
+        timelapsesWindow?.makeKeyAndOrderFront(nil)
     }
 
     /// Opens the menu under the icon: attached only while it's open, so a normal click reaches `clicked`.
@@ -92,7 +112,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return image
     }
 
-    /// " 18:42" while a pomodoro phase runs or is paused, with a red " ●" first while a timelapse records.
+    /// " 18:42" while a focus runs or is paused, with a red " ●" first while a timelapse records.
     private func countdown() -> NSAttributedString {
         let pomodoro = controller.pomodoro
         guard controller.stage == .ready, pomodoro.state.status != .ready else { return NSAttributedString() }

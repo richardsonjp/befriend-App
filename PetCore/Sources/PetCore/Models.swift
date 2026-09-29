@@ -303,11 +303,8 @@ public nonisolated struct FriendSurfaceState: Codable, Hashable, Sendable {
     }
 }
 
-/// The pomodoro as the Live Activity draws it.
+/// The focus timer as the Live Activity draws it.
 public nonisolated struct PomodoroSurface: Codable, Hashable, Sendable {
-    public let phase: PomodoroPhase
-    public let round: Int
-    public let rounds: Int
     /// Unix seconds; set while running.
     public let endsAt: TimeInterval?
     public let remaining: TimeInterval
@@ -321,12 +318,9 @@ public nonisolated struct PomodoroSurface: Codable, Hashable, Sendable {
         case recording, paused
     }
 
-    /// Nil for a session that hasn't started, so the activity shows just the friend.
+    /// Nil while no focus is under way, so the activity shows just the friend.
     public init?(_ pomodoro: Pomodoro, at now: Date, timelapse: TimelapseStatus? = nil) {
-        if pomodoro.status == .ready, pomodoro.phase == .focus, pomodoro.round == 1 { return nil }
-        phase = pomodoro.phase
-        round = pomodoro.round
-        rounds = pomodoro.settings.longBreakEvery
+        if pomodoro.status == .ready { return nil }
         endsAt = pomodoro.endsAt?.timeIntervalSince1970
         remaining = pomodoro.remaining(at: now)
         paused = pomodoro.status == .paused

@@ -5,24 +5,26 @@
 
 import SwiftUI
 
-/// The pomodoro's controls: the Mac's menu bar popover and the iPhone's Home screen card. `more`, when given, adds
-/// a "…" button (the Mac's old menu). With `timelapse`, focus phases can be recorded (M11); `preview` shows the
-/// camera while recording, and `play` opens a finished video.
+/// The focus timer's card: the Mac's menu bar popover and the iPhone's Home screen. One step: set the minutes,
+/// start, pause or stop. With `timelapse`, a focus can be recorded (M11); `preview` shows the camera inline while
+/// recording (Mac), `openRecording` offers a way back to a full-screen recording view (iPhone), and
+/// `openTimelapses` opens the page of saved videos. `more`, when given, adds a "…" button (the Mac's menu).
 public struct PomodoroControls: View {
     let pomodoro: PomodoroRunner
     let timelapse: TimelapseController?
     let preview: Bool
-    let play: (URL) -> Void
+    let openRecording: (() -> Void)?
+    let openTimelapses: (() -> Void)?
     let more: (() -> Void)?
-    @State private var showsSettings = false
     @State private var cameraDenied = false
 
     public init(pomodoro: PomodoroRunner, timelapse: TimelapseController? = nil, preview: Bool = false,
-                play: @escaping (URL) -> Void = { _ in }, more: (() -> Void)? = nil) {
+                openRecording: (() -> Void)? = nil, openTimelapses: (() -> Void)? = nil, more: (() -> Void)? = nil) {
         self.pomodoro = pomodoro
         self.timelapse = timelapse
         self.preview = preview
-        self.play = play
+        self.openRecording = openRecording
+        self.openTimelapses = openTimelapses
         self.more = more
     }
 
@@ -30,38 +32,44 @@ public struct PomodoroControls: View {
         let state = pomodoro.state
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("🍅 \(state.phase.title)").font(.headline)
+                Text("🍅 Focus").font(.headline)
                 Spacer()
                 Text("Today: \(state.completedToday(at: pomodoro.now))").foregroundStyle(.secondary)
-            }
-            Text(Pomodoro.clock(state.remaining(at: pomodoro.now)))
-                .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
-            rounds(state)
-            HStack {
-                primaryButton(state).keyboardShortcut(.defaultAction)
-                Button("Skip") { pomodoro.skip() }
-                Button("Reset") { pomodoro.reset() }.disabled(state.status == .ready && state.phase == .focus && state.round == 1)
-            }
-            Toggle("Friend stays home during focus", isOn: setting(\.friendStaysHome) { $0.with(friendStaysHome: $1) })
-            if state.friendHome {
-                Button("Let friend out") { pomodoro.letFriendOut() }
-            }
-            if let timelapse {
-                timelapseSection(timelapse, state)
-            }
-            Divider()
-            HStack {
-                Button { showsSettings.toggle() } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Pomodoro settings")
-                Spacer()
+                    .accessibilityLabel("\(state.completedToday(at: pomodoro.now)) focus sessions finished today")
                 if let more {
                     Button { more() } label: { Image(systemName: "ellipsis.circle") }
                         .buttonStyle(.borderless)
                         .accessibilityLabel("More")
                 }
             }
-            if showsSettings { settings(state.settings) }
+            Text(Pomodoro.clock(state.remaining(at: pomodoro.now)))
+                .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
+                .accessibilityLabel(spokenTime(state.remaining(at: pomodoro.now)) + (state.status == .ready ? "" : " left"))
+            if state.status == .ready {
+                Stepper("\(Int(state.settings.focus / 60)) min", value: minutes, in: 1...180)
+            }
+            HStack {
+                primaryButton(state).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                if state.status != .ready {
+                    Button("Stop") { pomodoro.stop() }.buttonStyle(.bordered)
+                }
+            }
+            if let timelapse, timelapse.isRecording, let openRecording {
+                Button(action: openRecording) {
+                    Label(timelapse.recorder.state == .paused ? "Recording paused — Open camera" : "Recording — Open camera",
+                          systemImage: "record.circle")
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+            }
+            Toggle("Friend stays home during focus", isOn: setting(\.friendStaysHome) { $0.with(friendStaysHome: $1) })
+            if state.friendHome {
+                Button("Let friend out") { pomodoro.letFriendOut() }
+            }
+            Toggle("Sound when focus ends", isOn: setting(\.sound) { $0.with(sound: $1) })
+            if let timelapse {
+                timelapseSection(timelapse, state)
+            }
         }
     }
 
@@ -89,58 +97,45 @@ public struct PomodoroControls: View {
                     Label(timelapse.recorder.state == .paused ? "Paused" : "REC", systemImage: "record.circle")
                         .font(.caption.bold()).foregroundStyle(.red).padding(6)
                 }
+                .accessibilityLabel(timelapse.recorder.state == .paused ? "Camera preview, recording paused" : "Camera preview, recording")
         }
-        if !timelapse.library.videos.isEmpty {
-            TimelapseList(library: timelapse.library, play: play)
+        if let openTimelapses {
+            Button(action: openTimelapses) {
+                HStack {
+                    Label("Timelapses", systemImage: "film.stack")
+                    Spacer()
+                    Text("\(timelapse.library.videos.count)").foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Timelapses, \(timelapse.library.videos.count) saved")
         }
     }
 
     @ViewBuilder
     private func primaryButton(_ state: Pomodoro) -> some View {
         switch state.status {
-        case .ready: Button("Start \(state.phase.title.lowercased())") { pomodoro.start() }
+        case .ready: Button("Start focus") { pomodoro.start() }
         case .running: Button("Pause") { pomodoro.pause() }
         case .paused: Button("Resume") { pomodoro.start() }
         }
     }
 
-    /// A dot per focus round in the cycle; finished ones filled.
-    private func rounds(_ state: Pomodoro) -> some View {
-        let every = state.settings.longBreakEvery
-        let done = state.round - (state.phase == .focus ? 1 : 0)
-        return HStack(spacing: 6) {
-            ForEach(1...every, id: \.self) { index in
-                Circle()
-                    .fill(index <= done ? Color.accentColor : Color.secondary.opacity(0.3))
-                    .frame(width: 8, height: 8)
-            }
-            Text("round \(state.round) of \(every)").font(.caption).foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Round \(state.round) of \(every)")
+    private func spokenTime(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds.rounded(.up))
+        return Duration.seconds(total).formatted(.units(allowed: [.minutes, .seconds], width: .wide))
     }
 
-    private func settings(_ current: PomodoroSettings) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Stepper("Focus: \(Int(current.focus / 60)) min", value: minutes(\.focus) { $0.with(focus: $1) }, in: 1...180)
-            Stepper("Short break: \(Int(current.shortBreak / 60)) min", value: minutes(\.shortBreak) { $0.with(shortBreak: $1) }, in: 1...180)
-            Stepper("Long break: \(Int(current.longBreak / 60)) min", value: minutes(\.longBreak) { $0.with(longBreak: $1) }, in: 1...180)
-            Stepper("Long break every \(current.longBreakEvery) rounds",
-                    value: setting(\.longBreakEvery) { $0.with(longBreakEvery: $1) }, in: PomodoroSettings.rounds)
-            Toggle("Start the next phase automatically", isOn: setting(\.autoStart) { $0.with(autoStart: $1) })
-            Toggle("Sound at phase end", isOn: setting(\.sound) { $0.with(sound: $1) })
-        }
+    private var minutes: Binding<Int> {
+        Binding(get: { Int(pomodoro.state.settings.focus / 60) },
+                set: { pomodoro.update(pomodoro.state.settings.with(focus: TimeInterval($0 * 60))) })
     }
 
     private func setting<Value>(_ read: KeyPath<PomodoroSettings, Value>,
                                 _ write: @escaping (PomodoroSettings, Value) -> PomodoroSettings) -> Binding<Value> {
         Binding(get: { pomodoro.state.settings[keyPath: read] },
                 set: { pomodoro.update(write(pomodoro.state.settings, $0)) })
-    }
-
-    private func minutes(_ read: KeyPath<PomodoroSettings, TimeInterval>,
-                         _ write: @escaping (PomodoroSettings, TimeInterval) -> PomodoroSettings) -> Binding<Int> {
-        Binding(get: { Int(pomodoro.state.settings[keyPath: read] / 60) },
-                set: { pomodoro.update(write(pomodoro.state.settings, TimeInterval($0 * 60))) })
     }
 }
