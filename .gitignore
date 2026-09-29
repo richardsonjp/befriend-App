@@ -23,3 +23,5 @@ harvest/
 training/data/
 training/out/
 __pycache__/
+docs
+.idea
