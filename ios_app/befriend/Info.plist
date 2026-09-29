@@ -2,20 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSCameraUsageDescription</key>
-	<string>befriend uses the camera for the features you turn on: a timelapse of your focus sessions, and a posture check. Videos and camera images stay on this iPhone.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Save a focus timelapse to your photo library.</string>
 	<key>APIBaseURL</key>
 	<string>$(API_BASE_URL)</string>
-	<key>StaticAPIKey</key>
-	<string>$(STATIC_API_KEY)</string>
 	<key>APNSEnvironment</key>
 	<string>$(APNS_ENV)</string>
-	<key>KeychainAccessGroup</key>
-	<string>$(AppIdentifierPrefix)com.richardsonjp.befriend.shared</string>
-	<key>GIDClientID</key>
-	<string>$(GOOGLE_CLIENT_ID)</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.richardsonjp.befriend.checkin</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -28,25 +22,33 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSLocationDefaultAccuracyReduced</key>
-	<true/>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_befriend-pres._tcp</string>
-		<string>_befriend-pres._udp</string>
-	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.richardsonjp.befriend.checkin</string>
-	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>fetch</string>
-	</array>
+	<key>GIDClientID</key>
+	<string>$(GOOGLE_CLIENT_ID)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>KeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)com.richardsonjp.befriend.shared</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_befriend-pres._tcp</string>
+		<string>_befriend-pres._udp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>befriend uses the camera for the features you turn on: a timelapse of your focus sessions, and a posture check. Videos and camera images stay on this iPhone.</string>
+	<key>NSLocationDefaultAccuracyReduced</key>
+	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save a focus timelapse to your photo library.</string>
+	<key>StaticAPIKey</key>
+	<string>$(STATIC_API_KEY)</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 </dict>
 </plist>

@@ -2,14 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSCameraUsageDescription</key>
-	<string>befriend uses the camera for the features you turn on: a timelapse of your focus sessions, and a posture check. Videos and camera images stay on this Mac.</string>
 	<key>APIBaseURL</key>
 	<string>$(API_BASE_URL)</string>
-	<key>StaticAPIKey</key>
-	<string>$(STATIC_API_KEY)</string>
-	<key>GIDClientID</key>
-	<string>$(GOOGLE_CLIENT_ID)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -19,15 +13,23 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_befriend-pres._tcp</string>
-		<string>_befriend-pres._udp</string>
-	</array>
+	<key>GIDClientID</key>
+	<string>$(GOOGLE_CLIENT_ID)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_befriend-pres._tcp</string>
+		<string>_befriend-pres._udp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>befriend uses the camera for the features you turn on: a timelapse of your focus sessions, and a posture check. Videos and camera images stay on this Mac.</string>
+	<key>StaticAPIKey</key>
+	<string>$(STATIC_API_KEY)</string>
 </dict>
 </plist>
