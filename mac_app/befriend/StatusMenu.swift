@@ -23,6 +23,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var timelapsesWindow: NSWindow?
     private var calibrationWindow: NSWindow?
     private var framingWindow: NSWindow?
+    private var chatWindow: NSWindow?
 
     init(controller: MacController) {
         self.controller = controller
@@ -40,6 +41,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             )
             Divider()
             PostureControls(checker: controller.posture) { [weak self] turnOn in self?.showCalibration(turnOnAfter: turnOn) }
+            Divider()
+            Button { [weak self] in self?.showChat() } label: {
+                Label("Chat About Your Files", systemImage: "bubble.left.and.text.bubble.right").frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
         }.padding(16).frame(width: 290))
         if let button = item.button {
             button.target = self
@@ -49,6 +55,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         }
         controller.walker.dockFrame = { [weak self] in self?.iconFrame }
+        controller.showChatWindow = { [weak self] in self?.showChat() }
         updateIcon()
     }
 
@@ -79,6 +86,25 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         NSApp.activate()
         timelapsesWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Chat about the user's files (M18) in its own window, reused while it's open.
+    @objc private func showChat() {
+        popover.performClose(nil)
+        if chatWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 620),
+                                  styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
+                                  backing: .buffered, defer: false)
+            window.title = "Chat"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: ChatRoot(library: controller.chat, friend: controller.friend,
+                                                                  navigator: controller.chatNavigator))
+            window.center()
+            window.setFrameAutosaveName("Chat")
+            chatWindow = window
+        }
+        NSApp.activate()
+        chatWindow?.makeKeyAndOrderFront(nil)
     }
 
     /// Posture calibration in its own window: a transient popover can't host a sheet.
@@ -198,6 +224,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 menu.addItem(NSMenuItem(title: "Re-calibrate Posture…", action: #selector(recalibratePosture), keyEquivalent: "").targeted(self))
             }
             menu.addItem(.separator())
+            menu.addItem(NSMenuItem(title: "Chat…", action: #selector(showChat), keyEquivalent: "").targeted(self))
             menu.addItem(skinMenu())
             #if DEBUG
             if controller.walker.isInside {

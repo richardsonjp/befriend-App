@@ -106,6 +106,7 @@ struct HomeView: View {
     @State private var showRecording = false
     @State private var showTimelapses = false
     @State private var showFraming = false
+    @State private var showChat = false
 
     var body: some View {
         NavigationStack {
@@ -116,8 +117,13 @@ struct HomeView: View {
                     }
                     VStack(spacing: 16) {
                         if let dialogue = model.pet.dialogue, !model.pomodoro.state.friendHome {
-                            SpeechBubble(text: dialogue)
-                                .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
+                            VStack(spacing: 8) {
+                                SpeechBubble(text: dialogue)
+                                if let followUp = model.pet.followUp {
+                                    FollowUpButtons(followUp: followUp, open: model.openChat)
+                                }
+                            }
+                            .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
                         }
                         CharacterView(skin: model.skins.current, action: model.pet.action, mood: model.pet.mood,
                                       focusing: model.pomodoro.state.friendHome)
@@ -169,6 +175,12 @@ struct HomeView: View {
             }
             .toolbar {
                 Button {
+                    showChat = true
+                } label: {
+                    Image(systemName: "bubble.left.and.text.bubble.right")
+                }
+                .accessibilityLabel("Chat about your files")
+                Button {
                     showSettings = true
                 } label: {
                     Image(systemName: "gearshape")
@@ -184,6 +196,21 @@ struct HomeView: View {
             }
             .navigationDestination(isPresented: $showTimelapses) {
                 TimelapseGallery(library: model.timelapse.library).navigationTitle("Timelapses")
+            }
+            .fullScreenCover(isPresented: $showChat) {
+                ChatRoot(library: model.chat, friend: friend, navigator: model.chatNavigator) { showChat = false }
+            }
+            .onChange(of: model.chatNavigator.pending) { _, start in
+                if start != nil { showChat = true }
+            }
+            .confirmationDialog("Follow up on this chat?", isPresented: Binding(
+                get: { model.pendingFollowUp != nil },
+                set: { if !$0 { model.pendingFollowUp = nil } }
+            ), presenting: model.pendingFollowUp) { followUp in
+                Button("New chat") { model.openChat(ChatStart(conversation: nil, draft: followUp.question)) }
+                Button("Continue that chat") { model.openChat(ChatStart(conversation: followUp.conversationID, draft: followUp.question)) }
+            } message: { followUp in
+                Text(followUp.question)
             }
             .fullScreenCover(isPresented: $showRecording) {
                 RecordingView(model: model)

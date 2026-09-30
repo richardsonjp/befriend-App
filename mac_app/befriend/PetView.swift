@@ -13,6 +13,8 @@ struct PetView: View {
     let walker: FriendWalker
     var poke: () -> Void = {}
     var simulate: (Trigger) -> Void = { _ in }
+    /// The bubble's follow-up buttons, on a line about an earlier chat.
+    var openChat: (ChatStart) -> Void = { _ in }
     /// Where the friend and its bubble are, so the rest of the panel can let clicks through.
     var reportHitAreas: ([CGRect]) -> Void = { _ in }
 
@@ -22,9 +24,14 @@ struct PetView: View {
     var body: some View {
         VStack(spacing: 16) {
             if let dialogue = pet.dialogue {
-                SpeechBubble(text: dialogue)
-                    .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
-                    .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { bubbleFrame = $0 }
+                VStack(spacing: 6) {
+                    SpeechBubble(text: dialogue)
+                    if let followUp = pet.followUp {
+                        FollowUpButtons(followUp: followUp, open: openChat)
+                    }
+                }
+                .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
+                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { bubbleFrame = $0 }
             }
             CharacterView(
                 skin: skins.current,
@@ -45,10 +52,17 @@ struct PetView: View {
         .accessibilityLabel(accessibilityText)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Poke", poke)
+        .accessibilityActions {
+            if let followUp = pet.followUp {
+                Button("Follow up in a new chat") { openChat(ChatStart(conversation: nil, draft: followUp.question)) }
+                Button("Continue that chat") { openChat(ChatStart(conversation: followUp.conversationID, draft: followUp.question)) }
+            }
+        }
         .contextMenu {
             #if DEBUG
             Menu("Simulate Trigger") {
-                Button("Switched to Safari") { simulate(.appSwitched(name: "Safari")) }
+                Button("Encourage") { simulate(.encourage) }
+                Button("Bring Up a Chat") { simulate(.chatTopic) }
                 Button("Went idle (5 min)") { simulate(.wentIdle(seconds: 300)) }
                 Button("Returned after 5 min") { simulate(.returned(afterSeconds: 300)) }
                 Button("Poked") { simulate(.poked) }

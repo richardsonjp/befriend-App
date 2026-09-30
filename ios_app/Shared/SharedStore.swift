@@ -13,6 +13,7 @@ nonisolated enum SharedStore {
     private static let friendFile = "friend.json"
     private static let surfaceFile = "surface.json"
     private static let pomodoroFile = "pomodoro.json"
+    private static let encouragementsFile = "widget-lines.json"
 
     private static var container: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroup)
@@ -49,6 +50,21 @@ nonisolated enum SharedStore {
 
     static func savePomodoro(_ pomodoro: Pomodoro) {
         write(try? JSONEncoder().encode(pomodoro), to: pomodoroFile)
+    }
+
+    /// The widget's lines (M17, M19), each shown from its state's `updatedAt`, an hour apart. A line about an earlier
+    /// chat carries its follow-up; the Lock Screen widgets skip those.
+    struct WidgetLine: Codable {
+        let state: FriendSurfaceState
+        let followUp: ChatFollowUp?
+    }
+
+    static func loadEncouragements() -> [WidgetLine] {
+        read(encouragementsFile).flatMap { try? JSONDecoder().decode([WidgetLine].self, from: $0) } ?? []
+    }
+
+    static func saveEncouragements(_ lines: [WidgetLine]?) {
+        write(lines.flatMap { try? JSONEncoder().encode($0) }, to: encouragementsFile)
     }
 
     private static func read(_ name: String) -> Data? {

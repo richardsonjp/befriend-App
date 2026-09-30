@@ -44,6 +44,8 @@
 	<true/>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save a focus timelapse to your photo library.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>befriend turns speech in the audio and video you add to Chat into text, on this device, so your friend can answer questions about it.</string>
 	<key>StaticAPIKey</key>
 	<string>$(STATIC_API_KEY)</string>
 	<key>UIBackgroundModes</key>

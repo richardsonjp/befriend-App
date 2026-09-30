@@ -12,11 +12,15 @@ nonisolated struct FriendEntry: TimelineEntry {
     let name: String?
     let state: FriendSurfaceState?
     let skin: InstalledSkin?
+    /// A line about an earlier chat (M19): tapping the widget opens its follow-up.
+    var followUp: ChatFollowUp? = nil
+    /// What the Lock Screen shows instead of a chat topic: an encouraging line from the same batch.
+    var lockLine: String? = nil
 }
 
-/// Reads what the app saved in the App Group. The first entry is the friend's latest state; the next six are
-/// hourly check-in lines from the phrasebook, so the widget keeps talking while the app stays closed.
-/// No FoundationModels here: widgets can't run it.
+/// Reads what the app saved in the App Group: an encouraging line an hour, written ahead by the app's on-device
+/// model (widgets can't run FoundationModels). Without them yet, the friend's latest state and hourly check-in
+/// lines from the phrasebook.
 nonisolated struct FriendTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> FriendEntry {
         FriendEntry(date: .now, name: "Your friend", state: FriendSurfaceState(presence: .here, mood: .content, action: .idle, line: "Hi!"),
@@ -59,6 +63,8 @@ nonisolated struct FriendTimelineProvider: TimelineProvider {
         } else if owner == .mac {
             current = FriendSurfaceState(presence: .onMac, mood: .content, action: .idle, line: "")
         }
+        let encouragements = encouragementEntries(from: now, name: friend.name, onMac: owner == .mac, skin: skin)
+        guard encouragements.isEmpty else { return encouragements }
         var entries = [FriendEntry(date: now, name: friend.name, state: current, skin: skin)]
         guard let phrasebook = friend.phrasebook, current?.presence != .onMac else { return entries }
         for hour in 1...6 {
@@ -69,6 +75,23 @@ nonisolated struct FriendTimelineProvider: TimelineProvider {
         }
         return entries
     }
+
+    /// The line whose hour it is, then the ones still to come.
+    private func encouragementEntries(from now: Date, name: String, onMac: Bool, skin: InstalledSkin?) -> [FriendEntry] {
+        let lines = SharedStore.loadEncouragements()
+        let current = lines.lastIndex { $0.state.updatedAt <= now.timeIntervalSince1970 } ?? 0
+        let encouraging = lines.filter { $0.followUp == nil }.map(\.state.line)
+        return lines.dropFirst(current).enumerated().map { offset, entry in
+            let line = entry.state
+            let state = FriendSurfaceState(presence: onMac ? .onMac : .here, mood: line.mood, action: line.action, line: line.line,
+                                           updatedAt: Date(timeIntervalSince1970: line.updatedAt))
+            let lockLine = entry.followUp == nil ? nil : (encouraging.isEmpty ? Self.lockFallback : encouraging[offset % encouraging.count])
+            return FriendEntry(date: max(now, Date(timeIntervalSince1970: line.updatedAt)), name: name, state: state, skin: skin,
+                               followUp: entry.followUp, lockLine: lockLine)
+        }
+    }
+
+    private static let lockFallback = "You've got this!"
 }
 
 struct FriendWidgetView: View {
@@ -92,7 +115,7 @@ struct FriendWidgetView: View {
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name ?? "befriend").font(.headline)
-                Text(line).font(.caption).lineLimit(2)
+                Text(entry.lockLine ?? line).font(.caption).lineLimit(2) // chat topics stay off the Lock Screen
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         default:
@@ -109,12 +132,14 @@ struct FriendWidgetView: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
             }
+            .widgetURL(entry.followUp?.url)
         }
     }
 
     private var line: String {
         guard entry.name != nil else { return "Open befriend to meet your friend." }
-        return entry.state?.displayLine ?? "…"
+        guard let state = entry.state else { return "…" }
+        return state.line.isEmpty ? state.displayLine : state.line // encouragement shows even while the friend is on the Mac
     }
 }
 
@@ -122,7 +147,7 @@ struct FriendWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "FriendWidget", provider: FriendTimelineProvider()) { entry in
             FriendWidgetView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .containerBackground(.clear, for: .widget)
         }
         .configurationDisplayName("Your friend")
         .description("See what your friend is up to.")

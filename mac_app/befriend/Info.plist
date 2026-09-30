@@ -29,6 +29,8 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>befriend uses the camera for the features you turn on: a timelapse of your focus sessions, and a posture check. Videos and camera images stay on this Mac.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>befriend turns speech in the audio and video you add to Chat into text, on this device, so your friend can answer questions about it.</string>
 	<key>StaticAPIKey</key>
 	<string>$(STATIC_API_KEY)</string>
 </dict>

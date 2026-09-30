@@ -7,6 +7,7 @@ import Foundation
 import Observation
 import PetCore
 import SwiftUI
+import WidgetKit
 import UIKit
 
 extension DeviceInfo {
@@ -29,6 +30,12 @@ final class AppModel {
     var errorMessage: String?
     /// A Mac pairing code from a scanned QR, shown once the friend is ready.
     var pendingPairingCode: String?
+    /// A chat topic the widget was tapped on (M19): Home asks new chat or continue.
+    var pendingFollowUp: ChatFollowUp?
+    /// Opens Chat where a follow-up points.
+    let chatNavigator = ChatNavigator()
+    /// Away at least this long, the friend greets the user with a recent chat instead.
+    private static let topicAfterAway: TimeInterval = 30 * 60
     let pet = PetStateMachine()
     /// The account's skin, shared with the widget through the App Group.
     let skins = SkinStore(root: SharedStore.skinsRoot)
@@ -40,6 +47,9 @@ final class AppModel {
         library: TimelapseLibrary(folder: URL.documentsDirectory.appending(path: "Timelapses", directoryHint: .isDirectory)),
         skin: { [weak self] in self?.skins.current }
     )
+
+    /// Local chat about the user's files (M18); only on this device.
+    @ObservationIgnored private(set) lazy var chat = ChatLibrary()
 
     /// Green/red posture light (M14): shares the timelapse camera, only while the app is on screen.
     @ObservationIgnored private(set) lazy var posture: PostureChecker = {
@@ -59,6 +69,7 @@ final class AppModel {
         return shop
     }()
     @ObservationIgnored private var brain = PetBrain()
+    @ObservationIgnored private var writingEncouragements = false
     @ObservationIgnored private var surfaces: SurfaceController!
     @ObservationIgnored private var uploader: TriggerLogUploader!
     /// The hatch request, or the wait for one already running on the server.
@@ -208,13 +219,22 @@ final class AppModel {
         peer?.stop()
         peer = nil
         SharedStore.saveFriend(nil)
+        SharedStore.saveEncouragements(nil)
         surfaces.signedOut()
         skins.reset()
         brain = PetBrain()
         phase = .signedOut
     }
 
+    /// Opens Chat with a follow-up typed in; the bubble that offered it goes.
+    func openChat(_ start: ChatStart) {
+        pet.clearFollowUp()
+        pendingFollowUp = nil
+        chatNavigator.pending = start
+    }
+
     func handleDeepLink(_ url: URL) {
+        if let followUp = ChatFollowUp(url: url) { return pendingFollowUp = followUp }
         guard url.scheme == "befriend", url.host() == "pair",
               let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "code" })?.value,
@@ -236,8 +256,11 @@ final class AppModel {
             brain.onReaction = { [weak self] in self?.show($0) }
             brain.context = { [pomodoro] in pomodoro.state.promptContext(at: .now) }
             brain.skin = { [skins] in skins.current?.vocabulary ?? (PetAction.builtIn, PetMood.builtIn) }
+            brain.chatExchanges = { [weak self] in self?.chat.recentExchanges() ?? [] }
             let hello = brain.quickReaction(to: .returned(afterSeconds: 0))
             show(hello)
+            SharedStore.saveEncouragements(nil) // the old personality's lines
+            Task { await refillEncouragements() }
             surfaces.friendReady(latest, state: FriendSurfaceState(presence: .here, mood: hello.mood, action: hello.action, line: hello.dialogue))
         }
         if peer == nil {
@@ -359,6 +382,7 @@ final class AppModel {
     private func show(_ reaction: PetReaction) {
         guard !pomodoro.state.friendHome else { return } // focusing together: no chatter
         pet.apply(reaction)
+        guard reaction.followUp == nil else { return } // chat topics stay off the Lock Screen's Live Activity
         surfaces.update(with: reaction)
     }
 
@@ -378,9 +402,10 @@ final class AppModel {
         case .active:
             let away = backgroundedAt.map { Date.now.timeIntervalSince($0) } ?? 0
             backgroundedAt = nil
-            brain.handle(.returned(afterSeconds: away))
+            brain.handle(away >= Self.topicAfterAway ? .chatTopic : .returned(afterSeconds: away))
             uploader.record(.returned(afterSeconds: away))
             startClaiming()
+            Task { await refillEncouragements() }
             Task {
                 if let latest = try? await api.friend(), latest.isReady, latest.personality.version != current.personality.version {
                     adopt(latest)
@@ -404,8 +429,31 @@ final class AppModel {
         guard friend != nil else { return }
         uploader.record(.checkIn)
         show(await brain.react(to: .checkIn))
+        await refillEncouragements()
         await uploader.flush()
         await skins.sync(api: api)
+    }
+
+    /// The widget can't run the model, so the app writes its encouraging lines ahead, one per hour, and writes a
+    /// new batch when fewer than `encouragementsLow` hours are left (on open and each hourly check-in).
+    private static let encouragementBatch = 6
+    private static let encouragementsLow = 3
+
+    private func refillEncouragements() async {
+        let hourAgo = Date.now.addingTimeInterval(-3600).timeIntervalSince1970
+        guard friend != nil, !writingEncouragements,
+              SharedStore.loadEncouragements().filter({ $0.state.updatedAt > hourAgo }).count < Self.encouragementsLow else { return }
+        writingEncouragements = true
+        defer { writingEncouragements = false }
+        let start = Date.now
+        let lines = await brain.encouragements(Self.encouragementBatch).enumerated().map { hour, line in
+            SharedStore.WidgetLine(state: FriendSurfaceState(presence: .here, mood: line.mood, action: line.action, line: line.dialogue,
+                                                             updatedAt: start.addingTimeInterval(Double(hour) * 3600)),
+                                   followUp: line.followUp)
+        }
+        guard friend != nil else { return } // signed out meanwhile
+        SharedStore.saveEncouragements(lines)
+        WidgetCenter.shared.reloadTimelines(ofKind: "FriendWidget")
     }
 
     /// Background launches (refresh, intents) skip the window's start(): bring back the saved friend.

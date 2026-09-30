@@ -17,9 +17,11 @@ public nonisolated enum TriggerKind: String, CaseIterable, Codable, Sendable {
     case pomodoro
     /// The posture checker saw the user slouch for a while (M14): on-device only, like pomodoro moments.
     case posture
+    /// Time for an encouraging line (M17): on-device only, like pomodoro moments.
+    case encourage
 
     /// Never uploaded, and never in the phrasebook: the friend answers with the model or a canned line.
-    public var staysOnDevice: Bool { self == .pomodoro || self == .posture }
+    public var staysOnDevice: Bool { self == .pomodoro || self == .posture || self == .encourage }
 }
 
 /// The pomodoro moments the friend reacts to.
@@ -44,6 +46,11 @@ public nonisolated enum Trigger: Equatable, Sendable {
     case pomodoro(PomodoroMoment)
     /// The user has been slouching for a while (posture checker).
     case slouching
+    /// Time to say something encouraging (the widget's lines, the Mac every half hour of use), or, mostly, to bring
+    /// up a recent chat (M19).
+    case encourage
+    /// Bring up a recent chat if there is one (the iPhone app, opened after a while away).
+    case chatTopic
 
     public var kind: TriggerKind {
         switch self {
@@ -55,6 +62,15 @@ public nonisolated enum Trigger: Equatable, Sendable {
         case .checkIn: .checkIn
         case .pomodoro: .pomodoro
         case .slouching: .posture
+        case .encourage, .chatTopic: .encourage
+        }
+    }
+
+    /// Lines the user shouldn't hear twice: the friend is told what it already said, and a repeat is rejected.
+    var wantsFreshLine: Bool {
+        switch self {
+        case .encourage, .chatTopic, .pomodoro(.focusStarted), .pomodoro(.focusEnded): true
+        default: false
         }
     }
 }
@@ -84,10 +100,13 @@ public nonisolated extension Trigger {
         case .poked: "The user poked you."
         case .checkIn: "It's been a while since you last talked. Check in on the user."
         case .pomodoro(.focusStarted(let minutes)):
-            "The user just started a \(minutes)-minute focus session. Cheer them on in a few words; you'll stay quiet until it ends."
-        case .pomodoro(.focusEnded): "The user just finished a focus session: celebrate with them."
+            "The user just started a \(minutes)-minute focus session. Encourage them in a few words, in your own way; you'll stay quiet until it ends."
+        case .pomodoro(.focusEnded): "The user just finished a focus session: celebrate with them and encourage them, in your own way."
         case .pomodoro(.calledOut): "The user called you out during their focus session. Say a quick hello without distracting them."
         case .slouching: "The user has been slouching at their desk for a while. Gently invite them to sit up with you, in a few words."
+        case .encourage:
+            "Say something encouraging to the user, true to your personality. Usually in your own words; now and then a short well-known saying, without naming who said it."
+        case .chatTopic: "The user is back after a while. Welcome them warmly."
         }
     }
 
@@ -104,6 +123,8 @@ public nonisolated extension Trigger {
         case .pomodoro(.focusEnded): "finished a focus session"
         case .pomodoro(.calledOut): "called you out during focus"
         case .slouching: "was slouching"
+        case .encourage: "you encouraged them"
+        case .chatTopic: "you brought up an earlier chat"
         }
     }
 

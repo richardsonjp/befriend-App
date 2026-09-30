@@ -26,6 +26,8 @@ final class MacController {
     private static let personalityRefreshInterval: Duration = .seconds(6 * 60 * 60)
     /// How long the friend lingers to say its focus line before walking home.
     private static let goodbyeDuration: TimeInterval = 3
+    /// The longest the friend waits for its focus-start line before heading home anyway.
+    private static let goodbyeWait: TimeInterval = 10
 
     private(set) var stage: Stage = .launching
     private(set) var pairing: PairingStart?
@@ -44,6 +46,8 @@ final class MacController {
         library: TimelapseLibrary(folder: MacConfig.timelapseFolder),
         skin: { [weak self] in self?.skins.current }
     )
+    /// Local chat about the user's files (M18); only on this device.
+    @ObservationIgnored private(set) lazy var chat = ChatLibrary()
     /// Green/red posture light (M14), sharing the timelapse camera; paused while the Mac sleeps or is locked.
     @ObservationIgnored private(set) lazy var posture: PostureChecker = {
         let checker = PostureChecker(camera: timelapse.recorder.camera)
@@ -61,7 +65,11 @@ final class MacController {
     @ObservationIgnored let api = MacConfig.makeAPIClient()
     @ObservationIgnored private let uploader: TriggerLogUploader
     @ObservationIgnored private var brain = PetBrain()
-    @ObservationIgnored private var friend: FriendProfile?
+    @ObservationIgnored private(set) var friend: FriendProfile?
+    /// Opens Chat where a follow-up points (M19).
+    let chatNavigator = ChatNavigator()
+    /// Shows the Chat window; the status menu owns it.
+    @ObservationIgnored var showChatWindow: () -> Void = {}
     @ObservationIgnored private var panel: PetPanel?
     @ObservationIgnored private var monitor: TriggerMonitor?
     @ObservationIgnored private var window: NSWindow?
@@ -163,6 +171,7 @@ final class MacController {
             brain.onReaction = { [weak self] in self?.show($0) }
             brain.context = { [pomodoro] in pomodoro.state.promptContext(at: .now) }
             brain.skin = { [skins] in skins.current?.vocabulary ?? (PetAction.builtIn, PetMood.builtIn) }
+            brain.chatExchanges = { [weak self] in self?.chat.recentExchanges() ?? [] }
         }
         guard panel == nil else { return }
 
@@ -171,6 +180,7 @@ final class MacController {
                 pet: pet, skins: skins, walker: walker,
                 poke: { [weak self] in self?.handle(.poked) },
                 simulate: { [weak self] in self?.handle($0) },
+                openChat: { [weak self] in self?.openChat($0) },
                 reportHitAreas: { [weak panel] in panel?.hitAreas = $0 }
             )
         }
@@ -220,10 +230,11 @@ final class MacController {
         }
     }
 
+    /// App switches still feed activity sync and "Stop Tracking", but the friend no longer comments on them (M17).
     private func handle(_ trigger: Trigger) {
         if case .appSwitched(let name) = trigger { frontmostApp = name }
         uploader.record(trigger)
-        if friendVisible { brain.handle(trigger) }
+        if friendVisible, trigger.kind != .appSwitched { brain.handle(trigger) }
     }
 
     /// Reactions wait while the friend walks or hops, so its bubble never trails half off screen; the latest one
@@ -243,12 +254,22 @@ final class MacController {
         let trigger = Trigger.pomodoro(moment)
         guard pomodoro.state.friendHome else { return brain.handle(trigger) }
         guard friendVisible, walker.place == .out else { return }
-        pet.apply(brain.quickReaction(to: trigger))
-        goodbyeUntil = .now + Self.goodbyeDuration
+        goodbyeUntil = .now + Self.goodbyeWait // stays out while the model writes its line
         Task { [weak self] in
+            guard let self else { return }
+            let line = await brain.react(to: trigger)
+            if friendVisible { pet.apply(line) }
+            goodbyeUntil = .now + Self.goodbyeDuration
             try? await Task.sleep(for: .seconds(Self.goodbyeDuration))
-            self?.updateVisibility()
+            updateVisibility()
         }
+    }
+
+    /// A follow-up from the friend's bubble: Chat opens with the question typed in.
+    func openChat(_ start: ChatStart) {
+        pet.clearFollowUp()
+        chatNavigator.pending = start
+        showChatWindow()
     }
 
     /// A long slouch: the friend invites the user to sit up, unless it's home for a focus.
