@@ -43,4 +43,10 @@ var Registry = map[string]AppError{
 	"GENERATION_FAILED":    {Code: "GENERATION_FAILED", Status: http.StatusBadGateway, Message: "Your friend's personality couldn't be written. Try again."},
 	"GENERATION_RUNNING":   {Code: "GENERATION_RUNNING", Status: http.StatusConflict, Message: "Your friend's personality is already being written"},
 	"SUBMISSION_NOT_FOUND": {Code: "SUBMISSION_NOT_FOUND", Status: http.StatusNotFound, Message: "Submission not found"},
+	// # chat sync: another device set a different key, a record's ciphertext is too big, or a key exchange
+	// field was already filled with something else (or the exchange is missing, expired or not yours)
+	"CHAT_KEY_MISMATCH":       {Code: "CHAT_KEY_MISMATCH", Status: http.StatusConflict, Message: "Chats are already synced with a different key"},
+	"CHAT_RECORD_TOO_LARGE":   {Code: "CHAT_RECORD_TOO_LARGE", Status: http.StatusRequestEntityTooLarge, Message: "This chat is too large to sync"},
+	"CHAT_EXCHANGE_CONFLICT":  {Code: "CHAT_EXCHANGE_CONFLICT", Status: http.StatusConflict, Message: "This key exchange was already filled in differently"},
+	"CHAT_EXCHANGE_NOT_FOUND": {Code: "CHAT_EXCHANGE_NOT_FOUND", Status: http.StatusNotFound, Message: "Key exchange not found"},
 }

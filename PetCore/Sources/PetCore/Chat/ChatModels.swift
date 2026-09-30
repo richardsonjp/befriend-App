@@ -71,6 +71,8 @@ public nonisolated struct ChatDocument: Codable, Equatable, Identifiable, Sendab
     public let language: String?
     /// Where a web page came from.
     public let url: URL?
+    /// Last changed on any device, for sync (the newer copy wins).
+    public var modifiedAt: Date?
 
     public init(id: UUID = UUID(), name: String, kind: ChatDocumentKind, scope: Scope, addedAt: Date = .now,
                 passages: [IndexedPassage], note: String? = nil, language: String? = nil, url: URL? = nil) {
@@ -88,6 +90,23 @@ public nonisolated struct ChatDocument: Codable, Equatable, Identifiable, Sendab
     public func with(scope: Scope) -> ChatDocument {
         ChatDocument(id: id, name: name, kind: kind, scope: scope, addedAt: addedAt, passages: passages, note: note,
                      language: language, url: url)
+    }
+
+    func with(passages: [IndexedPassage]) -> ChatDocument {
+        var copy = ChatDocument(id: id, name: name, kind: kind, scope: scope, addedAt: addedAt, passages: passages, note: note,
+                                language: language, url: url)
+        copy.modifiedAt = modifiedAt
+        return copy
+    }
+
+    /// For upload: embeddings are big and each device makes its own.
+    func withoutVectors() -> ChatDocument {
+        with(passages: passages.map { IndexedPassage(text: $0.text, note: $0.note, vector: nil, locator: $0.locator) })
+    }
+
+    /// After download: embeddings for passages that came without them.
+    func embedded() -> ChatDocument {
+        with(passages: passages.map { $0.vector != nil ? $0 : IndexedPassage(text: $0.text, note: $0.note, vector: Retriever.embed($0.note), locator: $0.locator) })
     }
 }
 
@@ -128,13 +147,22 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
     public let text: String
     public let sources: [ChatSource]
     public let date: Date
+    /// Stopped by the guardrail (the message and the friend's "what do you mean?"): shown, never used as context.
+    public let aside: Bool?
 
-    public init(id: UUID = UUID(), role: Role, text: String, sources: [ChatSource] = [], date: Date = .now) {
+    public init(id: UUID = UUID(), role: Role, text: String, sources: [ChatSource] = [], date: Date = .now, aside: Bool = false) {
         self.id = id
         self.role = role
         self.text = text
         self.sources = sources
         self.date = date
+        self.aside = aside ? true : nil
+    }
+
+    public var isAside: Bool { aside == true }
+
+    func markedAside() -> ChatMessage {
+        ChatMessage(id: id, role: role, text: text, sources: sources, date: date, aside: true)
     }
 }
 
@@ -147,6 +175,8 @@ public nonisolated struct Conversation: Codable, Equatable, Identifiable, Sendab
     public var summarizedCount = 0
     /// Tokens the last exchange used (instructions, prompt and answer), for the context meter.
     public var contextUsed: Int?
+    /// Last changed on any device, for sync (the newer copy wins).
+    public var modifiedAt: Date?
 
     public init(id: UUID = UUID(), createdAt: Date = .now) {
         self.id = id
@@ -156,7 +186,7 @@ public nonisolated struct Conversation: Codable, Equatable, Identifiable, Sendab
     public static let titleLength = 40
 
     public var title: String {
-        guard let first = messages.first(where: { $0.role == .user })?.text else { return "New conversation" }
+        guard let first = messages.first(where: { $0.role == .user && !$0.isAside })?.text else { return "New conversation" }
         let flat = first.split(whereSeparator: \.isNewline).joined(separator: " ")
         return flat.count > Self.titleLength ? String(flat.prefix(Self.titleLength - 1)) + "…" : flat
     }

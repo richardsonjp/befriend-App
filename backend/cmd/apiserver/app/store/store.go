@@ -13,6 +13,7 @@ import (
 	"befriend/pkg/utils/logs"
 
 	// Repositories
+	reposChatSync "befriend/internal/repositories/chat_sync"
 	reposDevice "befriend/internal/repositories/device"
 	reposFriend "befriend/internal/repositories/friend"
 	reposLLMBudget "befriend/internal/repositories/llm_budget"
@@ -31,6 +32,7 @@ import (
 
 	// Services
 	serviceAuthentication "befriend/internal/services/authentication"
+	serviceChatSync "befriend/internal/services/chat_sync"
 	serviceDevice "befriend/internal/services/device"
 	serviceEvolution "befriend/internal/services/evolution"
 	serviceFriend "befriend/internal/services/friend"
@@ -49,6 +51,7 @@ import (
 	serviceVerificationCode "befriend/internal/services/verification_code"
 
 	// Handlers
+	handlerChatSync "befriend/cmd/apiserver/app/handlers/chat_sync"
 	handlerDevice "befriend/cmd/apiserver/app/handlers/device"
 	handlerFriend "befriend/cmd/apiserver/app/handlers/friend"
 	handlerOnboarding "befriend/cmd/apiserver/app/handlers/onboarding"
@@ -87,6 +90,7 @@ type Store struct {
 	TriggerEventHandler *handlerTriggerEvent.TriggerEventHandler
 	PresenceHandler     *handlerPresence.PresenceHandler
 	SkinHandler         *handlerSkin.SkinHandler
+	ChatSyncHandler     *handlerChatSync.ChatSyncHandler
 
 	// Middleware
 	MiddlewarePasetoAuth middlewares.MiddlewarePasetoAuth
@@ -184,6 +188,7 @@ func Init() {
 	presenceRepo := reposPresence.NewPresenceRepo(db)
 	llmBudgetRepo := reposLLMBudget.NewLLMBudgetRepo(db)
 	skinRepo := reposSkin.NewSkinRepo(db)
+	chatSyncRepo := reposChatSync.NewChatSyncRepo(db)
 
 	// Services
 	userService := serviceUser.NewUserService(txRepo, userRepo)
@@ -198,6 +203,7 @@ func Init() {
 	friendService := serviceFriend.NewFriendService(txRepo, friendRepo, personalityVersionService)
 	presenceService := servicePresence.NewPresenceService(txRepo, presenceRepo, deviceService, friendService, apnsClient)
 	skinService := serviceSkin.NewSkinService(txRepo, skinRepo, userService)
+	chatSyncService := serviceChatSync.NewChatSyncService(txRepo, chatSyncRepo)
 	onboardingService := serviceOnboarding.NewOnboardingService(
 		txRepo,
 		onboardingResponseRepo,
@@ -268,6 +274,7 @@ func Init() {
 		TriggerEventHandler: handlerTriggerEvent.NewTriggerEventHandler(triggerEventService),
 		PresenceHandler:     handlerPresence.NewPresenceHandler(presenceService),
 		SkinHandler:         handlerSkin.NewSkinHandler(skinService),
+		ChatSyncHandler:     handlerChatSync.NewChatSyncHandler(chatSyncService),
 
 		MiddlewarePasetoAuth: middlewares.NewMiddlewarePasetoAuth(),
 	}

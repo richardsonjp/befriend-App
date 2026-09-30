@@ -17,6 +17,15 @@ const purchasesPerMinute = 30
 // hatchesPerMinute bounds hatch attempts per client; each one is a full LLM generation.
 const hatchesPerMinute = 5
 
+// Chat sync: a device pushes each changed record separately, so a first sync sends one PUT per chat.
+const (
+	chatRecordPutsPerMinute = 600
+	chatSyncReadsPerMinute  = 120
+	// Key exchanges are polled every couple of seconds while a device waits for the other.
+	chatExchangePerMinute = 60
+	chatKeyPerMinute      = 30
+)
+
 // initAppRoute registers the signed-in app endpoints.
 func initAppRoute(api fiber.Router, appStore *store.Store) {
 	auth := appStore.MiddlewarePasetoAuth.MiddlewarePasetoAuth
@@ -46,4 +55,10 @@ func initAppRoute(api fiber.Router, appStore *store.Store) {
 	api.Get("/skins/catalog", auth, appStore.SkinHandler.Catalog)
 	api.Post("/skins/purchases", middlewares.RateLimit(purchasesPerMinute), auth, appStore.SkinHandler.Purchase)
 	api.Post("/skins/submissions", middlewares.RateLimit(submissionsPerMinute), auth, appStore.SkinHandler.Submit)
+	api.Get("/chat-sync/key", middlewares.RateLimit(chatKeyPerMinute), auth, appStore.ChatSyncHandler.GetKey)
+	api.Put("/chat-sync/key", middlewares.RateLimit(chatKeyPerMinute), auth, appStore.ChatSyncHandler.SetKey)
+	api.Get("/chat-sync/records", middlewares.RateLimit(chatSyncReadsPerMinute), auth, appStore.ChatSyncHandler.ListRecords)
+	api.Put("/chat-sync/records/:kind/:id", middlewares.RateLimit(chatRecordPutsPerMinute), auth, appStore.ChatSyncHandler.PutRecord)
+	api.Get("/chat-sync/exchanges/:id", middlewares.RateLimit(chatExchangePerMinute), auth, appStore.ChatSyncHandler.GetExchange)
+	api.Put("/chat-sync/exchanges/:id", middlewares.RateLimit(chatExchangePerMinute), auth, appStore.ChatSyncHandler.PutExchange)
 }

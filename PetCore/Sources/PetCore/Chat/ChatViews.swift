@@ -17,6 +17,7 @@ public struct ChatRoot: View {
     let library: ChatLibrary
     let friend: FriendProfile?
     let navigator: ChatNavigator?
+    let sync: ChatSync?
     let close: (() -> Void)?
     @State private var page: Page?
     /// Text to type into the next conversation shown, from a follow-up.
@@ -24,10 +25,12 @@ public struct ChatRoot: View {
     /// Bumped on each follow-up, so the same conversation reopens with the new draft.
     @State private var opened = 0
 
-    public init(library: ChatLibrary, friend: FriendProfile?, navigator: ChatNavigator? = nil, close: (() -> Void)? = nil) {
+    public init(library: ChatLibrary, friend: FriendProfile?, navigator: ChatNavigator? = nil, sync: ChatSync? = nil,
+                close: (() -> Void)? = nil) {
         self.library = library
         self.friend = friend
         self.navigator = navigator
+        self.sync = sync
         self.close = close
     }
 
@@ -51,6 +54,9 @@ public struct ChatRoot: View {
                 }
             }
             .navigationTitle("Chat")
+            .safeAreaInset(edge: .bottom) {
+                if let sync { ChatSyncStatus(sync: sync) }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { newConversation() } label: { Label("New Conversation", systemImage: "square.and.pencil") }
@@ -63,7 +69,10 @@ public struct ChatRoot: View {
             #if os(macOS)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
             #endif
-            .onAppear { follow(navigator?.pending) }
+            .onAppear {
+                follow(navigator?.pending)
+                sync?.sync()
+            }
             .onChange(of: navigator?.pending) { _, start in follow(start) }
         } detail: {
             switch page {
@@ -136,6 +145,9 @@ struct ChatScreen: View {
     @State private var draft = ""
     @State private var shownSource: ChatSource?
     @State private var adder: FileAdder
+    /// The user message being edited, if any.
+    @State private var editing: UUID?
+    @State private var composerHeight: CGFloat = 0
     /// Web search for the next messages (M21); stays on until turned off.
     @AppStorage("chat.web") private var web = false
     @AppStorage("chat.webExplained") private var webExplained = false
@@ -149,66 +161,125 @@ struct ChatScreen: View {
     }
 
     var body: some View {
-        let conversation = thread.conversation
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(conversation.messages.enumerated()), id: \.element.id) { index, message in
-                        if index == conversation.summarizedCount, index > 0 { SummaryDivider() }
-                        MessageRow(message: message, showSource: { shownSource = $0 })
-                    }
-                    status
-                    Color.clear.frame(height: 1).id("end")
+        messages
+            .safeAreaInset(edge: .top) { UnavailableBanner(text: thread.unavailable) }
+            .safeAreaInset(edge: .bottom) { composer }
+            .navigationTitle(thread.conversation.title)
+            .toolbar {
+                ToolbarItem { ContextMeter(used: thread.contextUsed, total: thread.contextSize) }
+            }
+            .sheet(item: $shownSource) { PassageSheet(source: $0) }
+            .alert("Search the web?", isPresented: $explainingWeb) {
+                Button("Turn On") {
+                    webExplained = true
+                    web = true
                 }
-                .padding()
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("""
+                    Your question is sent to Parallel Search (or Firecrawl if it's busy) and Wikipedia to find pages. \
+                    Links you paste are read from this device. The pages are saved in this conversation, and your friend \
+                    answers here, on this device.
+                    """)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: thread.state) { proxy.scrollTo("end", anchor: .bottom) }
-            .onChange(of: conversation.messages.count) { proxy.scrollTo("end", anchor: .bottom) }
-            .onAppear { proxy.scrollTo("end", anchor: .bottom) }
-        }
-        .safeAreaInset(edge: .top) {
-            if let unavailable = thread.unavailable {
-                Label(unavailable, systemImage: "exclamationmark.triangle")
-                    .font(.callout).padding(10).frame(maxWidth: .infinity)
-                    .background(.yellow.opacity(0.2))
+            .onChange(of: library.conversation(thread.conversation.id)?.modifiedAt) {
+                if let latest = library.conversation(thread.conversation.id) { thread.refresh(from: latest) }
             }
-        }
-        .safeAreaInset(edge: .bottom) {
-            ChatComposer(draft: $draft, library: library, conversation: conversation.id, adder: adder,
-                         answering: thread.state != .idle, disabled: thread.unavailable != nil,
-                         web: Binding(get: { web }, set: { on in
-                             if on && !webExplained { explainingWeb = true } else { web = on }
-                         }),
-                         send: send, stop: thread.stop)
-        }
-        .navigationTitle(conversation.title)
-        .toolbar {
-            ToolbarItem { ContextMeter(used: thread.contextUsed, total: thread.contextSize) }
-        }
-        .sheet(item: $shownSource) { PassageSheet(source: $0) }
-        .alert("Search the web?", isPresented: $explainingWeb) {
-            Button("Turn On") {
-                webExplained = true
-                web = true
+            .onKeyPress(.escape) {
+                guard thread.state != .idle else { return .ignored }
+                stop()
+                return .handled
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("""
-                Your question is sent to Parallel Search (or Firecrawl if it's busy) and Wikipedia to find pages. \
-                Links you paste are read from this device. The pages are saved in this conversation, and your friend \
-                answers here, on this device.
-                """)
-        }
-        .fileAdding(adder)
-        #if os(macOS)
-        // ⌘V with copied files or an image attaches them (while the message box isn't taking the paste).
-        .onPasteCommand(of: FileAdder.pasteTypes) { adder.add($0) }
-        #endif
+            .fileAdding(adder)
+            #if os(macOS)
+            // ⌘V with copied files or an image attaches them (while the message box isn't taking the paste).
+            .onPasteCommand(of: FileAdder.pasteTypes) { adder.add($0) }
+            #endif
     }
 
-    @ViewBuilder
-    private var status: some View {
+    private var messages: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                MessageList(thread: thread, editing: $editing, showSource: { shownSource = $0 },
+                            resend: { id, text in thread.resend(from: id, as: text, web: web) })
+                    .padding()
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: thread.state) { proxy.scrollTo(MessageList.end, anchor: .bottom) }
+            .onChange(of: thread.conversation.messages.count) { proxy.scrollTo(MessageList.end, anchor: .bottom) }
+            // The composer grew (files attached, more lines): keep the last message above it.
+            .onChange(of: composerHeight) { proxy.scrollTo(MessageList.end, anchor: .bottom) }
+            .onAppear { proxy.scrollTo(MessageList.end, anchor: .bottom) }
+        }
+    }
+
+    private var composer: some View {
+        ChatComposer(draft: $draft, library: library, conversation: thread.conversation.id, adder: adder,
+                     answering: thread.state != .idle, disabled: thread.unavailable != nil,
+                     web: Binding(get: { web }, set: { on in
+                         if on && !webExplained { explainingWeb = true } else { web = on }
+                     }),
+                     send: send, stop: stop, onHeight: { composerHeight = $0 })
+    }
+
+    private func send() {
+        guard thread.state == .idle else { return }
+        thread.send(draft, web: web)
+        draft = ""
+    }
+
+    /// Stopped before the friend wrote anything: the question comes back to the box.
+    private func stop() {
+        if let question = thread.stop() { draft = question }
+    }
+}
+
+struct UnavailableBanner: View {
+    let text: String?
+
+    var body: some View {
+        if let text {
+            Label(text, systemImage: "exclamationmark.triangle")
+                .font(.callout).padding(10).frame(maxWidth: .infinity)
+                .background(.yellow.opacity(0.2))
+        }
+    }
+}
+
+/// The conversation: messages (one of them maybe being edited), the summary divider, and what the friend is doing.
+struct MessageList: View {
+    static let end = "end"
+    let thread: ChatThread
+    @Binding var editing: UUID?
+    let showSource: (ChatSource) -> Void
+    let resend: (UUID, String) -> Void
+
+    var body: some View {
+        let conversation = thread.conversation
+        LazyVStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(conversation.messages.enumerated()), id: \.element.id) { index, message in
+                if index == conversation.summarizedCount, index > 0 { SummaryDivider() }
+                if editing == message.id {
+                    MessageEditor(text: message.text, cancel: { editing = nil }) { text in
+                        editing = nil
+                        resend(message.id, text)
+                    }
+                } else {
+                    MessageRow(message: message, showSource: showSource,
+                               edit: message.role == .user && thread.state == .idle ? { editing = message.id } : nil)
+                }
+            }
+            ChatStatus(thread: thread)
+            Color.clear.frame(height: 1).id(Self.end)
+        }
+    }
+}
+
+/// What the friend is doing right now, or what went wrong last.
+struct ChatStatus: View {
+    let thread: ChatThread
+
+    var body: some View {
         switch thread.state {
         case .idle:
             if let failure = thread.failure {
@@ -217,24 +288,63 @@ struct ChatScreen: View {
             if let notice = thread.notice {
                 Label(notice, systemImage: "globe").font(.callout).foregroundStyle(.secondary)
             }
+        case .checking:
+            working("Thinking…", symbol: "ellipsis.bubble")
         case .browsing(let status):
-            Label(status, systemImage: "globe").font(.callout).foregroundStyle(.secondary)
-                .symbolEffect(.pulse)
+            working(status, symbol: "globe")
         case .compacting:
-            Label("Compacting conversation… summarising older messages to make room", systemImage: "rectangle.compress.vertical")
-                .font(.callout).foregroundStyle(.secondary)
-                .symbolEffect(.pulse)
+            working("Compacting conversation… summarising older messages to make room", symbol: "rectangle.compress.vertical")
         case .searching:
-            Label("Searching your files…", systemImage: "magnifyingglass").font(.callout).foregroundStyle(.secondary)
+            working("Searching your files…", symbol: "magnifyingglass")
         case .answering(let text):
             MessageRow(message: ChatMessage(role: .friend, text: text.isEmpty ? "…" : text), live: true, showSource: { _ in })
         }
     }
 
-    private func send() {
-        guard thread.state == .idle else { return }
-        thread.send(draft, web: web)
-        draft = ""
+    private func working(_ text: String, symbol: String) -> some View {
+        Label(text, systemImage: symbol).font(.callout).foregroundStyle(.secondary).symbolEffect(.pulse)
+    }
+}
+
+/// Editing a sent message in place: Send replaces it and everything after it.
+struct MessageEditor: View {
+    @State private var text: String
+    let cancel: () -> Void
+    let send: (String) -> Void
+    @FocusState private var focused: Bool
+
+    init(text: String, cancel: @escaping () -> Void, send: @escaping (String) -> Void) {
+        _text = State(initialValue: text)
+        self.cancel = cancel
+        self.send = send
+    }
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            TextField("Message", text: $text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...10)
+                .focused($focused)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.tint, lineWidth: 1.5))
+                .onKeyPress(.escape) {
+                    cancel()
+                    return .handled
+                }
+            Text("Sending replaces this message and everything after it.").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("Cancel", action: cancel).buttonStyle(.bordered)
+                Button("Send") { send(text) }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .onAppear { focused = true }
     }
 }
 
@@ -243,36 +353,60 @@ struct MessageRow: View {
     /// Still streaming: previews (diagrams, HTML) wait for the finished answer.
     var live = false
     let showSource: (ChatSource) -> Void
+    /// Offered on the user's own messages while the friend is idle.
+    var edit: (() -> Void)?
+    @State private var hovering = false
 
     var body: some View {
         let mine = message.role == .user
         VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
-            Group {
-                if mine {
-                    Text(message.text).textSelection(.enabled)
-                } else {
-                    MarkdownView(text: message.text, live: live)
+            HStack(alignment: .top, spacing: 6) {
+                if mine, let edit, hovering {
+                    Button(action: edit) { Image(systemName: "pencil") }
+                        .buttonStyle(.borderless)
+                        .help("Edit")
+                        .accessibilityLabel("Edit message")
                 }
+                bubble(mine: mine)
             }
-                .padding(10)
-                .background(mine ? AnyShapeStyle(.tint.opacity(0.2)) : AnyShapeStyle(.quaternary.opacity(0.5)),
-                            in: RoundedRectangle(cornerRadius: 14))
-            if !message.sources.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(message.sources) { source in
-                            Button { showSource(source) } label: {
-                                Label(source.label, systemImage: source.kind.symbol).font(.caption).lineLimit(1)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .accessibilityHint("Shows the passage this answer used")
-                        }
+            if !message.sources.isEmpty { sources }
+        }
+        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(message.text) }
+            if let edit { Button("Edit", systemImage: "pencil", action: edit) }
+        }
+        .accessibilityAction(named: "Edit") { edit?() }
+    }
+
+    private func bubble(mine: Bool) -> some View {
+        Group {
+            if mine {
+                Text(message.text).textSelection(.enabled)
+            } else {
+                MarkdownView(text: message.text, live: live)
+            }
+        }
+        .padding(10)
+        .background(mine ? AnyShapeStyle(.tint.opacity(0.2)) : AnyShapeStyle(.quaternary.opacity(0.5)),
+                    in: RoundedRectangle(cornerRadius: 14))
+        .opacity(message.isAside ? 0.7 : 1)
+    }
+
+    private var sources: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(message.sources) { source in
+                    Button { showSource(source) } label: {
+                        Label(source.label, systemImage: source.kind.symbol).font(.caption).lineLimit(1)
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityHint("Shows the passage this answer used")
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
     }
 }
 

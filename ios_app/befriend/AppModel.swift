@@ -32,6 +32,12 @@ final class AppModel {
     var pendingPairingCode: String?
     /// A chat topic the widget was tapped on (M19): Home asks new chat or continue.
     var pendingFollowUp: ChatFollowUp?
+    /// Chat sync (M23), once the account is known.
+    private(set) var chatSync: ChatSync?
+    /// A scanned Mac code asking for the chat key: Home asks before anything is sent.
+    var pendingChatInvitation: ChatCrypto.Invitation?
+    /// The chat-key invitation in a sign-in pairing code: accepted once the user pairs that Mac.
+    @ObservationIgnored var pairingChatInvitation: ChatCrypto.Invitation?
     /// Opens Chat where a follow-up points.
     let chatNavigator = ChatNavigator()
     /// Away at least this long, the friend greets the user with a recent chat instead.
@@ -207,7 +213,24 @@ final class AppModel {
         uploader.settings = settings
     }
 
+    private func startChatSync(userID: String) {
+        guard chatSync == nil else { return }
+        let sync = ChatSync(library: chat, api: api, userID: userID,
+                            folder: URL.applicationSupportDirectory.appending(path: "Chat", directoryHint: .isDirectory))
+        chatSync = sync
+        sync.start()
+    }
+
+    /// Sends the chat key to the Mac that showed the code (after the user said yes), or receives it from there.
+    func acceptChatInvitation(_ invitation: ChatCrypto.Invitation) {
+        pendingChatInvitation = nil
+        chatSync?.accept(invitation)
+    }
+
     private func signedOut() {
+        chatSync?.stop()
+        chatSync = nil
+        chat.wipe() // the account's chats stay on the server, encrypted, for the next sign-in
         timelapse.setSignedIn(false) // the camera never outlives the account
         posture.setOn(false)
         uploader.stop()
@@ -235,6 +258,8 @@ final class AppModel {
 
     func handleDeepLink(_ url: URL) {
         if let followUp = ChatFollowUp(url: url) { return pendingFollowUp = followUp }
+        if url.scheme == "befriend", url.host() == "chatsync" { return pendingChatInvitation = ChatCrypto.Invitation(url: url) }
+        if url.host() == "pair" { pairingChatInvitation = ChatCrypto.Invitation(url: url) }
         guard url.scheme == "befriend", url.host() == "pair",
               let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "code" })?.value,
@@ -266,6 +291,7 @@ final class AppModel {
         if peer == nil {
             Task { [weak self] in
                 guard let self, self.peer == nil, let me = try? await self.api.me() else { return }
+                self.startChatSync(userID: me.id)
                 self.peer = PresencePeer(userID: me.id, displayName: UIDevice.current.name)
                 if self.isForeground { self.startClaiming() }
             }
@@ -396,6 +422,7 @@ final class AppModel {
         if scenePhase != .inactive { isForeground = scenePhase == .active }
         if scenePhase == .active, api.isSignedIn {
             Task { await skins.sync(api: api) } // a skin picked on the Mac, granted, or revoked meanwhile
+            chatSync?.sync()
         }
         guard let current = friend else { return }
         switch scenePhase {

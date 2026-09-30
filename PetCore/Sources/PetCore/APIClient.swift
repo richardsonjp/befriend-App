@@ -132,8 +132,17 @@ public final class APIClient {
         _ = try await sendRaw(method, path, body: body, authorized: authorized)
     }
 
+    /// `path` may end in a query ("records?after=3"): `appending(path:)` would escape the "?".
+    static func url(_ base: URL, _ path: String) -> URL {
+        let parts = path.split(separator: "?", maxSplits: 1)
+        let url = base.appending(path: "api/" + (parts.first.map(String.init) ?? ""))
+        guard parts.count == 2, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        components.percentEncodedQuery = String(parts[1])
+        return components.url ?? url
+    }
+
     func sendRaw(_ method: String, _ path: String, body: (any Encodable)?, authorized: Bool, timeout: TimeInterval? = nil) async throws -> Data {
-        var request = URLRequest(url: baseURL.appending(path: "api/" + path))
+        var request = URLRequest(url: Self.url(baseURL, path))
         request.httpMethod = method
         if let timeout { request.timeoutInterval = timeout }
         request.setValue(staticAPIKey, forHTTPHeaderField: "STATIC-API-KEY")

@@ -97,8 +97,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                                   backing: .buffered, defer: false)
             window.title = "Chat"
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: ChatRoot(library: controller.chat, friend: controller.friend,
-                                                                  navigator: controller.chatNavigator))
+            window.contentView = NSHostingView(rootView: MacChatRoot(controller: controller))
             window.center()
             window.setFrameAutosaveName("Chat")
             chatWindow = window
@@ -325,5 +324,14 @@ private extension NSMenuItem {
     func targeted(_ target: AnyObject) -> NSMenuItem {
         self.target = target
         return self
+    }
+}
+
+/// Chat in its window, following the controller: sync appears once the account is known.
+private struct MacChatRoot: View {
+    let controller: MacController
+
+    var body: some View {
+        ChatRoot(library: controller.chat, friend: controller.friend, navigator: controller.chatNavigator, sync: controller.chatSync)
     }
 }

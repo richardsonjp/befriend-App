@@ -18,7 +18,10 @@ struct ChatComposer: View {
     @Binding var web: Bool
     let send: () -> Void
     let stop: () -> Void
+    /// The card's height as it grows (files, more lines), so the chat can keep its last message in view.
+    var onHeight: (CGFloat) -> Void = { _ in }
     @FocusState private var focused: Bool
+    @State private var selection: TextSelection?
 
     /// Pasting this many characters or more at once makes a file of them.
     static let pasteAsFile = 1000
@@ -36,11 +39,17 @@ struct ChatComposer: View {
                 }
                 .scrollClipDisabled()
             }
-            TextField("Ask about your files", text: $draft, axis: .vertical)
+            TextField("Ask about your files", text: $draft, selection: $selection, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...8)
+                .frame(maxWidth: .infinity, alignment: .leading) // fill the card, full screen too
                 .focused($focused)
                 .onSubmit(send)
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.shift) else { return .ignored }
+                    insertNewline()
+                    return .handled
+                }
                 .padding(.horizontal, 4)
             HStack(spacing: 10) {
                 AddFilesMenu(adder: adder, pastedText: { draft += $0 }) {
@@ -59,7 +68,9 @@ struct ChatComposer: View {
             .controlSize(.large)
         }
         .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: .rect(cornerRadius: 24))
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }, action: onHeight)
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
         .onChange(of: draft) { old, new in
@@ -98,8 +109,20 @@ struct ChatComposer: View {
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.circle)
         .disabled(!answering && (empty || disabled))
-        .keyboardShortcut(.return, modifiers: .command)
+        .keyboardShortcut(answering ? KeyboardShortcut(".", modifiers: .command) : KeyboardShortcut(.return, modifiers: .command))
+        .help(answering ? "Stop (⌘. or Esc)" : "Send (Return)")
         .accessibilityLabel(answering ? "Stop answering" : "Send")
+    }
+
+    /// Shift-Return: a new line where the cursor is (Return sends).
+    private func insertNewline() {
+        guard case .selection(let range)? = selection?.indices, range.upperBound <= draft.endIndex else {
+            draft += "\n"
+            return
+        }
+        let offset = draft.distance(from: draft.startIndex, to: range.lowerBound)
+        draft.replaceSubrange(range, with: "\n")
+        selection = TextSelection(insertionPoint: draft.index(draft.startIndex, offsetBy: offset + 1))
     }
 
     /// If `new` is `old` with a long block pasted in, the draft without it and the block.

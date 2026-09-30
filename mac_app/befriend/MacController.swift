@@ -31,6 +31,25 @@ final class MacController {
 
     private(set) var stage: Stage = .launching
     private(set) var pairing: PairingStart?
+    /// Chat sync (M23), once the account is known.
+    private(set) var chatSync: ChatSync?
+    /// Rides along in the sign-in QR code, so the iPhone can hand over the chat key as it pairs this Mac.
+    @ObservationIgnored private var pairingInvitation: (invitation: ChatCrypto.Invitation, party: ChatCrypto.Party)?
+    @ObservationIgnored private var chatSyncLoop: Task<Void, Never>?
+    private static let chatSyncInterval: Duration = .seconds(60)
+
+    /// The sign-in code as a link: the pairing code plus the chat-key invitation.
+    var pairingURL: URL? {
+        guard let pairing else { return nil }
+        var components = URLComponents(url: pairing.url, resolvingAgainstBaseURL: false)
+        if pairingInvitation == nil {
+            let party = ChatCrypto.Party()
+            pairingInvitation = (ChatCrypto.newInvitation(party), party)
+        }
+        let items = (components?.queryItems ?? []) + (pairingInvitation?.invitation.queryItems ?? [])
+        components?.queryItems = items
+        return components?.url ?? pairing.url
+    }
     private(set) var settings = SyncSettings()
     private(set) var frontmostApp: String?
     var errorMessage: String?
@@ -208,6 +227,7 @@ final class MacController {
         Task { [weak self] in
             guard let self, let me = try? await self.api.me() else { return }
             self.startPeer(userID: me.id)
+            self.startChatSync(userID: me.id)
         }
 
         let monitor = TriggerMonitor(onIdleReading: { [weak self] in self?.presence?.update(idleSeconds: $0) }) { [weak self] in
@@ -505,7 +525,29 @@ final class MacController {
         MacConfig.saveSettings(latest)
     }
 
+    /// Syncs chats now and every minute; picks up a key the iPhone sealed while pairing this Mac.
+    private func startChatSync(userID: String) {
+        guard chatSync == nil else { return }
+        let sync = ChatSync(library: chat, api: api, userID: userID,
+                            folder: URL.applicationSupportDirectory.appending(path: "Chat", directoryHint: .isDirectory))
+        chatSync = sync
+        if let pairingInvitation { sync.resume(pairingInvitation.invitation, party: pairingInvitation.party) }
+        pairingInvitation = nil
+        sync.start()
+        chatSyncLoop = Task { [weak sync] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.chatSyncInterval)
+                sync?.sync()
+            }
+        }
+    }
+
     private func signedOut() {
+        chatSyncLoop?.cancel()
+        chatSyncLoop = nil
+        chatSync?.stop()
+        chatSync = nil
+        chat.wipe() // the account's chats stay on the server, encrypted, for the next sign-in
         timelapse.setSignedIn(false) // the camera never outlives the account
         posture.setOn(false)
         friendPoll?.cancel()

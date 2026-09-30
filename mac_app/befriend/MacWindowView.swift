@@ -55,7 +55,7 @@ private struct SignInView: View {
         Text("Bring your friend to this Mac").font(.title2.bold())
 
         VStack(spacing: 10) {
-            if let pairing = controller.pairing, let qr = Self.qrImage(for: pairing.url) {
+            if let pairing = controller.pairing, let url = controller.pairingURL, let qr = Self.qrImage(for: url) {
                 Image(nsImage: qr)
                     .interpolation(.none)
                     .resizable()

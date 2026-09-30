@@ -18,6 +18,8 @@ public final class ChatThread {
 
     public enum State: Equatable {
         case idle
+        /// Making sure a borderline message means something (the guardrail's model check).
+        case checking
         case compacting
         case searching
         /// Reading links or searching the web, with what it's doing.
@@ -68,10 +70,57 @@ public final class ChatThread {
         notice = nil
         conversation.messages.append(ChatMessage(role: .user, text: question))
         library.save(conversation)
+        state = .searching // busy from the moment it's sent, so Stop works at once
         turn = Task {
+            let sensible = await makesSense(question)
+            guard !Task.isCancelled else { return } // stopped: stop() already tidied up
+            guard sensible else { return clarify() }
             await browse(for: question, web: web)
+            guard !Task.isCancelled else { return }
             await answer(question)
         }
+    }
+
+    /// Edits one of the user's messages: it and everything after it go, and the new text is sent in its place.
+    public func resend(from messageID: UUID, as text: String, web: Bool = false) {
+        guard state == .idle, let index = conversation.messages.firstIndex(where: { $0.id == messageID }),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        conversation.messages.removeSubrange(index...)
+        if conversation.summarizedCount > index {
+            // The notes covered messages that are gone: start them over; compaction redoes them if needed.
+            conversation.summary = nil
+            conversation.summarizedCount = 0
+        }
+        conversation.contextUsed = nil
+        send(text, web: web)
+    }
+
+    /// A newer copy from the other device (sync): taken while nothing is under way here.
+    public func refresh(from latest: Conversation) {
+        guard state == .idle, (latest.modifiedAt ?? .distantPast) > (conversation.modifiedAt ?? .distantPast) else { return }
+        conversation = latest
+    }
+
+    // MARK: Guardrail
+
+    /// The instant check, then the model for borderline messages.
+    private func makesSense(_ question: String) async -> Bool {
+        switch MessageCheck.judge(question) {
+        case .valid: return true
+        case .gibberish: return false
+        case .unsure:
+            state = .checking
+            return await MessageCheck.askModel(question, model: model)
+        }
+    }
+
+    /// Gibberish: the friend asks what was meant. Neither message is used as context later.
+    private func clarify() {
+        if let last = conversation.messages.indices.last { conversation.messages[last] = conversation.messages[last].markedAside() }
+        let reply = MessageCheck.clarifications.randomElement() ?? MessageCheck.clarifications[0]
+        conversation.messages.append(ChatMessage(role: .friend, text: reply, aside: true))
+        library.save(conversation)
+        state = .idle
     }
 
     // MARK: Web
@@ -99,7 +148,10 @@ public final class ChatThread {
         }
         guard !Task.isCancelled else { return }
         let report: @Sendable (String) -> Void = { status in
-            Task { @MainActor [weak self] in self?.state = .browsing(status) }
+            Task { @MainActor [weak self] in
+                guard let self, case .browsing = self.state else { return } // stopped meanwhile
+                self.state = .browsing(status)
+            }
         }
         let added = await library.addWeb(sources, question: question, scope: .conversation(conversation.id), progress: report)
         justFound = Set(added.map(\.id))
@@ -117,12 +169,28 @@ public final class ChatThread {
         return queries.isEmpty ? [String(question.prefix(100))] : queries
     }
 
-    public func stop() {
+    /// Stops searching, reading and answering at once. Before the friend wrote anything, the question is taken back
+    /// out of the chat and returned, for the message box; after, the partial answer stays and nil comes back.
+    @discardableResult
+    public func stop() -> String? {
+        let early: Bool
+        switch state {
+        case .idle: return nil
+        case .answering(let text): early = text.isEmpty
+        default: early = true
+        }
         turn?.cancel()
+        turn = nil
+        state = .idle
+        guard early, let last = conversation.messages.last, last.role == .user else { return nil }
+        conversation.messages.removeLast()
+        library.save(conversation)
+        return last.text
     }
 
     private func answer(_ question: String) async {
-        defer { state = .idle }
+        // A stopped turn leaves the state alone: the next message may already be under way.
+        defer { if !Task.isCancelled { state = .idle } }
         let budget = ChatPrompt.split(contextSize: contextSize, instructions: ChatPrompt.estimate(instructions),
                                       question: ChatPrompt.estimate(question))
         state = .searching
@@ -135,7 +203,7 @@ public final class ChatThread {
         let history = budget.history + budget.passages - passageTokens.prefix(passages.count).reduce(0, +)
         await compactIfNeeded(budget: history)
 
-        let earlier = Array(conversation.messages[conversation.summarizedCount..<(conversation.messages.count - 1)])
+        let earlier = conversation.messages[conversation.summarizedCount..<(conversation.messages.count - 1)].filter { !$0.isAside }
         let summaryTokens = conversation.summary.map(ChatPrompt.estimate) ?? 0
         let keep = ChatPrompt.fitting(earlier.reversed().map { ChatPrompt.estimate($0.text) + 4 }, budget: history - summaryTokens)
         let prompt = ChatPrompt.make(summary: conversation.summary, recent: Array(earlier.suffix(keep)), passages: passages, question: question)
@@ -145,6 +213,7 @@ public final class ChatThread {
         do {
             state = .answering("")
             for try await snapshot in session.streamResponse(to: prompt) {
+                guard !Task.isCancelled else { break }
                 text = snapshot.content
                 state = .answering(text)
             }
@@ -171,7 +240,7 @@ public final class ChatThread {
             let chunk = ChatPrompt.fitting(open.prefix(count).map { ChatPrompt.estimate($0.text) + 4 }, budget: ChatPrompt.compactChunk)
             let batch = Array(open.prefix(max(1, chunk)))
             let session = LanguageModelSession(model: model, instructions: ChatPrompt.summarizerInstructions)
-            let request = ChatPrompt.summaryRequest(previous: conversation.summary, messages: batch)
+            let request = ChatPrompt.summaryRequest(previous: conversation.summary, messages: batch.filter { !$0.isAside })
             if let summary = try? await session.respond(to: request).content {
                 conversation.summary = String(summary.prefix(ChatPrompt.summaryLimit))
             } else {

@@ -79,7 +79,7 @@ public final class ChatLibrary {
         let since = now.addingTimeInterval(-Double(days) * 86_400)
         return conversations.flatMap { conversation in
             zip(conversation.messages, conversation.messages.dropFirst()).compactMap { question, answer in
-                guard question.role == .user, answer.role == .friend, answer.date >= since else { return nil }
+                guard question.role == .user, answer.role == .friend, !question.isAside, answer.date >= since else { return nil }
                 return ChatExchange(conversationID: conversation.id, question: question.text, answer: answer.text, date: answer.date)
             }
         }
@@ -91,31 +91,118 @@ public final class ChatLibrary {
     }
 
     public func save(_ conversation: Conversation) {
-        conversations.removeAll { $0.id == conversation.id }
-        conversations.insert(conversation, at: 0)
-        Self.write(conversation, to: conversationsDir.appending(path: "\(conversation.id).json"))
+        var stamped = conversation
+        stamped.modifiedAt = .now
+        store(stamped)
     }
 
     /// Also removes the files attached to it.
     public func delete(conversation id: UUID) {
-        conversations.removeAll { $0.id == id }
-        try? FileManager.default.removeItem(at: conversationsDir.appending(path: "\(id).json"))
+        erase(.conversation, id)
         for document in attached(to: id) { delete(document: document.id) }
+    }
+
+    // MARK: Sync (M23)
+
+    /// What sync keeps in step: a conversation or a file, by id.
+    public enum RecordKind: String, Codable, Sendable { case conversation, document }
+
+    /// A change made on this device, for sync to upload. Changes that came from sync aren't reported back.
+    public struct Change: Equatable, Sendable {
+        public let kind: RecordKind
+        public let id: UUID
+        public let deleted: Bool
+        public let at: Date
+    }
+
+    @ObservationIgnored public var onChange: (Change) -> Void = { _ in }
+
+    /// Every record on this device, for a first upload.
+    public var allChanges: [Change] {
+        conversations.map { Change(kind: .conversation, id: $0.id, deleted: false, at: $0.modifiedAt ?? $0.updatedAt) }
+            + documents.map { Change(kind: .document, id: $0.id, deleted: false, at: $0.modifiedAt ?? $0.addedAt) }
+    }
+
+    private func store(_ conversation: Conversation, local: Bool = true) {
+        conversations.removeAll { $0.id == conversation.id }
+        conversations.insert(conversation, at: 0)
+        conversations.sort { $0.updatedAt > $1.updatedAt }
+        Self.write(conversation, to: conversationsDir.appending(path: "\(conversation.id).json"))
+        if local { onChange(Change(kind: .conversation, id: conversation.id, deleted: false, at: conversation.modifiedAt ?? .now)) }
+    }
+
+    private func store(_ document: ChatDocument, local: Bool = true) {
+        var stamped = document
+        if local { stamped.modifiedAt = .now }
+        documents.removeAll { $0.id == stamped.id }
+        documents.insert(stamped, at: 0)
+        Self.write(stamped, to: documentsDir.appending(path: "\(stamped.id).json"))
+        if local { onChange(Change(kind: .document, id: stamped.id, deleted: false, at: stamped.modifiedAt ?? .now)) }
+    }
+
+    private func erase(_ kind: RecordKind, _ id: UUID, local: Bool = true) {
+        switch kind {
+        case .conversation:
+            conversations.removeAll { $0.id == id }
+            try? FileManager.default.removeItem(at: conversationsDir.appending(path: "\(id).json"))
+        case .document:
+            documents.removeAll { $0.id == id }
+            try? FileManager.default.removeItem(at: documentsDir.appending(path: "\(id).json"))
+            forget(id)
+        }
+        if local { onChange(Change(kind: kind, id: id, deleted: true, at: .now)) }
+    }
+
+    /// When a record on this device was last changed, if it's here.
+    public func modifiedAt(_ kind: RecordKind, _ id: UUID) -> Date? {
+        switch kind {
+        case .conversation: conversations.first { $0.id == id }.map { $0.modifiedAt ?? $0.updatedAt }
+        case .document: documents.first { $0.id == id }.map { $0.modifiedAt ?? $0.addedAt }
+        }
+    }
+
+    /// A record as sync uploads it: files without their embeddings (the other device computes its own).
+    public func payload(_ kind: RecordKind, _ id: UUID) throws -> Data? {
+        switch kind {
+        case .conversation: try conversations.first { $0.id == id }.map { try JSONEncoder().encode($0) }
+        case .document: try documents.first { $0.id == id }.map { try JSONEncoder().encode($0.withoutVectors()) }
+        }
+    }
+
+    /// A newer record from the other device. Files get their embeddings back here, off the main actor.
+    public func applyRemote(_ kind: RecordKind, _ data: Data) async throws {
+        switch kind {
+        case .conversation:
+            store(try JSONDecoder().decode(Conversation.self, from: data), local: false)
+        case .document:
+            let document = try JSONDecoder().decode(ChatDocument.self, from: data)
+            store(await Task.detached { document.embedded() }.value, local: false)
+        }
+    }
+
+    public func removeRemote(_ kind: RecordKind, _ id: UUID) {
+        erase(kind, id, local: false)
+    }
+
+    /// Signing out: this device's copy goes (the account's chats stay on the server, encrypted).
+    public func wipe() {
+        for task in tasks.values { task.cancel() }
+        tasks = [:]
+        jobs = []
+        for id in conversations.map(\.id) { erase(.conversation, id, local: false) }
+        for id in documents.map(\.id) { erase(.document, id, local: false) }
     }
 
     // MARK: Files
 
     public func delete(document id: UUID) {
-        documents.removeAll { $0.id == id }
-        try? FileManager.default.removeItem(at: documentsDir.appending(path: "\(id).json"))
-        forget(id)
+        erase(.document, id)
     }
 
     /// Shares a conversation's file with every conversation.
     public func moveToLibrary(_ id: UUID) {
-        guard let index = documents.firstIndex(where: { $0.id == id }) else { return }
-        documents[index] = documents[index].with(scope: .library)
-        Self.write(documents[index], to: documentsDir.appending(path: "\(id).json"))
+        guard let document = documents.first(where: { $0.id == id }) else { return }
+        store(document.with(scope: .library))
     }
 
     /// Adds a file the user picked. `language` is the spoken language for audio and video; by default the device's
@@ -148,7 +235,7 @@ public final class ChatLibrary {
         let scope = documents.first { $0.id == id }?.scope ?? jobs.first { $0.id == id }?.scope ?? .library
         tasks.removeValue(forKey: id)?.cancel()
         jobs.removeAll { $0.id == id }
-        documents.removeAll { $0.id == id }
+        documents.removeAll { $0.id == id } // replaced (same id) once transcribed again, and synced then
         try? FileManager.default.removeItem(at: documentsDir.appending(path: "\(id).json"))
         add(source.url, scope: scope, language: language, temporary: source.temporary, id: id)
     }
@@ -178,8 +265,7 @@ public final class ChatLibrary {
             guard !pieces.isEmpty, let passages = try? await Self.index(pieces, progress: { _ in }) else { continue }
             if let old = documents.first(where: { $0.url == source.url && $0.scope == scope }) { delete(document: old.id) }
             let document = ChatDocument(name: source.title, kind: .web, scope: scope, passages: passages, url: source.url)
-            documents.insert(document, at: 0)
-            Self.write(document, to: documentsDir.appending(path: "\(document.id).json"))
+            store(document)
             added.append(document)
         }
         return added
@@ -233,8 +319,7 @@ public final class ChatLibrary {
     private func finish(_ document: ChatDocument) {
         guard tasks.removeValue(forKey: document.id) != nil else { return } // cancelled meanwhile
         jobs.removeAll { $0.id == document.id }
-        documents.insert(document, at: 0)
-        Self.write(document, to: documentsDir.appending(path: "\(document.id).json"))
+        store(document)
     }
 
     /// A failed job stays with its reason until dismissed (`cancel`).

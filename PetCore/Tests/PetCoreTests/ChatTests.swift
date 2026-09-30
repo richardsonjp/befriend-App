@@ -115,7 +115,7 @@ struct ChatStorageTests {
         for _ in 0..<100 where library.documents.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
 
         let reopened = ChatLibrary(root: root)
-        #expect(reopened.conversations == [conversation])
+        #expect(reopened.conversations.map(\.id) == [conversation.id] && reopened.conversations.first?.messages == conversation.messages)
         #expect(reopened.documents(for: conversation.id).map(\.name) == ["Groceries"])
         #expect(reopened.libraryDocuments.isEmpty)
         reopened.delete(conversation: conversation.id)

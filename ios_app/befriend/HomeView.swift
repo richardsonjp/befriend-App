@@ -198,10 +198,19 @@ struct HomeView: View {
                 TimelapseGallery(library: model.timelapse.library).navigationTitle("Timelapses")
             }
             .fullScreenCover(isPresented: $showChat) {
-                ChatRoot(library: model.chat, friend: friend, navigator: model.chatNavigator) { showChat = false }
+                ChatRoot(library: model.chat, friend: friend, navigator: model.chatNavigator, sync: model.chatSync) { showChat = false }
             }
             .onChange(of: model.chatNavigator.pending) { _, start in
                 if start != nil { showChat = true }
+            }
+            .alert("Sync chats with this Mac?", isPresented: Binding(
+                get: { model.pendingChatInvitation != nil },
+                set: { if !$0 { model.pendingChatInvitation = nil } }
+            ), presenting: model.pendingChatInvitation) { invitation in
+                Button("Sync") { model.acceptChatInvitation(invitation) }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("Only continue if you just scanned the code on your own Mac. Your chats' key goes to it encrypted, and your chats sync between them.")
             }
             .confirmationDialog("Follow up on this chat?", isPresented: Binding(
                 get: { model.pendingFollowUp != nil },
@@ -279,7 +288,7 @@ struct PairingConfirmView: View {
                 Text("Pair “\(info.deviceName)”?").font(.title2.bold()).multilineTextAlignment(.center)
                 Text("Only pair a Mac you're setting up right now. Check that it shows the code **\(Self.displayCode(code))**.")
                     .multilineTextAlignment(.center)
-                Text("That Mac gets access to your account and your friend, and syncs its activity to you.")
+                Text("That Mac gets access to your account, your friend and your chats, and syncs its activity to you.")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -330,6 +339,10 @@ struct PairingConfirmView: View {
         do {
             try await model.api.confirmPairing(code: code)
             state = .paired(info.deviceName)
+            if let invitation = model.pairingChatInvitation { // confirmed with the pairing itself
+                model.pairingChatInvitation = nil
+                model.acceptChatInvitation(invitation)
+            }
         } catch APIError.server(status: 404, _, _) {
             state = .expired
         } catch {
