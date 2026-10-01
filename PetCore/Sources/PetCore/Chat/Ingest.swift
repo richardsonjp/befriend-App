@@ -59,7 +59,7 @@ public nonisolated enum Ingest {
         case .pdf: result = Extracted(segments: try pdf(url), note: nil)
         case .image: result = Extracted(segments: [(try await describe(url), .none)], note: nil)
         case .audio, .video: result = try await media(url, video: kind == .video, language: language, progress: progress)
-        case .web: throw Failure.unsupported // pages come in through WebSearch
+        case .web, .memory: throw Failure.unsupported // pages come in through WebSearch; memory is never a file
         }
         guard result.segments.contains(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
             throw Failure.nothingFound

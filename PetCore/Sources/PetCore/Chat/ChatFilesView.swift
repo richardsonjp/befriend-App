@@ -236,6 +236,7 @@ extension ChatDocumentKind {
         case .audio: "Audio"
         case .video: "Video"
         case .web: "Web"
+        case .memory: "Remembered"
         }
     }
 
@@ -247,6 +248,7 @@ extension ChatDocumentKind {
         case .audio: .pink
         case .video: .purple
         case .web: .teal
+        case .memory: .purple
         }
     }
 }

@@ -16,6 +16,12 @@ public nonisolated struct WebSource: Equatable, Sendable {
     public let title: String
     public let text: String
 
+    public init(url: URL, title: String, text: String) {
+        self.url = url
+        self.title = title
+        self.text = text
+    }
+
     public var site: String { url.host()?.replacingOccurrences(of: "www.", with: "") ?? url.absoluteString }
 
     /// The same page under another query string or fragment (e.g. `?changes=_3`) counts once.
@@ -178,18 +184,63 @@ public nonisolated enum WebSearch {
     // MARK: Links
 
     /// http(s) links in a message, at most `maxLinks`.
+    /// http(s) links in a message, at most `maxLinks`, including bare domains ("antartech.co") the system's link
+    /// detector can miss. File names ("notes.txt") aren't domains.
     public static func links(in text: String) -> [URL] {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
-        let matches = detector.matches(in: text, range: NSRange(text.startIndex..., in: text))
-        var seen = Set<URL>()
-        return matches.compactMap(\.url)
-            .filter { ["http", "https"].contains($0.scheme?.lowercased()) && seen.insert($0).inserted }
+        let typedHTTP = text.lowercased().contains("http://")
+        let detected = detector.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap(\.url)
+            .filter { ["http", "https"].contains($0.scheme?.lowercased()) }
+            .map { url in
+                // A bare "antartech.co" comes back as http://; ask for https (fetch falls back if a site has none).
+                guard !typedHTTP, url.scheme == "http", var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+                components.scheme = "https"
+                return components.url ?? url
+            }
+        var seen = Set<String>()
+        return (detected + bareDomains(in: text))
+            .filter { seen.insert(pageKey($0)).inserted }
             .prefix(maxLinks)
             .map { $0 }
     }
 
-    /// Reads a page (HTML, plain text or PDF) from this device.
+    static let notDomains: Set<String> = [
+        "txt", "pdf", "md", "csv", "json", "ics", "swift", "png", "jpg", "jpeg", "heic", "gif", "mov", "mp4", "m4a", "mp3",
+        "wav", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "key", "pages", "numbers", "html", "js", "ts", "py", "sh",
+        "e", "g", "i",
+    ]
+
+    static func bareDomains(in text: String) -> [URL] {
+        let pattern = #"(?<![\w@./:-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,24}))(/[^\s,;)"']*)?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
+        return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match in
+            guard let host = Range(match.range(at: 1), in: text), let tld = Range(match.range(at: 2), in: text),
+                  !notDomains.contains(text[tld].lowercased()) else { return nil }
+            let path = Range(match.range(at: 3), in: text).map { String(text[$0]) } ?? ""
+            return URL(string: "https://" + text[host].lowercased() + path.trimmingCharacters(in: CharacterSet(charactersIn: ".!?")))
+        }
+    }
+
+    /// "antartech.co", whatever the scheme, "www." or trailing slash.
+    static func pageKey(_ url: URL) -> String {
+        let host = (url.host() ?? "").lowercased().replacingOccurrences(of: "www.", with: "")
+        let path = url.path().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return path.isEmpty ? host : host + "/" + path
+    }
+
+    /// Reads a page (HTML, plain text or PDF) from this device; an https address that fails is tried over http.
     public static func fetch(_ url: URL, session: URLSession = .shared) async throws -> WebSource {
+        do {
+            return try await fetchOnce(url, session: session)
+        } catch {
+            guard url.scheme == "https", !(error is CancellationError), var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw error }
+            components.scheme = "http"
+            guard let plain = components.url else { throw error }
+            return try await fetchOnce(plain, session: session)
+        }
+    }
+
+    private static func fetchOnce(_ url: URL, session: URLSession) async throws -> WebSource {
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         let (data, response) = try await session.data(for: request)

@@ -16,40 +16,77 @@ struct ChatComposer: View {
     let answering: Bool
     let disabled: Bool
     @Binding var web: Bool
+    @Binding var research: Bool
+    @Binding var effort: ResearchEffort
     let send: () -> Void
     let stop: () -> Void
     /// The card's height as it grows (files, more lines), so the chat can keep its last message in view.
     var onHeight: (CGFloat) -> Void = { _ in }
     @FocusState private var focused: Bool
     @State private var selection: TextSelection?
+    /// The highlighted row of the "/" menu.
+    @State private var highlighted = 0
+    @State private var confirmingClear = false
 
     /// Pasting this many characters or more at once makes a file of them.
     static let pasteAsFile = 1000
 
     var body: some View {
-        let items = library.items(in: .conversation(conversation))
+        let all = library.items(in: .conversation(conversation))
+        // Web pages from Search stay out of the box: one chip opens them (they still inform later answers).
+        let items = all.filter { $0.kind != .web }
+        let webPages = all.filter { $0.kind == .web }
+        let commands = ChatCommand.suggestions(for: draft)
         VStack(alignment: .leading, spacing: 10) {
+            if let commands {
+                CommandMenu(commands: commands, highlighted: min(highlighted, commands.count - 1)) { pick($0) }
+                Divider()
+            }
             if !items.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(items) { AttachmentCard(item: $0, library: library) }
+                        if items.count >= 2 {
+                            Button("Clear All", role: .destructive) { confirmingClear = true }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .accessibilityHint("Removes every file attached to this conversation")
+                        }
                     }
                     .padding(.top, 6)
                     .padding(.trailing, 6)
                 }
                 .scrollClipDisabled()
+                .confirmationDialog("Remove all \(items.count) files from this conversation?", isPresented: $confirmingClear) {
+                    Button("Remove All", role: .destructive) { library.removeAll(in: .conversation(conversation), web: false) }
+                }
+            }
+            if !webPages.isEmpty {
+                WebPagesChip(pages: webPages, library: library, conversation: conversation)
             }
             TextField("Ask about your files", text: $draft, selection: $selection, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...8)
                 .frame(maxWidth: .infinity, alignment: .leading) // fill the card, full screen too
                 .focused($focused)
-                .onSubmit(send)
+                .onSubmit {
+                    if let commands, let command = commands[safe: highlighted] { pick(command) } else { send() }
+                }
                 .onKeyPress(.return, phases: .down) { press in
                     guard press.modifiers.contains(.shift) else { return .ignored }
                     insertNewline()
                     return .handled
                 }
+                .onKeyPress(keys: [.upArrow, .downArrow, .tab], phases: .down) { press in
+                    guard let commands else { return .ignored }
+                    switch press.key {
+                    case .upArrow: highlighted = max(0, highlighted - 1)
+                    case .downArrow: highlighted = min(commands.count - 1, highlighted + 1)
+                    default: if let command = commands[safe: highlighted] { pick(command) }
+                    }
+                    return .handled
+                }
+                .onChange(of: draft) { highlighted = 0 }
                 .padding(.horizontal, 4)
             HStack(spacing: 10) {
                 AddFilesMenu(adder: adder, pastedText: { draft += $0 }) {
@@ -62,6 +99,7 @@ struct ChatComposer: View {
                 .fixedSize()
                 .accessibilityLabel("Add photos and files")
                 webButton
+                ResearchButton(on: $research, effort: $effort)
                 Spacer()
                 sendButton
             }
@@ -112,6 +150,13 @@ struct ChatComposer: View {
         .keyboardShortcut(answering ? KeyboardShortcut(".", modifiers: .command) : KeyboardShortcut(.return, modifiers: .command))
         .help(answering ? "Stop (⌘. or Esc)" : "Send (Return)")
         .accessibilityLabel(answering ? "Stop answering" : "Send")
+    }
+
+    /// Puts "/name " in the box; commands that need nothing typed after them run right away.
+    private func pick(_ command: ChatCommand) {
+        draft = "/" + command.name + " "
+        selection = TextSelection(insertionPoint: draft.endIndex)
+        if command.hint.isEmpty { send() } // the rest wait for what goes after them
     }
 
     /// Shift-Return: a new line where the cursor is (Return sends).
@@ -184,5 +229,82 @@ struct AttachmentCard: View {
 
     private func remove() {
         if case .ready = item.status { library.delete(document: item.id) } else { library.cancel(item.id) }
+    }
+}
+
+/// "🌐 12 web pages": what Search found for this conversation, out of the way. Opens the list, with Clear All.
+struct WebPagesChip: View {
+    let pages: [ChatFileItem]
+    let library: ChatLibrary
+    let conversation: UUID
+    @State private var showing = false
+
+    var body: some View {
+        Button { showing = true } label: {
+            Label(pages.count == 1 ? "1 web page" : "\(pages.count) web pages", systemImage: "globe")
+                .font(.caption.weight(.medium))
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
+        .help("Pages Search found; your friend can still use them")
+        .popover(isPresented: $showing) {
+            WebPagesList(pages: pages, library: library) {
+                library.removeAll(in: .conversation(conversation), web: true)
+                showing = false
+            }
+            .presentationCompactAdaptation(.sheet)
+            .presentationDetents([.medium, .large])
+        }
+    }
+}
+
+struct WebPagesList: View {
+    let pages: [ChatFileItem]
+    let library: ChatLibrary
+    let clearAll: () -> Void
+    @State private var confirming = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(pages) { page in
+                        HStack(spacing: 10) {
+                            Image(systemName: "globe").foregroundStyle(.teal)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(page.name).lineLimit(1)
+                                Text(page.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer(minLength: 4)
+                            if case .ready(let document) = page.status, let url = document.url {
+                                Link(destination: url) { Image(systemName: "safari") }
+                                    .buttonStyle(.borderless)
+                                    .accessibilityLabel("Open \(page.name)")
+                            }
+                        }
+                        .swipeActions { Button("Remove", role: .destructive) { library.delete(document: page.id) } }
+                        .contextMenu { Button("Remove", systemImage: "trash", role: .destructive) { library.delete(document: page.id) } }
+                    }
+                } footer: {
+                    Text("Search keeps these so follow-up questions can use them. Removing them doesn't change past answers.")
+                }
+            }
+            .navigationTitle("Web Pages")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .destructiveAction) {
+                    Button("Clear All", role: .destructive) { confirming = true }
+                }
+            }
+            .confirmationDialog("Remove all \(pages.count) web pages?", isPresented: $confirming) {
+                Button("Remove All", role: .destructive, action: clearAll)
+            }
+        }
+        #if os(macOS)
+        .frame(width: 380, height: 360)
+        #endif
     }
 }

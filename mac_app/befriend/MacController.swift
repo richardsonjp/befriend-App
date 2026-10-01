@@ -191,6 +191,7 @@ final class MacController {
             brain.context = { [pomodoro] in pomodoro.state.promptContext(at: .now) }
             brain.skin = { [skins] in skins.current?.vocabulary ?? (PetAction.builtIn, PetMood.builtIn) }
             brain.chatExchanges = { [weak self] in self?.chat.recentExchanges() ?? [] }
+            timelapse.title = { [weak self] context in await self?.brain.timelapseTitle(for: context) }
         }
         guard panel == nil else { return }
 

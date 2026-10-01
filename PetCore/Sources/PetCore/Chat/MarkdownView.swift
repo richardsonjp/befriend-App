@@ -12,6 +12,8 @@ import SwiftUI
 struct MarkdownView: View {
     let text: String
     var live = false
+    /// Saves an edited diagram (old code, new code) into the message (M29).
+    var editDiagram: ((String, String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -34,7 +36,8 @@ struct MarkdownView: View {
                         .padding(.leading, 10)
                         .overlay(alignment: .leading) { Capsule().fill(.tertiary).frame(width: 3) }
                 case .code(let language):
-                    CodeBlockView(code: block.plain, language: language, live: live)
+                    CodeBlockView(code: block.plain, language: language, live: live,
+                                  edit: editDiagram.map { save in { save(block.plain, $0) } })
                 case .table(let rows):
                     TableBlockView(rows: rows)
                 }
@@ -48,6 +51,7 @@ struct CodeBlockView: View {
     let code: String
     let language: String?
     let live: Bool
+    var edit: ((String) -> Void)?
     @State private var showCode = false
     @State private var copied = false
 
@@ -68,6 +72,7 @@ struct CodeBlockView: View {
                     .fixedSize()
                     .controlSize(.small)
                 }
+                if previewable && language == "mermaid" { DiagramMenu(code: code, edit: edit) }
                 Button {
                     Pasteboard.copy(code)
                     copied = true

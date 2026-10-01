@@ -60,6 +60,8 @@ public final class PetBrain {
     let instructions: String
     /// For checking in about earlier chats: their own rules, the same name and persona.
     let topicInstructions: String
+    /// For titles and other one-off writing in the friend's voice.
+    private let friend: FriendProfile?
     private let phrasebook: Phrasebook?
     private let model = SystemLanguageModel.default
     private let forceFallback: Bool
@@ -83,6 +85,7 @@ public final class PetBrain {
         self.said = SaidLines.load(from: saidStore)
         self.instructions = Self.makeInstructions(for: friend)
         self.topicInstructions = Self.makeInstructions(for: friend, base: Self.topicBase)
+        self.friend = friend
         self.phrasebook = friend?.phrasebook
         self.forceFallback = forceFallback
         self.appSwitchCooldown = appSwitchCooldown
@@ -202,6 +205,48 @@ public final class PetBrain {
         default: return nil
         }
         return chatExchanges().prefix(Self.topicPool).randomElement()
+    }
+
+    // MARK: Timelapse titles (M24)
+
+    nonisolated static let titleKey = "brain.timelapseTitles"
+    nonisolated static let titleBase = """
+        You are a small, friendly companion who lives on the user's devices. You name the user's focus-session video \
+        with a short, upbeat title, like a vlog title: 2 to 4 words with a feeling or a win in it, often playing on \
+        the weekday or the time of day. The style of "Productive Wednesday", "TGIF grind", "Monday, conquered", \
+        "Late-night deep work" or "Sunny side of Tuesday", but always your own words, true to your personality. \
+        Not just the day and time. Name the weekday in about half your titles; on Fridays "TGIF" fits. No quotes, \
+        hashtags or emoji. Never mention being an AI.
+        """
+
+    /// A title for a finished focus's video, in the friend's voice, never one used before.
+    public func timelapseTitle(for context: TimelapseTitleContext) async -> String {
+        var said = SaidLines.load(from: saidStore, key: Self.titleKey)
+        var title: String?
+        if !forceFallback, model.isAvailable {
+            let instructions = Self.makeInstructions(for: friend, base: Self.titleBase)
+            var prompt = context.promptLine
+            if let avoid = said.promptLine { prompt += "\n" + avoid.replacingOccurrences(of: "lines you already said", with: "titles you already used") }
+            let root = DynamicGenerationSchema(name: "Title", description: "A short title for a focus-session video", properties: [
+                .init(name: "title", description: "2 to 4 words", schema: DynamicGenerationSchema(type: String.self)),
+            ])
+            for attempt in 0..<Self.topicAttempts {
+                let session = LanguageModelSession(model: model, instructions: instructions)
+                let options = GenerationOptions(temperature: attempt == 0 ? nil : Self.retryTemperature)
+                guard let schema = try? GenerationSchema(root: root, dependencies: []),
+                      let content = try? await session.respond(to: prompt, schema: schema, options: options).content,
+                      let text = try? content.value(String.self, forProperty: "title"),
+                      let clean = TimelapseTitle.clean(text) else { continue }
+                if !said.contains(clean), context.fits(clean) {
+                    title = clean
+                    break
+                }
+            }
+        }
+        let chosen = title ?? TimelapseTitle.canned(context, avoiding: said)
+        said = said.adding(chosen)
+        said.save(to: saidStore, key: Self.titleKey)
+        return chosen
     }
 
     /// A fresh, one-time session (not the chat's own, not the reactions') checks in about the exchange and suggests a

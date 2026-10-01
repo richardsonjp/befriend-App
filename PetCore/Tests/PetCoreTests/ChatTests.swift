@@ -84,7 +84,7 @@ struct ChatPromptTests {
                                      passages: [hit], question: "When is launch?")
         #expect(prompt.contains("(notes):\nThey planned a launch."))
         #expect(prompt.contains("User: Hi"))
-        #expect(prompt.contains("[1] notes.pdf · p.2: Launch is May 3."))
+        #expect(prompt.contains("- (notes.pdf · p.2) Launch is May 3.") && !prompt.contains("[1]"))
         #expect(prompt.hasSuffix("Question: When is launch?"))
     }
 
@@ -183,5 +183,28 @@ struct ComposerTests {
         #expect(library.items(in: .library).map(\.name) == ["Notes"])
         #expect(library.items(in: .conversation(conversation)).isEmpty)
         #expect(ChatLibrary(root: root).libraryDocuments.map(\.id) == [id])
+    }
+}
+
+struct ClearAllTests {
+    @Test func compactCounter() {
+        #expect(ContextMeter.compact(229) == "229")
+        #expect(ContextMeter.compact(2310) == "2.3k" && ContextMeter.compact(4096) == "4.1k" && ContextMeter.compact(4000) == "4k")
+    }
+
+    @MainActor @Test func clearAllKeepsTheOtherKind() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = ChatLibrary(root: root)
+        let conversation = UUID(), scope = ChatDocument.Scope.conversation(conversation)
+        _ = await library.addWeb([WebSource(url: URL(string: "https://a.dev")!, title: "A", text: "Launch facts here."),
+                                  WebSource(url: URL(string: "https://b.dev")!, title: "B", text: "More launch facts.")],
+                                 question: "launch", scope: scope)
+        library.add(text: "My notes", name: "Notes", scope: scope)
+        for _ in 0..<100 where library.documents.count < 3 { try await Task.sleep(for: .milliseconds(20)) }
+        library.removeAll(in: scope, web: true)
+        #expect(library.attached(to: conversation).map(\.name) == ["Notes"])
+        library.removeAll(in: scope, web: false)
+        #expect(library.attached(to: conversation).isEmpty)
     }
 }

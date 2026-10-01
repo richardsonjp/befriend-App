@@ -41,11 +41,11 @@ public nonisolated struct SaidLines: Codable, Equatable, Sendable {
         String(text.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains))
     }
 
-    static func load(from defaults: UserDefaults) -> SaidLines {
-        defaults.data(forKey: defaultsKey).flatMap { try? JSONDecoder().decode(SaidLines.self, from: $0) } ?? SaidLines()
+    static func load(from defaults: UserDefaults, key: String = defaultsKey) -> SaidLines {
+        defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(SaidLines.self, from: $0) } ?? SaidLines()
     }
 
-    func save(to defaults: UserDefaults) {
-        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey)
+    func save(to defaults: UserDefaults, key: String = defaultsKey) {
+        defaults.set(try? JSONEncoder().encode(self), forKey: key)
     }
 }

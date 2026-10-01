@@ -282,6 +282,7 @@ final class AppModel {
             brain.context = { [pomodoro] in pomodoro.state.promptContext(at: .now) }
             brain.skin = { [skins] in skins.current?.vocabulary ?? (PetAction.builtIn, PetMood.builtIn) }
             brain.chatExchanges = { [weak self] in self?.chat.recentExchanges() ?? [] }
+            timelapse.title = { [weak self] context in await self?.brain.timelapseTitle(for: context) }
             let hello = brain.quickReaction(to: .returned(afterSeconds: 0))
             show(hello)
             SharedStore.saveEncouragements(nil) // the old personality's lines

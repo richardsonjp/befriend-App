@@ -32,7 +32,7 @@ struct WebSearchTests {
 
     @Test func findsLinksInAMessage() {
         let links = WebSearch.links(in: "Read https://example.com/a and www.swift.org, not ftp://x.org or mailto:a@b.c. Again https://example.com/a")
-        #expect(links.map(\.absoluteString) == ["https://example.com/a", "http://www.swift.org"])
+        #expect(links.map(\.absoluteString) == ["https://example.com/a", "https://www.swift.org"])
     }
 
     @Test func cleansTheModelsQueries() {

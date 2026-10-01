@@ -69,8 +69,9 @@ public struct TimelapseGallery: View {
                 }
                 .overlay(alignment: .bottomLeading) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(timelapse.startedAt.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
+                        Text(timelapse.title ?? timelapse.startedAt.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
                             .font(.caption2.weight(.semibold))
+                            .lineLimit(1)
                         Text("\(Self.minutes(timelapse)) min → 1:00").font(.caption2)
                     }
                     .foregroundStyle(.white)
@@ -83,7 +84,7 @@ public struct TimelapseGallery: View {
         .buttonStyle(.plain)
         .contextMenu { menu(timelapse, video) }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Focus on \(timelapse.startedAt.formatted(date: .long, time: .shortened)), \(Self.minutes(timelapse)) minutes, a 1-minute video")
+        .accessibilityLabel("\(timelapse.title.map { $0 + ", " } ?? "")focus on \(timelapse.startedAt.formatted(date: .long, time: .shortened)), \(Self.minutes(timelapse)) minutes, a 1-minute video")
         .accessibilityHint("Plays the timelapse")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Delete") { deleting = timelapse }
@@ -126,7 +127,7 @@ struct TimelapsePlayer: View {
             VideoPlayer(player: player)
                 .aspectRatio(shape.map { $0.width / $0.height } ?? 9 / 16, contentMode: .fit)
                 .frame(idealWidth: ideal.width, idealHeight: ideal.height)
-                .navigationTitle(timelapse.startedAt.formatted(date: .abbreviated, time: .shortened))
+                .navigationTitle(timelapse.title ?? timelapse.startedAt.formatted(date: .abbreviated, time: .shortened))
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)

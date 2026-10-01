@@ -17,8 +17,11 @@ struct WebPreview: View {
     }
 
     let kind: Kind
+    /// A drawn diagram's SVG, for Save as SVG/PNG.
+    var onSVG: (String) -> Void = { _ in }
     @State private var height: CGFloat = 80
     @State private var failure: String?
+    @State private var svg: String?
     private static let maxHeight: CGFloat = 600
 
     var body: some View {
@@ -26,8 +29,9 @@ struct WebPreview: View {
             Label("Couldn't draw this: \(failure)", systemImage: "exclamationmark.triangle")
                 .font(.caption).foregroundStyle(.secondary).padding(10)
         } else {
-            WebBox(kind: kind, height: $height, failure: $failure)
+            WebBox(kind: kind, height: $height, failure: $failure, svg: $svg)
                 .frame(height: min(height, Self.maxHeight))
+                .onChange(of: svg) { _, drawn in if let drawn { onSVG(drawn) } }
                 .accessibilityLabel(kind.isMermaid ? "Diagram" : "HTML preview")
         }
     }
@@ -47,6 +51,7 @@ private struct WebBox: ViewRepresentable {
     let kind: WebPreview.Kind
     @Binding var height: CGFloat
     @Binding var failure: String?
+    @Binding var svg: String?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -90,38 +95,8 @@ private struct WebBox: ViewRepresentable {
     private var page: String {
         switch kind {
         case .html(let html): return html
-        case .mermaid(let diagram): return Self.mermaidPage(diagram)
+        case .mermaid(let diagram): return MermaidPage.html(diagram)
         }
-    }
-
-    // MARK: Mermaid
-
-    private static let mermaidJS: String = Bundle.module.url(forResource: "mermaid.min", withExtension: "js")
-        .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
-
-    static func mermaidPage(_ diagram: String) -> String {
-        // JSONEncoder escapes "/" as "\/", so the diagram can't close the script tag.
-        let literal = (try? JSONEncoder().encode(diagram)).flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
-        return """
-            <!doctype html><html><head><meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>html,body{margin:0;padding:8px;background:transparent;font:13px -apple-system,sans-serif}
-            svg{max-width:100%;height:auto}</style>
-            <script>\(mermaidJS)</script></head>
-            <body><div id="d"></div><script>
-            (async () => {
-              const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-              mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default' });
-              try {
-                const { svg } = await mermaid.render('diagram', \(literal));
-                document.getElementById('d').innerHTML = svg;
-                webkit.messageHandlers.done.postMessage(document.getElementById('d').getBoundingClientRect().height + 16);
-              } catch (e) {
-                webkit.messageHandlers.failed.postMessage(String(e && e.message || e));
-              }
-            })();
-            </script></body></html>
-            """
     }
 
     // MARK: Offline
@@ -145,8 +120,9 @@ private struct WebBox: ViewRepresentable {
         }
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            if message.name == "done", let height = message.body as? Double {
+            if message.name == "done", let body = message.body as? [String: Any], let height = body["height"] as? Double {
                 parent.height = height
+                parent.svg = body["svg"] as? String
             } else if message.name == "failed" {
                 parent.failure = (message.body as? String).map { String($0.prefix(160)) } ?? "unknown error"
             }
@@ -167,5 +143,43 @@ private struct WebBox: ViewRepresentable {
                 }
             }
         }
+    }
+}
+
+/// A page that draws one Mermaid diagram with the bundled mermaid.js (strict mode), posting "done" with its height
+/// and SVG, or "failed" with the reason.
+enum MermaidPage {
+    static let script: String = Bundle.module.url(forResource: "mermaid.min", withExtension: "js")
+        .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+
+    /// The diagram as a JSON string literal: JSONEncoder escapes "/" as "\/", so it can't close the script tag.
+    static func literal(_ text: String) -> String {
+        (try? JSONEncoder().encode(text)).flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+    }
+
+    /// `export`: light theme on white with plain-SVG labels, so the saved SVG opens anywhere.
+    static func html(_ diagram: String, export: Bool = false) -> String {
+        """
+        <!doctype html><html><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>html,body{margin:0;padding:8px;background:\(export ? "#fff" : "transparent");font:13px -apple-system,sans-serif}
+        svg{max-width:100%;height:auto}</style>
+        <script>\(script)</script></head>
+        <body><div id="d"></div><script>
+        (async () => {
+          const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+          const exporting = \(export);
+          mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark && !exporting ? 'dark' : 'default',
+                               htmlLabels: !exporting, flowchart: { htmlLabels: !exporting } });
+          try {
+            const { svg } = await mermaid.render('diagram', \(literal(diagram)));
+            document.getElementById('d').innerHTML = svg;
+            webkit.messageHandlers.done.postMessage({ height: document.getElementById('d').getBoundingClientRect().height + 16, svg: svg });
+          } catch (e) {
+            webkit.messageHandlers.failed.postMessage(String(e && e.message || e));
+          }
+        })();
+        </script></body></html>
+        """
     }
 }

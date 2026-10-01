@@ -207,15 +207,19 @@ public final class TimelapseRecorder {
         camera.start(for: Self.cameraUser)
     }
 
-    /// Ends the recording and files the minute-long video.
-    func finish(into library: TimelapseLibrary) async {
+    /// Ends the recording, lets the friend name it (title and date drawn top-left), and files the video.
+    func finish(into library: TimelapseLibrary, title: (TimelapseTitleContext) async -> String?) async {
         guard let writer, state != .idle else { return }
         let (started, planned, recorded) = (startedAt, planned, Double(writer.frames) * interval)
         stopTicking()
         let video = workFolder.appending(path: "timelapse-\(UUID().uuidString).mp4")
         do {
             if try await writer.finish(to: video) {
-                try library.add(video, startedAt: started, plannedSeconds: planned, recordedSeconds: recorded)
+                let context = TimelapseTitleContext(startedAt: started, plannedMinutes: max(1, Int((planned / 60).rounded())),
+                                                    focusedMinutes: max(1, Int((recorded / 60).rounded())))
+                let name = await title(context)
+                if let name { await TimelapseTitle.stamp(video, title: name, date: started) }
+                try library.add(video, startedAt: started, plannedSeconds: planned, recordedSeconds: recorded, title: name)
             }
         } catch {
             try? FileManager.default.removeItem(at: video)
@@ -254,6 +258,8 @@ public final class TimelapseController {
 
     public let recorder = TimelapseRecorder()
     public let library: TimelapseLibrary
+    /// Names a finished focus in the friend's voice (the app's brain); nil leaves the video untitled.
+    @ObservationIgnored public var title: (TimelapseTitleContext) async -> String? = { _ in nil }
     /// The device can't record right now (asleep, locked, or the iPhone app isn't on screen).
     @ObservationIgnored public private(set) var away = false
     @ObservationIgnored private var recordingPhase: Int?
@@ -290,9 +296,9 @@ public final class TimelapseController {
         case .resume: recorder.resume()
         case .finish:
             recordingPhase = nil
-            let recorder = recorder, library = library
+            let recorder = recorder, library = library, title = title
             Task { [weak self] in
-                await recorder.finish(into: library)
+                await recorder.finish(into: library, title: title)
                 self?.sync(self?.last ?? pomodoro) // a new focus that started meanwhile
             }
         }

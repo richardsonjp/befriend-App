@@ -29,6 +29,8 @@ public nonisolated enum ChatDocumentKind: String, Codable, Sendable {
     case text, pdf, image, audio, video
     /// A page found on the web (M21).
     case web
+    /// An earlier turn memory recalled (M26): only ever a source chip, never a file.
+    case memory
 
     public var symbol: String {
         switch self {
@@ -38,6 +40,7 @@ public nonisolated enum ChatDocumentKind: String, Codable, Sendable {
         case .audio: "waveform"
         case .video: "film"
         case .web: "globe"
+        case .memory: "clock.arrow.circlepath"
         }
     }
 }
@@ -149,20 +152,38 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
     public let date: Date
     /// Stopped by the guardrail (the message and the friend's "what do you mean?"): shown, never used as context.
     public let aside: Bool?
+    /// Files the friend made for this reply (M25).
+    public let files: [ChatFile]?
+    /// Messages the user linked this one to (M26): recalled together with it.
+    public var links: [MessageRef]?
+    /// The plan and sources of a research report (M28).
+    public var research: ResearchLog?
 
-    public init(id: UUID = UUID(), role: Role, text: String, sources: [ChatSource] = [], date: Date = .now, aside: Bool = false) {
+    public init(id: UUID = UUID(), role: Role, text: String, sources: [ChatSource] = [], date: Date = .now, aside: Bool = false,
+                files: [ChatFile]? = nil) {
         self.id = id
         self.role = role
         self.text = text
         self.sources = sources
         self.date = date
         self.aside = aside ? true : nil
+        self.files = files
     }
 
     public var isAside: Bool { aside == true }
 
+    /// The same message with new text (an edited diagram, M29), keeping its links and research.
+    func with(text: String) -> ChatMessage {
+        var copy = ChatMessage(id: id, role: role, text: text, sources: sources, date: date, aside: isAside, files: files)
+        copy.links = links
+        copy.research = research
+        return copy
+    }
+
     func markedAside() -> ChatMessage {
-        ChatMessage(id: id, role: role, text: text, sources: sources, date: date, aside: true)
+        var copy = ChatMessage(id: id, role: role, text: text, sources: sources, date: date, aside: true, files: files)
+        copy.links = links
+        return copy
     }
 }
 

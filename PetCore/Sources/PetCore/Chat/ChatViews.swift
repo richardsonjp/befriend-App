@@ -81,7 +81,8 @@ public struct ChatRoot: View {
             case .conversation(let id):
                 if let conversation = library.conversation(id) {
                     ChatScreen(conversation: conversation, library: library, friend: friend,
-                               draft: draft?.id == id ? draft?.text ?? "" : "")
+                               draft: draft?.id == id ? draft?.text ?? "" : "",
+                               newConversation: { newConversation() }, openLibrary: { page = .library })
                         .id("\(id)-\(opened)")
                 }
             case nil:
@@ -147,14 +148,29 @@ struct ChatScreen: View {
     @State private var adder: FileAdder
     /// The user message being edited, if any.
     @State private var editing: UUID?
+    /// The message being linked to others (M26).
+    @State private var linking: MessageRef?
+    /// The document open in the side panel (a research report).
+    @State private var document: UUID?
     @State private var composerHeight: CGFloat = 0
     /// Web search for the next messages (M21); stays on until turned off.
     @AppStorage("chat.web") private var web = false
     @AppStorage("chat.webExplained") private var webExplained = false
     @State private var explainingWeb = false
 
-    init(conversation: Conversation, library: ChatLibrary, friend: FriendProfile?, draft: String = "") {
+    /// /new and /library: ChatRoot moves to another page.
+    var newConversation: () -> Void = {}
+    var openLibrary: () -> Void = {}
+    @State private var clearing = false
+    /// Research mode (M28): every message runs research at this effort.
+    @AppStorage("chat.research") private var researching = false
+    @AppStorage("chat.researchEffort") private var effortName = ResearchEffort.medium.rawValue
+
+    init(conversation: Conversation, library: ChatLibrary, friend: FriendProfile?, draft: String = "",
+         newConversation: @escaping () -> Void = {}, openLibrary: @escaping () -> Void = {}) {
         self.library = library
+        self.newConversation = newConversation
+        self.openLibrary = openLibrary
         _draft = State(initialValue: draft)
         _thread = State(initialValue: ChatThread(conversation, library: library, friend: friend))
         _adder = State(initialValue: FileAdder(library: library, scope: .conversation(conversation.id)))
@@ -169,6 +185,24 @@ struct ChatScreen: View {
                 ToolbarItem { ContextMeter(used: thread.contextUsed, total: thread.contextSize) }
             }
             .sheet(item: $shownSource) { PassageSheet(source: $0) }
+            .sheet(item: $linking) { LinkPicker(library: library, from: $0) }
+            .inspector(isPresented: Binding(get: { openDocument != nil }, set: { if !$0 { document = nil } })) {
+                if let message = openDocument {
+                    DocumentPanel(message: message,
+                                  editDiagram: thread.state == .idle ? { thread.replaceDiagram(in: message.id, from: $0, to: $1) } : nil,
+                                  close: { document = nil })
+                        .inspectorColumnWidth(min: 420, ideal: 620, max: 900)
+                }
+            }
+            // A finished report opens beside the chat, as in Claude.
+            .onChange(of: thread.conversation.messages.last?.id) { _, _ in
+                if let last = thread.conversation.messages.last, last.isDocument { document = last.id }
+            }
+            .confirmationDialog("Clear this conversation?", isPresented: $clearing) {
+                Button("Clear Messages", role: .destructive) { thread.clear() }
+            } message: {
+                Text("Its messages go; its files stay.")
+            }
             .alert("Search the web?", isPresented: $explainingWeb) {
                 Button("Turn On") {
                     webExplained = true
@@ -185,6 +219,7 @@ struct ChatScreen: View {
             .onChange(of: library.conversation(thread.conversation.id)?.modifiedAt) {
                 if let latest = library.conversation(thread.conversation.id) { thread.refresh(from: latest) }
             }
+            .onAppear { thread.researchEffort = effort }
             .onKeyPress(.escape) {
                 guard thread.state != .idle else { return .ignored }
                 stop()
@@ -197,10 +232,15 @@ struct ChatScreen: View {
             #endif
     }
 
+    private var openDocument: ChatMessage? {
+        document.flatMap { id in thread.conversation.messages.first { $0.id == id } }
+    }
+
     private var messages: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                MessageList(thread: thread, editing: $editing, showSource: { shownSource = $0 },
+                MessageList(thread: thread, library: library, editing: $editing, linking: $linking, showSource: { shownSource = $0 },
+                            openDocument: { document = $0 },
                             resend: { id, text in thread.resend(from: id, as: text, web: web) })
                     .padding()
             }
@@ -219,14 +259,59 @@ struct ChatScreen: View {
                      web: Binding(get: { web }, set: { on in
                          if on && !webExplained { explainingWeb = true } else { web = on }
                      }),
+                     research: $researching,
+                     effort: Binding(get: { effort }, set: { effortName = $0.rawValue; thread.researchEffort = $0 }),
                      send: send, stop: stop, onHeight: { composerHeight = $0 })
     }
 
     private func send() {
         guard thread.state == .idle else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let (command, argument) = ChatCommand.parse(text), command.action == .research {
+            let split = ResearchIntent.split(argument)
+            guard !split.topic.isEmpty else { return }
+            thread.research(split.topic, effort: split.effort ?? effort, typed: text)
+            draft = ""
+            return
+        }
+        if let (command, _) = ChatCommand.parse(text), runLocally(command, typed: text) {
+            draft = ""
+            return
+        }
+        if researching, ChatCommand.parse(text) == nil {
+            thread.research(text, effort: effort, typed: text)
+            draft = ""
+            return
+        }
         thread.send(draft, web: web)
         draft = ""
     }
+
+    /// Commands about the app rather than the model. False for the ones the thread runs.
+    private func runLocally(_ command: ChatCommand, typed: String) -> Bool {
+        switch command.action {
+        case .newConversation: newConversation()
+        case .openLibrary: openLibrary()
+        case .addFiles: adder.importing = true
+        case .clear: clearing = true
+        case .help: thread.note(ChatCommand.helpText, echoing: typed)
+        case .listFiles: thread.note(filesText, echoing: typed)
+        default: return false
+        }
+        return true
+    }
+
+    private var filesText: String {
+        let attached = library.attached(to: thread.conversation.id), shared = library.libraryDocuments
+        guard !attached.isEmpty || !shared.isEmpty else { return "No files yet. Add some with **+** or `/add`." }
+        func list(_ documents: [ChatDocument]) -> String {
+            documents.map { "- \($0.name) (\($0.url?.host() ?? $0.kind.title))" }.joined(separator: "\n")
+        }
+        return [attached.isEmpty ? nil : "**This conversation**\n" + list(attached),
+                shared.isEmpty ? nil : "**Library**\n" + list(shared)].compactMap { $0 }.joined(separator: "\n\n")
+    }
+
+    private var effort: ResearchEffort { ResearchEffort(rawValue: effortName) ?? .medium }
 
     /// Stopped before the friend wrote anything: the question comes back to the box.
     private func stop() {
@@ -250,8 +335,11 @@ struct UnavailableBanner: View {
 struct MessageList: View {
     static let end = "end"
     let thread: ChatThread
+    let library: ChatLibrary
     @Binding var editing: UUID?
+    @Binding var linking: MessageRef?
     let showSource: (ChatSource) -> Void
+    var openDocument: (UUID) -> Void = { _ in }
     let resend: (UUID, String) -> Void
 
     var body: some View {
@@ -266,7 +354,11 @@ struct MessageList: View {
                     }
                 } else {
                     MessageRow(message: message, showSource: showSource,
-                               edit: message.role == .user && thread.state == .idle ? { editing = message.id } : nil)
+                               edit: message.role == .user && thread.state == .idle ? { editing = message.id } : nil,
+                               library: library, conversationID: conversation.id,
+                               link: message.isAside ? nil : { linking = MessageRef(conversationID: conversation.id, messageID: message.id) },
+                               editDiagram: thread.state == .idle ? { thread.replaceDiagram(in: message.id, from: $0, to: $1) } : nil,
+                               openDocument: message.isDocument ? { openDocument(message.id) } : nil)
                 }
             }
             ChatStatus(thread: thread)
@@ -292,6 +384,12 @@ struct ChatStatus: View {
             working("Thinking…", symbol: "ellipsis.bubble")
         case .browsing(let status):
             working(status, symbol: "globe")
+        case .making(let status):
+            working(status, symbol: "wand.and.stars")
+        case .remembering(let status):
+            working(status, symbol: "clock.arrow.circlepath")
+        case .researching:
+            if let log = thread.research { ResearchProgress(log: log) } else { working("Planning the research…", symbol: "magnifyingglass.circle") }
         case .compacting:
             working("Compacting conversation… summarising older messages to make room", symbol: "rectangle.compress.vertical")
         case .searching:
@@ -355,29 +453,67 @@ struct MessageRow: View {
     let showSource: (ChatSource) -> Void
     /// Offered on the user's own messages while the friend is idle.
     var edit: (() -> Void)?
+    /// Linking (M26): where this message lives, and the picker.
+    var library: ChatLibrary?
+    var conversationID: UUID?
+    var link: (() -> Void)?
+    /// Diagram edits (M29): old code, new code.
+    var editDiagram: ((String, String) -> Void)?
+    /// A document (research report): a card in the chat that opens it in the side panel.
+    var openDocument: (() -> Void)?
     @State private var hovering = false
 
     var body: some View {
         let mine = message.role == .user
         VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 6) {
-                if mine, let edit, hovering {
-                    Button(action: edit) { Image(systemName: "pencil") }
-                        .buttonStyle(.borderless)
-                        .help("Edit")
-                        .accessibilityLabel("Edit message")
-                }
-                bubble(mine: mine)
-            }
+            if let log = message.research { ResearchStepsDisclosure(log: log) } // above the report, as in Claude
+            if let openDocument { DocumentCard(message: message, open: openDocument) } else { bubble(mine: mine) }
+            ForEach(message.files ?? []) { ChatFileCard(file: $0) }
             if !message.sources.isEmpty { sources }
+            HStack(spacing: 10) {
+                if let library, let conversationID {
+                    LinkBadge(library: library, ref: MessageRef(conversationID: conversationID, messageID: message.id))
+                }
+                if !live { actions }
+            }
+            .frame(minHeight: 18)
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(message.text) }
             if let edit { Button("Edit", systemImage: "pencil", action: edit) }
+            if let link { Button("Link to…", systemImage: "link", action: link) }
         }
         .accessibilityAction(named: "Edit") { edit?() }
+        .accessibilityAction(named: "Link to…") { link?() }
+    }
+
+    /// Copy · Edit · Link to…: on hover on the Mac, always under the message on the iPhone (no hover there).
+    @ViewBuilder
+    private var actions: some View {
+        #if os(macOS)
+        let shown = hovering
+        #else
+        let shown = true
+        #endif
+        HStack(spacing: 12) {
+            Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(message.text) }
+                .help("Copy")
+            if let edit {
+                Button("Edit", systemImage: "pencil", action: edit).help("Edit and send again")
+            }
+            if let link {
+                Button("Link to…", systemImage: "link.badge.plus", action: link).help("Link to other messages: memory recalls them together")
+            }
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .opacity(shown ? 1 : 0)
+        .allowsHitTesting(shown)
+        .accessibilityHidden(!shown)
     }
 
     private func bubble(mine: Bool) -> some View {
@@ -385,7 +521,7 @@ struct MessageRow: View {
             if mine {
                 Text(message.text).textSelection(.enabled)
             } else {
-                MarkdownView(text: message.text, live: live)
+                MarkdownView(text: message.text, live: live, editDiagram: editDiagram)
             }
         }
         .padding(10)
@@ -427,23 +563,51 @@ struct SummaryDivider: View {
 struct ContextMeter: View {
     let used: Int
     let total: Int
+    @State private var explaining = false
 
     var body: some View {
         let share = total > 0 ? min(1, Double(used) / Double(total)) : 0
-        HStack(spacing: 6) {
-            ZStack {
-                Circle().stroke(.quaternary, lineWidth: 3)
-                Circle().trim(from: 0, to: share)
-                    .stroke(color(share), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+        Button { explaining = true } label: {
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle().stroke(.quaternary, lineWidth: 3)
+                    Circle().trim(from: 0, to: share)
+                        .stroke(color(share), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: 16, height: 16)
+                Text(label).font(.caption.monospacedDigit()).fixedSize() // never "2,3…"
             }
-            .frame(width: 16, height: 16)
-            Text("\(used.formatted()) / \(total.formatted())").font(.caption.monospacedDigit())
         }
+        .buttonStyle(.plain)
         .help("Context used by the last answer: instructions, passages, conversation and answer")
-        .accessibilityElement()
+        .popover(isPresented: $explaining) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(used.formatted()) of \(total.formatted()) tokens").font(.headline.monospacedDigit())
+                Text("How much of the on-device model's memory the last answer used: instructions, file passages, the conversation and the answer. Near full, older messages get summarised.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding()
+            .frame(width: 280)
+            .presentationCompactAdaptation(.popover)
+        }
         .accessibilityLabel("Context used")
         .accessibilityValue("\(used) of \(total) tokens")
+    }
+
+    /// The Mac has room for "2,310 / 4,096"; the iPhone's toolbar gets "2.3k/4.1k".
+    private var label: String {
+        #if os(iOS)
+        Self.compact(used) + "/" + Self.compact(total)
+        #else
+        "\(used.formatted()) / \(total.formatted())"
+        #endif
+    }
+
+    static func compact(_ value: Int) -> String {
+        guard value >= 1000 else { return String(value) }
+        let thousands = (Double(value) / 1000 * 10).rounded() / 10
+        return (thousands == thousands.rounded() ? String(Int(thousands)) : String(thousands)) + "k"
     }
 
     private func color(_ share: Double) -> Color {

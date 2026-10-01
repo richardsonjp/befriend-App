@@ -38,6 +38,8 @@ public final class ChatLibrary {
     public private(set) var jobs: [Job] = []
     /// Files with a saved thumbnail (images and videos).
     public private(set) var thumbnails: Set<UUID> = []
+    /// Embeddings of every turn, for memory (M26).
+    @ObservationIgnored public private(set) lazy var memory = ChatMemoryIndex(folder: root)
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
     /// Where each file added this session came from, so audio and video can be transcribed again in another
     /// language. Temporary copies (Photos, the clipboard) are deleted with their file.
@@ -94,6 +96,31 @@ public final class ChatLibrary {
         var stamped = conversation
         stamped.modifiedAt = .now
         store(stamped)
+    }
+
+    // MARK: Links (M26)
+
+    /// Links two messages both ways (or unlinks them), saving both conversations so the link syncs.
+    public func link(_ a: MessageRef, _ b: MessageRef, on: Bool = true) {
+        guard a != b else { return }
+        for (from, to) in [(a, b), (b, a)] {
+            guard var conversation = conversation(from.conversationID),
+                  let index = conversation.messages.firstIndex(where: { $0.id == from.messageID }) else { continue }
+            var links = conversation.messages[index].links ?? []
+            links.removeAll { $0 == to }
+            if on { links.append(to) }
+            conversation.messages[index].links = links.isEmpty ? nil : links
+            save(conversation)
+        }
+    }
+
+    /// The messages linked to this one.
+    public func links(of ref: MessageRef) -> [MessageRef] {
+        conversation(ref.conversationID)?.messages.first { $0.id == ref.messageID }?.links ?? []
+    }
+
+    public func message(_ ref: MessageRef) -> ChatMessage? {
+        conversation(ref.conversationID)?.messages.first { $0.id == ref.messageID }
     }
 
     /// Also removes the files attached to it.
@@ -195,6 +222,13 @@ public final class ChatLibrary {
 
     // MARK: Files
 
+    /// Clear All: a conversation's web pages, or its other files (cancelling any still being added).
+    public func removeAll(in scope: ChatDocument.Scope, web: Bool) {
+        for document in documents where document.scope == scope && (document.kind == .web) == web { delete(document: document.id) }
+        guard !web else { return }
+        for job in jobs where job.scope == scope { cancel(job.id) }
+    }
+
     public func delete(document id: UUID) {
         erase(.document, id)
     }
@@ -252,16 +286,23 @@ public final class ChatLibrary {
 
     /// Most passages kept from one web page: the ones closest to the question.
     nonisolated static let passagesPerPage = 6
+    /// A site the user named is read from the top (overview, services, work), in page order.
+    nonisolated static let passagesPerNamedPage = 10
 
     /// Saves web pages as "Web" files of a conversation (M21), keeping each page's passages closest to `question`, and
     /// returns them once they're searchable. A page already saved there (same address) is refreshed, not duplicated.
-    public func addWeb(_ sources: [WebSource], question: String, scope: ChatDocument.Scope,
-                       progress: @escaping @Sendable (String) -> Void = { _ in }) async -> [ChatDocument] {
+    public func addWeb(_ sources: [WebSource], question: String, scope: ChatDocument.Scope, terms: [String] = [],
+                       named: [URL] = [], progress: @escaping @Sendable (String) -> Void = { _ in }) async -> [ChatDocument] {
+        let namedSites = Set(named.map { WebSearch.pageKey($0).split(separator: "/").first.map(String.init) ?? "" })
         var added: [ChatDocument] = []
         for (number, source) in sources.enumerated() {
             guard !Task.isCancelled else { break }
             progress("Reading \(source.site) (\(number + 1) of \(sources.count))…")
-            let pieces = Self.closest(Chunker.passages(from: [(source.text, .none)]), to: question, keep: Self.passagesPerPage)
+            let all = Chunker.passages(from: [(source.text, .none)])
+            let isNamed = namedSites.contains(source.site)
+            // The named site is all about the name: keep its top, not just the lines that repeat the name.
+            let pieces = isNamed ? Array(all.prefix(Self.passagesPerNamedPage))
+                : Self.closest(all, to: question, keep: Self.passagesPerPage, terms: terms)
             guard !pieces.isEmpty, let passages = try? await Self.index(pieces, progress: { _ in }) else { continue }
             if let old = documents.first(where: { $0.url == source.url && $0.scope == scope }) { delete(document: old.id) }
             let document = ChatDocument(name: source.title, kind: .web, scope: scope, passages: passages, url: source.url)
@@ -272,13 +313,15 @@ public final class ChatLibrary {
     }
 
     /// The `keep` passages sharing the most words with the question, in page order.
+    /// Passages naming one of `terms` come first.
     nonisolated static func closest(_ pieces: [(text: String, locator: PassageLocator)], to question: String,
-                                    keep: Int) -> [(text: String, locator: PassageLocator)] {
+                                    keep: Int, terms: [String] = []) -> [(text: String, locator: PassageLocator)] {
         guard pieces.count > keep else { return pieces }
         let words = Retriever.keywords(question)
-        let ranked = pieces.indices.sorted {
-            words.intersection(Retriever.keywords(pieces[$0].text)).count > words.intersection(Retriever.keywords(pieces[$1].text)).count
+        func score(_ index: Int) -> Int {
+            words.intersection(Retriever.keywords(pieces[index].text)).count + (ExactTerms.mentions(pieces[index].text, terms) ? 100 : 0)
         }
+        let ranked = pieces.indices.sorted { score($0) > score($1) }
         return ranked.prefix(keep).sorted().map { pieces[$0] }
     }
 

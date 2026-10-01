@@ -13,9 +13,11 @@ public nonisolated struct Timelapse: Codable, Equatable, Identifiable, Sendable 
     /// The focus length it was planned for, and how much of it was recorded.
     public let plannedSeconds: TimeInterval
     public let recordedSeconds: TimeInterval
+    /// The friend's name for this focus, drawn on the video (M24); nil for older videos.
+    public var title: String?
     public var video: URL?
 
-    enum CodingKeys: String, CodingKey { case id, startedAt, plannedSeconds, recordedSeconds }
+    enum CodingKeys: String, CodingKey { case id, startedAt, plannedSeconds, recordedSeconds, title }
 }
 
 /// This device's timelapses, newest first. Never uploaded; only the newest `keep` are kept.
@@ -37,11 +39,12 @@ public final class TimelapseLibrary {
     }
 
     /// Moves a finished video in, then drops the oldest beyond `keep`.
-    public func add(_ video: URL, startedAt: Date, plannedSeconds: TimeInterval, recordedSeconds: TimeInterval) throws {
+    public func add(_ video: URL, startedAt: Date, plannedSeconds: TimeInterval, recordedSeconds: TimeInterval,
+                    title: String? = nil) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let id = Self.idFormat.string(from: startedAt) + "-" + UUID().uuidString.prefix(4)
         try FileManager.default.moveItem(at: video, to: folder.appending(path: "\(id).mp4"))
-        let meta = Timelapse(id: id, startedAt: startedAt, plannedSeconds: plannedSeconds, recordedSeconds: recordedSeconds)
+        let meta = Timelapse(id: id, startedAt: startedAt, plannedSeconds: plannedSeconds, recordedSeconds: recordedSeconds, title: title)
         try JSONEncoder().encode(meta).write(to: folder.appending(path: "\(id).json"), options: .atomic)
         reload()
         prune()

@@ -105,25 +105,86 @@ public nonisolated enum MessageCheck: Equatable, Sendable {
     ]
 }
 
-/// The system spelling dictionary, for the message's own language (English when unsure).
+/// The system spelling dictionaries: a word is real if English or one of the device's languages knows it. (Guessing a
+/// lone word's language picks one where nonsense passes, so it isn't guessed.)
 public nonisolated enum SpellCheck {
-    public static func isWord(_ word: String) -> Bool {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.processString(word)
-        let language = recognizer.dominantLanguage?.rawValue ?? "en"
+    static var languages: [String] {
+        var codes = ["en"]
+        for preferred in Locale.preferredLanguages {
+            let code = String(preferred.prefix { $0 != "-" && $0 != "_" })
+            if !codes.contains(code) { codes.append(code) }
+        }
+        return codes
+    }
+
+    /// A misspelling the dictionaries can fix ("webiste" → website): a typo, not a name. Any guess at all isn't
+    /// enough: "netmonk" only splits into "net monk", and treated as a typo the product was never looked up.
+    public static func hasCorrection(_ word: String) -> Bool {
+        guesses(word).contains { isNearMiss(word, of: $0) }
+    }
+
+    /// A guess that fixes a slip: the same letters swapped ("teh" → the), one letter off in a word of six or more
+    /// ("recive" → receive), or two in a long one. Not a split ("net monk"), not the same word capitalised
+    /// ("Kubernetes"), not a short look-alike ("fazz" → fizz).
+    static func isNearMiss(_ word: String, of guess: String) -> Bool {
+        let a = word.lowercased(), b = guess.lowercased()
+        guard a != b, !b.contains(" "), !b.contains("-") else { return false }
+        if a.sorted() == b.sorted() { return true }
+        let distance = editDistance(a, b)
+        return (distance == 1 && a.count >= 6) || (distance == 2 && a.count >= 8)
+    }
+
+    static func editDistance(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        var previous = Array(0...y.count)
+        for i in 1...max(1, x.count) where !x.isEmpty {
+            var current = [i] + Array(repeating: 0, count: y.count)
+            for j in stride(from: 1, through: y.count, by: 1) {
+                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (x[i - 1] == y[j - 1] ? 0 : 1))
+            }
+            previous = current
+        }
+        return x.isEmpty ? y.count : previous[y.count]
+    }
+
+    private static func guesses(_ word: String) -> [String] {
+        let codes = languages
         #if os(macOS)
         return MainActorBox.run {
             let checker = NSSpellChecker.shared
-            let chosen = checker.availableLanguages.first { $0.hasPrefix(language) } ?? "en"
-            return checker.checkSpelling(of: word, startingAt: 0, language: chosen, wrap: false,
-                                         inSpellDocumentWithTag: 0, wordCount: nil).location == NSNotFound
+            let range = NSRange(location: 0, length: (word as NSString).length)
+            return codes.compactMap { code in checker.availableLanguages.first { $0.hasPrefix(code) } }.flatMap { language in
+                checker.guesses(forWordRange: range, in: word, language: language, inSpellDocumentWithTag: 0) ?? []
+            }
         }
         #else
         return MainActorBox.run {
-            let chosen = UITextChecker.availableLanguages.first { $0.hasPrefix(language) } ?? "en_US"
-            let range = UITextChecker().rangeOfMisspelledWord(in: word, range: NSRange(location: 0, length: (word as NSString).length),
-                                                              startingAt: 0, wrap: false, language: chosen)
-            return range.location == NSNotFound
+            let range = NSRange(location: 0, length: (word as NSString).length)
+            return codes.compactMap { code in UITextChecker.availableLanguages.first { $0.hasPrefix(code) } }.flatMap { language in
+                UITextChecker().guesses(forWordRange: range, in: word, language: language) ?? []
+            }
+        }
+        #endif
+    }
+
+    public static func isWord(_ word: String) -> Bool {
+        let codes = languages
+        #if os(macOS)
+        return MainActorBox.run {
+            let checker = NSSpellChecker.shared
+            let available = codes.compactMap { code in checker.availableLanguages.first { $0.hasPrefix(code) } }
+            return available.contains { language in
+                checker.checkSpelling(of: word, startingAt: 0, language: language, wrap: false,
+                                      inSpellDocumentWithTag: 0, wordCount: nil).location == NSNotFound
+            }
+        }
+        #else
+        return MainActorBox.run {
+            let available = codes.compactMap { code in UITextChecker.availableLanguages.first { $0.hasPrefix(code) } }
+            let range = NSRange(location: 0, length: (word as NSString).length)
+            return available.contains { language in
+                UITextChecker().rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: language).location == NSNotFound
+            }
         }
         #endif
     }
