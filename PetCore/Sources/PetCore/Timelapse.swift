@@ -85,9 +85,10 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
         output.setSampleBufferDelegate(self, queue: queue)
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
-        // Full resolution: the best this camera films at (M15). Chosen once the camera is attached: with no input
-        // the session accepts 4K, and a 1080p webcam is then refused, leaving no picture at all.
-        session.sessionPreset = [.hd4K3840x2160, .hd1920x1080, .high].first(where: session.canSetSessionPreset) ?? .high
+        // 1080p: plenty for a 1-minute timelapse, and a quarter of 4K's work per frame (4K made recording stutter).
+        // Chosen once the camera is attached: with no input the session accepts any preset, and one the camera
+        // can't film is then refused, leaving no picture at all.
+        session.sessionPreset = [.hd1920x1080, .high].first(where: session.canSetSessionPreset) ?? .high
         configured = true // a camera that couldn't be attached (no permission yet) is tried again on the next start
         #if os(iOS)
         // Upright the way the phone is held (portrait on a stand), mirrored like a selfie. A fixed 90° left some
@@ -175,7 +176,7 @@ public final class TimelapseRecorder {
     @ObservationIgnored private var interval: TimeInterval = 1
     @ObservationIgnored private var ticks = 0
     @ObservationIgnored private var overlay: (second: Int, image: CIImage?) = (-1, nil)
-    /// Frames are drawn and encoded here, off the main thread: a 4K frame each tick made the screen stutter.
+    /// Frames are drawn and encoded here, off the main thread: a full frame each tick made the screen stutter.
     @ObservationIgnored private let encoder = DispatchQueue(label: "befriend.timelapse.encoder", qos: .userInitiated)
     /// A frame is still being encoded: the next tick is skipped rather than queued.
     @ObservationIgnored private var encoding = false
