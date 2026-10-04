@@ -38,10 +38,18 @@ public nonisolated final class TimelapseCamera: NSObject, AVCaptureVideoDataOutp
         await AVCaptureDevice.requestAccess(for: .video)
     }
 
-    /// Hooks a preview layer up to the session. Waits out a configuration in progress on the camera queue:
-    /// attaching mid-configuration raises an Objective-C exception, which aborts the app.
+    /// Hooks a preview layer up to the session once any configuration in progress on the camera queue is done
+    /// (attaching mid-configuration raises an Objective-C exception, which aborts the app). Never waits: waiting
+    /// here froze the screen while the camera started.
     public func attach(_ layer: AVCaptureVideoPreviewLayer) {
-        queue.sync { layer.session = session }
+        queue.async { [session] in
+            DispatchQueue.main.async { layer.session = session }
+        }
+    }
+
+    /// Sets the camera up ahead of time without turning it on, so a recording starts at once.
+    public func prepare() {
+        queue.async { [self] in if !configured { configure() } }
     }
 
     public func start(for user: String) {
@@ -167,6 +175,12 @@ public final class TimelapseRecorder {
     @ObservationIgnored private var interval: TimeInterval = 1
     @ObservationIgnored private var ticks = 0
     @ObservationIgnored private var overlay: (second: Int, image: CIImage?) = (-1, nil)
+    /// Frames are drawn and encoded here, off the main thread: a 4K frame each tick made the screen stutter.
+    @ObservationIgnored private let encoder = DispatchQueue(label: "befriend.timelapse.encoder", qos: .userInitiated)
+    /// A frame is still being encoded: the next tick is skipped rather than queued.
+    @ObservationIgnored private var encoding = false
+    /// The video's size, fixed by the first frame.
+    @ObservationIgnored private var videoSize: CGSize?
     /// The friend's frame for a tick, and the clock text ("12:40 / 25:00").
     @ObservationIgnored var content: (_ tick: Int) -> (friend: URL?, clock: String) = { _ in (nil, "") }
 
@@ -184,6 +198,7 @@ public final class TimelapseRecorder {
         interval = TimelapsePlan.interval(for: planned)
         ticks = 0
         overlay = (-1, nil)
+        videoSize = nil
         state = .recording
         camera.start(for: Self.cameraUser)
         ticker = Task { [weak self] in
@@ -210,8 +225,9 @@ public final class TimelapseRecorder {
     /// Ends the recording, lets the friend name it (title and date drawn top-left), and files the video.
     func finish(into library: TimelapseLibrary, title: (TimelapseTitleContext) async -> String?) async {
         guard let writer, state != .idle else { return }
-        let (started, planned, recorded) = (startedAt, planned, Double(writer.frames) * interval)
         stopTicking()
+        await withCheckedContinuation { done in encoder.async { done.resume() } } // the frame in flight lands first
+        let (started, planned, recorded) = (startedAt, planned, Double(writer.frames) * interval)
         let video = workFolder.appending(path: "timelapse-\(UUID().uuidString).mp4")
         do {
             if try await writer.finish(to: video) {
@@ -234,19 +250,28 @@ public final class TimelapseRecorder {
         writer = nil
     }
 
-    // ponytail: renders on the main actor, a few ms once per ≥0.5 s; move it to a background actor if it ever
-    // shows as a hitch.
+    /// The overlay (SwiftUI) is drawn here once a second; the frame is composed and encoded on `encoder`.
     private func tick() {
-        guard state == .recording, let writer, let full = camera.latest else { return }
+        guard state == .recording, !encoding, let writer, let full = camera.latest else { return }
         let frame = full.cropped(to: framing.crop(in: full.extent))
         // The video keeps the size it opened with; the overlay must match it even if the camera turns.
-        let size = writer.size ?? TimelapsePlan.size(for: frame.extent)
+        let size = videoSize ?? TimelapsePlan.size(for: frame.extent)
+        videoSize = size
         let second = Int(Double(ticks) * interval)
         if overlay.second != second {
             let (friend, clock) = content(ticks)
             overlay = (second, TimelapseOverlay(size: size, friend: friend, clock: clock).image())
         }
-        if (try? writer.append(frame, overlay: overlay.image)) == true { ticks += 1 }
+        encoding = true
+        let image = overlay.image
+        encoder.async { [weak self] in
+            let added = (try? writer.append(frame, overlay: image)) == true
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.encoding = false
+                if added { self.ticks += 1 }
+            }
+        }
     }
 }
 
@@ -284,6 +309,7 @@ public final class TimelapseController {
 
     public func sync(_ pomodoro: Pomodoro) {
         last = pomodoro
+        if pomodoro.settings.recordTimelapse, TimelapseCamera.permitted { recorder.camera.prepare() }
         let action = signedOut
             ? (isRecording ? Action.finish : .none)
             : Self.action(for: pomodoro, recorder: recorder.state, recordingPhase: recordingPhase, away: away)

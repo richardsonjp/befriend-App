@@ -28,7 +28,8 @@ public nonisolated enum TimelapsePlan {
     }
 }
 
-final class TimelapseWriter {
+/// Used from the recorder's encoder queue, one call at a time.
+nonisolated final class TimelapseWriter: @unchecked Sendable {
     private let rawURL: URL
     private let length: TimeInterval
     private let fps: Int32
