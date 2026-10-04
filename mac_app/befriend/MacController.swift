@@ -100,6 +100,14 @@ final class MacController {
     @ObservationIgnored private var peer: PresencePeer?
     @ObservationIgnored private var phoneClaimedNearby = false
     @ObservationIgnored private var friendVisible = true
+    /// The user sent the friend home: it stays in until they let it out or a focus ends, through idle, wake,
+    /// unlock, the iPhone letting go, network drops and relaunches.
+    private(set) var sentHome = UserDefaults.standard.bool(forKey: MacController.sentHomeKey) {
+        didSet { UserDefaults.standard.set(sentHome, forKey: Self.sentHomeKey) }
+    }
+    private static let sentHomeKey = "friend.sentHome"
+    /// Whether a focus was under way at the last pomodoro change, to notice it ending.
+    @ObservationIgnored private var wasFocusing = false
     /// The latest reaction that arrived while the friend was walking or away.
     @ObservationIgnored private var heldReaction: PetReaction?
     /// The friend says its focus line before going home; the pomodoro keeps it out until then.
@@ -201,6 +209,7 @@ final class MacController {
                 poke: { [weak self] in self?.handle(.poked) },
                 simulate: { [weak self] in self?.handle($0) },
                 openChat: { [weak self] in self?.openChat($0) },
+                goHome: { [weak self] in self?.sendHome() },
                 reportHitAreas: { [weak panel] in panel?.hitAreas = $0 }
             )
         }
@@ -208,16 +217,22 @@ final class MacController {
         walker.panel = panel
         walker.canWander = { [pet] in pet.action == .idle && pet.dialogue == nil }
         walker.onSettled = { [weak self] in self?.showHeldReaction() }
+        wasFocusing = pomodoro.state.status != .ready
         pomodoro.onChange = { [weak self] in
             guard let self else { return }
+            // A focus ending (or stopped) lets the friend out, even if it was sent home.
+            let focusing = self.pomodoro.state.status != .ready
+            if self.wasFocusing, !focusing { self.sentHome = false }
+            self.wasFocusing = focusing
             self.updateVisibility()
             self.timelapse.sync(self.pomodoro.state)
         }
         observeSleep()
         timelapse.setSignedIn(true)
         _ = posture // turns itself back on if it was on
-        // A focus that outlived a relaunch or sign-out keeps the friend home.
-        friendVisible = !pomodoro.state.friendHome
+        // A focus that outlived a relaunch or sign-out keeps the friend home, and so does having been sent home.
+        friendVisible = PresenceVisibility.friendShows(presenceShows: true, focusHome: pomodoro.state.friendHome,
+                                                       inGoodbye: false, sentHome: sentHome)
         if friendVisible { walker.comeOut() }
 
         let presence = PresenceReporter(api: api)
@@ -321,6 +336,20 @@ final class MacController {
         }
     }
 
+    /// "Go Home": in it goes, and it stays in (quietly) until "Come Out" or a focus ends.
+    func sendHome() {
+        sentHome = true
+        heldReaction = nil
+        updateVisibility()
+    }
+
+    /// "Come Out": out of being sent home, and out of a focus that's keeping it home.
+    func letOut() {
+        sentHome = false
+        if pomodoro.state.friendHome { pomodoro.letFriendOut() } // that change updates visibility too
+        updateVisibility()
+    }
+
     private func showHeldReaction() {
         guard let reaction = heldReaction else { return }
         heldReaction = nil
@@ -355,12 +384,17 @@ final class MacController {
     private func updateVisibility() {
         guard panel != nil, let presence else { return }
         if presence.owner == .phone { phoneClaimedNearby = false } // the backend caught up with the nearby claim
-        let show = PresenceVisibility.macShowsFriend(
-            isActive: presence.isActive,
-            owner: presence.owner,
-            socketConnected: presence.isConnected,
-            phoneClaimedNearby: phoneClaimedNearby
-        ) && !(pomodoro.state.friendHome && Date.now >= goodbyeUntil)
+        let show = PresenceVisibility.friendShows(
+            presenceShows: PresenceVisibility.macShowsFriend(
+                isActive: presence.isActive,
+                owner: presence.owner,
+                socketConnected: presence.isConnected,
+                phoneClaimedNearby: phoneClaimedNearby
+            ),
+            focusHome: pomodoro.state.friendHome,
+            inGoodbye: Date.now < goodbyeUntil,
+            sentHome: sentHome
+        )
         guard show != friendVisible else { return }
         friendVisible = show
         if show {

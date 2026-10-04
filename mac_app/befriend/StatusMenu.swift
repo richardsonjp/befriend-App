@@ -225,11 +225,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
             menu.addItem(NSMenuItem(title: "Chat…", action: #selector(showChat), keyEquivalent: "").targeted(self))
             menu.addItem(skinMenu())
-            #if DEBUG
+            // Home is the menu bar icon: send the friend in, or let it back out.
             if controller.walker.isInside {
                 menu.addItem(NSMenuItem(title: "Come Out", action: #selector(comeOut), keyEquivalent: "").targeted(self))
+            } else {
+                menu.addItem(NSMenuItem(title: "Go Home", action: #selector(goHome), keyEquivalent: "").targeted(self))
             }
-            #endif
             menu.addItem(.separator())
             menu.addItem(NSMenuItem(title: "Sign Out", action: #selector(signOut), keyEquivalent: "").targeted(self))
         case .waitingForFriend:
@@ -288,7 +289,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func comeOut() {
-        controller.walker.comeOut()
+        controller.letOut()
+    }
+
+    @objc private func goHome() {
+        controller.sendHome()
     }
 
     @objc private func togglePause() {

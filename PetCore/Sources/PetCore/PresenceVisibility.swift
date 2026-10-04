@@ -11,4 +11,11 @@ public nonisolated enum PresenceVisibility {
         guard isActive, !phoneClaimedNearby else { return false }
         return owner == .mac || !socketConnected
     }
+
+    /// Whether the friend is out: where presence puts it, unless the user sent it home (until they let it out or a
+    /// focus ends) or a focus keeps it home (after its goodbye line). Sent home, nothing else brings it out: not
+    /// coming back from idle, waking, unlocking, the iPhone letting go or the network dropping.
+    public static func friendShows(presenceShows: Bool, focusHome: Bool, inGoodbye: Bool, sentHome: Bool) -> Bool {
+        presenceShows && !sentHome && !(focusHome && !inGoodbye)
+    }
 }

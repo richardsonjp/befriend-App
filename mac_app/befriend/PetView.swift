@@ -15,6 +15,8 @@ struct PetView: View {
     var simulate: (Trigger) -> Void = { _ in }
     /// The bubble's follow-up buttons, on a line about an earlier chat.
     var openChat: (ChatStart) -> Void = { _ in }
+    /// "Go Home": stays in until "Come Out" in the menu bar, or a focus ends.
+    var goHome: () -> Void = {}
     /// Where the friend and its bubble are, so the rest of the panel can let clicks through.
     var reportHitAreas: ([CGRect]) -> Void = { _ in }
 
@@ -78,9 +80,10 @@ struct PetView: View {
                 }
             }
             Button("Wander Now") { walker.wanderNow() }
-            Button("Walk Home") { walker.goHome(instant: false) }
             Divider()
             #endif
+            Button("Go Home", action: goHome)
+            Divider()
             Button("Quit befriend") { NSApp.terminate(nil) }
         }
     }

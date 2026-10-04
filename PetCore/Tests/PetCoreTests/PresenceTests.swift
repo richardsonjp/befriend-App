@@ -43,6 +43,19 @@ struct PresenceVisibilityTests {
 }
 
 struct PresencePeerTests {
+    /// Sent home, the friend stayed out only until the next presence change (idle and back, wake, a dropped socket).
+    @Test func sentHomeStaysHomeWhateverPresenceSays() {
+        for socket in [true, false] {
+            let presence = PresenceVisibility.macShowsFriend(isActive: true, owner: .mac, socketConnected: socket, phoneClaimedNearby: false)
+            #expect(presence)
+            #expect(!PresenceVisibility.friendShows(presenceShows: presence, focusHome: false, inGoodbye: false, sentHome: true))
+        }
+        #expect(!PresenceVisibility.friendShows(presenceShows: true, focusHome: true, inGoodbye: false, sentHome: false))
+        #expect(PresenceVisibility.friendShows(presenceShows: true, focusHome: true, inGoodbye: true, sentHome: false), "out for its goodbye line")
+        #expect(PresenceVisibility.friendShows(presenceShows: true, focusHome: false, inGoodbye: false, sentHome: false))
+        #expect(!PresenceVisibility.friendShows(presenceShows: false, focusHome: false, inGoodbye: false, sentHome: false))
+    }
+
     @Test func accountTagIsStableAndDoesNotRevealTheUserID() {
         let tag = PresencePeer.accountTag(for: "0b8f6c1e-5a1d-4b2f-9f8e-1c2d3e4f5a6b")
         #expect(tag.count == 16)
