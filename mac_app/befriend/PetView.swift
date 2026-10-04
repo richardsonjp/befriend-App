@@ -17,6 +17,7 @@ struct PetView: View {
     var openChat: (ChatStart) -> Void = { _ in }
     /// "Go Home": stays in until "Come Out" in the menu bar, or a focus ends.
     var goHome: () -> Void = {}
+    var explainScreen: () -> Void = {}
     /// Where the friend and its bubble are, so the rest of the panel can let clicks through.
     var reportHitAreas: ([CGRect]) -> Void = { _ in }
 
@@ -82,6 +83,7 @@ struct PetView: View {
             Button("Wander Now") { walker.wanderNow() }
             Divider()
             #endif
+            Button("Explain Part of Screen…", action: explainScreen)
             Button("Go Home", action: goHome)
             Divider()
             Button("Quit befriend") { NSApp.terminate(nil) }

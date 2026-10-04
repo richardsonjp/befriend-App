@@ -42,6 +42,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             Divider()
             PostureControls(checker: controller.posture) { [weak self] turnOn in self?.showCalibration(turnOnAfter: turnOn) }
             Divider()
+            ExplainControls(flow: controller.screenExplain)
+            Divider()
             Button { [weak self] in self?.showChat() } label: {
                 Label("Chat About Your Files", systemImage: "bubble.left.and.text.bubble.right").frame(maxWidth: .infinity, alignment: .leading)
             }

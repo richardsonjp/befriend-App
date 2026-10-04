@@ -67,6 +67,9 @@ final class MacController {
     )
     /// Local chat about the user's files (M18); only on this device.
     @ObservationIgnored private(set) lazy var chat = ChatLibrary()
+    /// Explain part of the screen (M31): its shortcut, the capture and the explanation.
+    @ObservationIgnored private(set) lazy var screenExplain = ScreenExplainFlow(
+        library: chat, friend: { [weak self] in self?.friend }, openChat: { [weak self] in self?.openChat($0) })
     /// Green/red posture light (M14), sharing the timelapse camera; paused while the Mac sleeps or is locked.
     @ObservationIgnored private(set) lazy var posture: PostureChecker = {
         let checker = PostureChecker(camera: timelapse.recorder.camera)
@@ -210,6 +213,7 @@ final class MacController {
                 simulate: { [weak self] in self?.handle($0) },
                 openChat: { [weak self] in self?.openChat($0) },
                 goHome: { [weak self] in self?.sendHome() },
+                explainScreen: { [weak self] in self?.screenExplain.begin() },
                 reportHitAreas: { [weak panel] in panel?.hitAreas = $0 }
             )
         }
@@ -230,6 +234,7 @@ final class MacController {
         observeSleep()
         timelapse.setSignedIn(true)
         _ = posture // turns itself back on if it was on
+        screenExplain.start()
         // A focus that outlived a relaunch or sign-out keeps the friend home, and so does having been sent home.
         friendVisible = PresenceVisibility.friendShows(presenceShows: true, focusHome: pomodoro.state.friendHome,
                                                        inGoodbye: false, sentHome: sentHome)
