@@ -31,7 +31,7 @@ public nonisolated enum TimelapsePlan {
 /// Used from the recorder's encoder queue, one call at a time.
 nonisolated final class TimelapseWriter: @unchecked Sendable {
     private let rawURL: URL
-    private let length: TimeInterval
+    let length: TimeInterval
     private let fps: Int32
     private let context = CIContext()
     private var writer: AVAssetWriter?
@@ -64,19 +64,27 @@ nonisolated final class TimelapseWriter: @unchecked Sendable {
         return true
     }
 
-    /// Writes the finished minute to `url`; false when nothing was captured.
-    func finish(to url: URL) async throws -> Bool {
+    /// Closes the recording and exports the finished video to `url`; false when nothing was captured.
+    func finish(to url: URL, card: CIImage? = nil) async throws -> Bool {
+        guard let raw = try await close() else { return false }
+        try await Self.export(raw, to: url, length: length, card: card)
+        return true
+    }
+
+    /// Closes the raw recording; nil when nothing was captured. `export` makes the video from it.
+    func close() async throws -> URL? {
         guard let writer, let input, frames > 0 else {
             cancel()
-            return false
+            return nil
         }
         input.markAsFinished()
         writer.endSession(atSourceTime: CMTime(value: Int64(frames), timescale: fps))
         await writer.finishWriting()
-        defer { try? FileManager.default.removeItem(at: rawURL) }
-        guard writer.status == .completed else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
-        try await Self.stretch(rawURL, to: url, length: length)
-        return true
+        guard writer.status == .completed else {
+            try? FileManager.default.removeItem(at: rawURL)
+            throw writer.error ?? CocoaError(.fileWriteUnknown)
+        }
+        return rawURL
     }
 
     func cancel() {
@@ -104,8 +112,10 @@ nonisolated final class TimelapseWriter: @unchecked Sendable {
         (self.writer, self.input, self.adaptor, self.size) = (writer, input, adaptor, size)
     }
 
-    /// Re-times the whole file to `length`: a full focus is already a minute, an early end plays slower.
-    private static func stretch(_ source: URL, to url: URL, length: TimeInterval) async throws {
+    /// The finished video in one encoding pass: re-timed to `length` (a full focus is already a minute, an early
+    /// end plays slower) with `card` (the title) drawn on every frame. The raw file is removed either way.
+    static func export(_ source: URL, to url: URL, length: TimeInterval, card: CIImage?) async throws {
+        defer { try? FileManager.default.removeItem(at: source) }
         let asset = AVURLAsset(url: source)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw CocoaError(.fileReadCorruptFile) }
         let range = CMTimeRange(start: .zero, duration: try await asset.load(.duration))
@@ -117,6 +127,11 @@ nonisolated final class TimelapseWriter: @unchecked Sendable {
         target.scaleTimeRange(range, toDuration: CMTime(seconds: length, preferredTimescale: 600))
         guard let export = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
             throw CocoaError(.fileWriteUnknown)
+        }
+        if let card {
+            export.videoComposition = try await AVMutableVideoComposition.videoComposition(with: composition) { request in
+                request.finish(with: card.composited(over: request.sourceImage).cropped(to: request.sourceImage.extent), context: nil)
+            }
         }
         try? FileManager.default.removeItem(at: url)
         try await export.export(to: url, as: .mp4)

@@ -223,21 +223,27 @@ public final class TimelapseRecorder {
         camera.start(for: Self.cameraUser)
     }
 
-    /// Ends the recording, lets the friend name it (title and date drawn top-left), and files the video.
-    func finish(into library: TimelapseLibrary, title: (TimelapseTitleContext) async -> String?) async {
+    /// Ends the recording and files the video, named by the friend (title and date drawn top-left). The library
+    /// shows it as saving meanwhile: closing the file, the title and one encoding pass take a while.
+    func finish(into library: TimelapseLibrary, title: @escaping (TimelapseTitleContext) async -> String?) async {
         guard let writer, state != .idle else { return }
+        let started = startedAt
         stopTicking()
+        library.beginSaving(started)
+        defer { library.endSaving(started) }
         await withCheckedContinuation { done in encoder.async { done.resume() } } // the frame in flight lands first
-        let (started, planned, recorded) = (startedAt, planned, Double(writer.frames) * interval)
+        let (planned, recorded) = (planned, Double(writer.frames) * interval)
+        let context = TimelapseTitleContext(startedAt: started, plannedMinutes: max(1, Int((planned / 60).rounded())),
+                                            focusedMinutes: max(1, Int((recorded / 60).rounded())))
+        // The friend thinks of a title while the file closes.
+        let naming = Task { await title(context) }
         let video = workFolder.appending(path: "timelapse-\(UUID().uuidString).mp4")
         do {
-            if try await writer.finish(to: video) {
-                let context = TimelapseTitleContext(startedAt: started, plannedMinutes: max(1, Int((planned / 60).rounded())),
-                                                    focusedMinutes: max(1, Int((recorded / 60).rounded())))
-                let name = await title(context)
-                if let name { await TimelapseTitle.stamp(video, title: name, date: started) }
-                try library.add(video, startedAt: started, plannedSeconds: planned, recordedSeconds: recorded, title: name)
-            }
+            guard let raw = try await writer.close() else { return naming.cancel() }
+            let name = await naming.value
+            let card = name.flatMap { name in writer.size.flatMap { TimelapseTitle.card(size: $0, title: name, date: started) } }
+            try await TimelapseWriter.export(raw, to: video, length: writer.length, card: card)
+            try library.add(video, startedAt: started, plannedSeconds: planned, recordedSeconds: recorded, title: name)
         } catch {
             try? FileManager.default.removeItem(at: video)
         }

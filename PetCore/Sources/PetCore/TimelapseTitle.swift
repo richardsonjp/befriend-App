@@ -92,25 +92,9 @@ public nonisolated enum TimelapseTitle {
 
     // MARK: Drawing it on the video
 
-    /// Draws the card on every frame of `video`, in place. On any failure the video stays as it was.
-    public static func stamp(_ video: URL, title: String, date: Date) async {
-        let asset = AVURLAsset(url: video)
-        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
-              let natural = try? await track.load(.naturalSize), natural.width > 0,
-              let card = await MainActor.run(body: { TimelapseTitleCard(size: natural, title: title, date: Self.date(date)).image() })
-        else { return }
-        do {
-            let composition = try await AVMutableVideoComposition.videoComposition(with: asset) { request in
-                request.finish(with: card.composited(over: request.sourceImage).cropped(to: request.sourceImage.extent), context: nil)
-            }
-            guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else { return }
-            export.videoComposition = composition
-            let titled = video.deletingLastPathComponent().appending(path: "titled-\(UUID().uuidString).mp4")
-            try await export.export(to: titled, as: .mp4)
-            _ = try FileManager.default.replaceItemAt(video, withItemAt: titled)
-        } catch {
-            // ponytail: the untitled video is still a good video; keep it rather than lose the focus.
-        }
+    /// The card for a video of this size, drawn on every frame by the export (TimelapseWriter.export).
+    @MainActor static func card(size: CGSize, title: String, date: Date) -> CIImage? {
+        TimelapseTitleCard(size: size, title: title, date: Self.date(date)).image()
     }
 }
 

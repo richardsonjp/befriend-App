@@ -26,6 +26,8 @@ public final class TimelapseLibrary {
     public static let keep = 9
 
     public private(set) var videos: [Timelapse] = []
+    /// Focuses whose video is still being made (by when they started): shown as "Saving…" tiles.
+    public private(set) var saving: [Date] = []
     public let folder: URL
 
     public init(folder: URL) {
@@ -37,6 +39,9 @@ public final class TimelapseLibrary {
     public var totalBytes: Int {
         videos.compactMap { $0.video.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize } }.reduce(0, +)
     }
+
+    func beginSaving(_ startedAt: Date) { saving.insert(startedAt, at: 0) }
+    func endSaving(_ startedAt: Date) { saving.removeAll { $0 == startedAt } }
 
     /// Moves a finished video in, then drops the oldest beyond `keep`.
     public func add(_ video: URL, startedAt: Date, plannedSeconds: TimeInterval, recordedSeconds: TimeInterval,

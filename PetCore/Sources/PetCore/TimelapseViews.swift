@@ -26,7 +26,7 @@ public struct TimelapseGallery: View {
 
     public var body: some View {
         Group {
-            if library.videos.isEmpty {
+            if library.videos.isEmpty, library.saving.isEmpty {
                 ContentUnavailableView(
                     "No timelapses yet", systemImage: "film.stack",
                     description: Text("Turn on “Record a timelapse” in the focus card. Each focus becomes a 1-minute video here.")
@@ -34,6 +34,7 @@ public struct TimelapseGallery: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: Self.columns, spacing: 2) {
+                        ForEach(library.saving, id: \.self) { started in savingTile(started) }
                         ForEach(library.videos) { timelapse in
                             if let video = timelapse.video { tile(timelapse, video) }
                         }
@@ -56,6 +57,22 @@ public struct TimelapseGallery: View {
         } message: { _ in
             Text("It's only on this device, so it can't be recovered.")
         }
+    }
+
+    /// A focus that just ended: its video is still being made.
+    private func savingTile(_ started: Date) -> some View {
+        Rectangle()
+            .fill(.quaternary)
+            .aspectRatio(1, contentMode: .fit) // square, like the video tiles
+            .overlay {
+                VStack(spacing: 6) {
+                    ProgressView()
+                    Text("Saving…").font(.caption2.weight(.semibold))
+                    Text(started.formatted(.dateTime.hour().minute())).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Timelapse from \(started.formatted(.dateTime.hour().minute())), still saving")
     }
 
     private func tile(_ timelapse: Timelapse, _ video: URL) -> some View {

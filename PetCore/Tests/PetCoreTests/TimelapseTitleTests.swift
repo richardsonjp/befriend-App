@@ -49,17 +49,21 @@ struct TimelapseTitleTests {
         let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        let writer = TimelapseWriter(rawURL: dir.appending(path: "raw.mp4"), length: 1, fps: 30)
         let extent = CGRect(x: 0, y: 0, width: 640, height: 360)
-        for _ in 0..<30 {
-            let frame = CIImage(color: CIColor(red: 0.1, green: 0.1, blue: 0.1)).cropped(to: extent)
-            while try !writer.append(frame, overlay: nil) { try await Task.sleep(for: .milliseconds(5)) }
+        func record(_ name: String, card: CIImage?) async throws -> URL {
+            let writer = TimelapseWriter(rawURL: dir.appending(path: "raw-\(name).mp4"), length: 1, fps: 30)
+            for _ in 0..<30 {
+                let frame = CIImage(color: CIColor(red: 0.1, green: 0.1, blue: 0.1)).cropped(to: extent)
+                while try !writer.append(frame, overlay: nil) { try await Task.sleep(for: .milliseconds(5)) }
+            }
+            let video = dir.appending(path: "\(name).mp4")
+            #expect(try await writer.finish(to: video, card: card))
+            return video
         }
-        let video = dir.appending(path: "video.mp4")
-        #expect(try await writer.finish(to: video))
-        let before = try await Self.topLeftBrightness(video)
-        await TimelapseTitle.stamp(video, title: "Productive Wednesday", date: Self.wednesday)
-        let after = try await Self.topLeftBrightness(video)
+        let card = await TimelapseTitle.card(size: extent.size, title: "Productive Wednesday", date: Self.wednesday)
+        #expect(card != nil)
+        let before = try await Self.topLeftBrightness(record("plain", card: nil))
+        let after = try await Self.topLeftBrightness(record("titled", card: card))
         #expect(after > before + 0.05, "white title text now brightens the top-left corner")
     }
 
