@@ -123,6 +123,44 @@ public final class ChatThread {
         }
     }
 
+    /// Explains a captured part of the screen (M31). The screenshot is attached to this conversation, the user's turn
+    /// names what it is ("Screenshot · …", the chat's title), and the explanation takes the shape that fits.
+    public func explain(screenshot png: Data) {
+        guard state == .idle, unavailable == nil else { return }
+        failure = nil
+        notice = nil
+        state = .making("Looking…")
+        turn = Task {
+            defer { if !Task.isCancelled { state = .idle } }
+            var text = ""
+            do {
+                let read = try await ScreenExplainer.read(png)
+                let glance = try await ScreenExplainer.glance(read, model: model)
+                guard !Task.isCancelled else { return }
+                conversation.messages.append(ChatMessage(role: .user, text: ScreenExplainer.title(glance.what)))
+                library.save(conversation)
+                let file = FileManager.default.temporaryDirectory.appending(path: "Screenshot \(UUID().uuidString.prefix(8)).png")
+                try png.write(to: file)
+                library.add(file, scope: .conversation(conversation.id), temporary: true)
+                let session = LanguageModelSession(model: model, instructions: ScreenExplainer.instructions)
+                state = .answering("")
+                for try await snapshot in session.streamResponse(to: ScreenExplainer.prompt(glance, read: read)) {
+                    guard !Task.isCancelled else { break }
+                    text = snapshot.content
+                    state = .answering(text)
+                }
+            } catch is CancellationError {
+                // Stopped: keep what was written.
+            } catch {
+                Self.log.error("Explaining a screenshot failed: \(String(describing: error), privacy: .public)")
+                if text.isEmpty { return failure = (error as? ScreenExplainer.Failure)?.errorDescription ?? Self.message(for: error) }
+            }
+            guard !text.isEmpty else { return }
+            conversation.messages.append(ChatMessage(role: .friend, text: text))
+            library.save(conversation)
+        }
+    }
+
     /// The effort a /research without one uses (the composer's Research menu sets it).
     public var researchEffort = ResearchEffort.medium
 
