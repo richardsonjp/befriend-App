@@ -103,6 +103,18 @@ final class FriendWalker {
         }
     }
 
+    /// Walks over to stand beside something on screen (the explain card, M31), if it's out.
+    func visit(beside box: CGRect) {
+        guard let panel, place == .out || place == .wandering, !Self.reduceMotion,
+              let visible = panel.characterScreen?.visibleFrame else { return }
+        let size = panel.frame.size
+        // ponytail: stands left of the box with its feet on the box's bottom edge; right if there's no room.
+        let left = box.minX - size.width * 0.75
+        let x = left >= visible.minX ? left : min(box.maxX - size.width * 0.25, visible.maxX - size.width)
+        let y = min(max(box.minY, visible.minY), visible.maxY - size.height)
+        startWalk(to: CGPoint(x: x, y: y), as: .wandering) { [weak self] in self?.settleOut() }
+    }
+
     /// Debug: wander right away instead of after the wait.
     func wanderNow() {
         if place == .out { wanderAway() }

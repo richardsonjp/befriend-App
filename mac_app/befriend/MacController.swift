@@ -69,7 +69,16 @@ final class MacController {
     @ObservationIgnored private(set) lazy var chat = ChatLibrary()
     /// Explain part of the screen (M31): its shortcut, the capture and the explanation.
     @ObservationIgnored private(set) lazy var screenExplain = ScreenExplainFlow(
-        library: chat, friend: { [weak self] in self?.friend }, openChat: { [weak self] in self?.openChat($0) })
+        library: chat, friend: { [weak self] in self?.friend }, openChat: { [weak self] in self?.openChat($0) },
+        friendVisit: { [weak self] card in
+            guard let self, self.friendVisible else { return }
+            self.walker.visit(beside: card)
+            self.pet.apply(PetReaction(action: .think, mood: self.pet.mood, dialogue: ""))
+        },
+        friendDone: { [weak self] in
+            guard let self, self.pet.action == .think else { return }
+            self.pet.apply(PetReaction(action: .idle, mood: self.pet.mood, dialogue: ""))
+        })
     /// Green/red posture light (M14), sharing the timelapse camera; paused while the Mac sleeps or is locked.
     @ObservationIgnored private(set) lazy var posture: PostureChecker = {
         let checker = PostureChecker(camera: timelapse.recorder.camera)

@@ -16,14 +16,21 @@ final class ScreenExplainFlow {
     let hotkey = ExplainHotkey()
     @ObservationIgnored private var busy = false
     @ObservationIgnored private var thread: ChatThread?
+    @ObservationIgnored private var card: ExplainCard?
     private let library: ChatLibrary
     private let friend: () -> FriendProfile?
     private let openChat: (ChatStart) -> Void
+    /// The friend walks over to the card (if it's out) and thinks; `friendDone` when the card closes.
+    private let friendVisit: (CGRect) -> Void
+    private let friendDone: () -> Void
 
-    init(library: ChatLibrary, friend: @escaping () -> FriendProfile?, openChat: @escaping (ChatStart) -> Void) {
+    init(library: ChatLibrary, friend: @escaping () -> FriendProfile?, openChat: @escaping (ChatStart) -> Void,
+         friendVisit: @escaping (CGRect) -> Void = { _ in }, friendDone: @escaping () -> Void = {}) {
         self.library = library
         self.friend = friend
         self.openChat = openChat
+        self.friendVisit = friendVisit
+        self.friendDone = friendDone
         hotkey.onTrigger = { [weak self] in self?.begin() }
     }
 
@@ -37,7 +44,7 @@ final class ScreenExplainFlow {
             defer { busy = false }
             guard let box = await ScreenCapture.pick() else { return }
             do {
-                explain(try await ScreenCapture.capture(box))
+                explain(try await ScreenCapture.capture(box), beside: box)
             } catch {
                 let alert = NSAlert()
                 alert.messageText = "Couldn't capture that part of the screen"
@@ -47,25 +54,22 @@ final class ScreenExplainFlow {
         }
     }
 
-    // ponytail: shows the explanation in Chat; the card beside the box (slice C) replaces this.
-    private func explain(_ png: Data) {
+    /// The card beside the box, the friend walking over to think about it, and the explanation streaming in.
+    private func explain(_ png: Data, beside box: CGRect) {
+        card?.close()
         let thread = ChatThread(Conversation(), library: library, friend: friend())
         self.thread = thread
+        let card = ExplainCard(thread: thread, beside: box, openChat: { [weak self, weak thread] in
+            guard let self, let thread else { return }
+            self.card?.close()
+            self.openChat(ChatStart(conversation: thread.conversation.id, draft: ""))
+        }, onClose: { [weak self] in
+            self?.card = nil
+            self?.friendDone()
+        })
+        self.card = card
+        friendVisit(card.panel.frame)
         thread.explain(screenshot: png)
-        Task {
-            // The conversation is saved once the friend knows what it's looking at.
-            for _ in 0..<300 where thread.conversation.messages.isEmpty && thread.failure == nil {
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            if let failure = thread.failure {
-                let alert = NSAlert()
-                alert.messageText = "Couldn't explain that"
-                alert.informativeText = failure
-                alert.runModal()
-            } else {
-                openChat(ChatStart(conversation: thread.conversation.id, draft: ""))
-            }
-        }
     }
 }
 
