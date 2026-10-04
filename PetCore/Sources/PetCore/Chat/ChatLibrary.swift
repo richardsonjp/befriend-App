@@ -98,6 +98,22 @@ public final class ChatLibrary {
         store(stamped)
     }
 
+    /// Takes in the conversations and files another library saved, then deletes it: the iPhone's share extension
+    /// explains screenshots into its own library in the App Group, and the app moves them into chat (M31).
+    public func adopt(from folder: URL) {
+        let other = ChatLibrary(root: folder)
+        try? FileManager.default.createDirectory(at: thumbnailsDir, withIntermediateDirectories: true)
+        for document in other.documents {
+            if let thumbnail = other.thumbnail(for: document.id),
+               (try? FileManager.default.copyItem(at: thumbnail, to: thumbnailsDir.appending(path: "\(document.id).jpg"))) != nil {
+                thumbnails.insert(document.id)
+            }
+            store(document)
+        }
+        for conversation in other.conversations { store(conversation) }
+        try? FileManager.default.removeItem(at: folder)
+    }
+
     // MARK: Links (M26)
 
     /// Links two messages both ways (or unlinks them), saving both conversations so the link syncs.

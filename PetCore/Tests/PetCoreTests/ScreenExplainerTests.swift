@@ -64,3 +64,21 @@ import Testing
         #expect(library.conversation(thread.conversation.id)?.messages.count == 2)
     }
 }
+
+@MainActor struct ExplainInboxTests {
+    @Test func appAdoptsWhatTheShareExtensionSaved() throws {
+        let container = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let shared = ChatLibrary(root: container.appending(path: "Explained/\(UUID().uuidString)"))
+        var conversation = Conversation()
+        conversation.messages = [ChatMessage(role: .user, text: "Screenshot · Wi-Fi settings"), ChatMessage(role: .friend, text: "These are…")]
+        shared.save(conversation)
+        let app = ChatLibrary(root: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+        var changes: [ChatLibrary.Change] = []
+        app.onChange = { changes.append($0) }
+        ExplainInbox.adoptAll(into: app, container: container)
+        #expect(app.conversation(conversation.id)?.messages.count == 2)
+        #expect(changes.contains { $0.id == conversation.id }, "it syncs like any chat")
+        let left = try FileManager.default.contentsOfDirectory(atPath: container.appending(path: "Explained").path)
+        #expect(left.isEmpty)
+    }
+}

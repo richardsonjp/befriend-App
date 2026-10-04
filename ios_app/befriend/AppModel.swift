@@ -414,7 +414,10 @@ final class AppModel {
     }
 
     func scenePhaseChanged(_ scenePhase: ScenePhase) {
-        if scenePhase == .active { pomodoro.settle() }
+        if scenePhase == .active {
+            pomodoro.settle()
+            ExplainInbox.adoptAll(into: chat) // screenshots explained from the share sheet (M31)
+        }
         if scenePhase != .inactive {
             timelapse.setAway(scenePhase != .active)
             posture.setAway(scenePhase != .active)

@@ -11,6 +11,8 @@
 		AA000000000000000000001C /* PetCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000019 /* PetCore */; };
 		AA000000000000000000001D /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000001A /* GoogleSignIn */; };
 		AA000000000000000000001E /* PetCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000001B /* PetCore */; };
+		AA0000000000000000000030 /* ExplainShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000035 /* ExplainShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA0000000000000000000031 /* PetCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000032 /* PetCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -20,6 +22,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = AA0000000000000000000010;
 			remoteInfo = FriendWidget;
+		};
+		AA0000000000000000000033 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000034;
+			remoteInfo = ExplainShare;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -31,6 +40,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				AA0000000000000000000016 /* FriendWidget.appex in Embed Foundation Extensions */,
+				AA0000000000000000000030 /* ExplainShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -41,6 +51,7 @@
 		AA0000000000000000000008 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000009 /* befriend.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = befriend.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA000000000000000000000A /* FriendWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FriendWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000035 /* ExplainShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ExplainShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -57,6 +68,13 @@
 				Info.plist,
 			);
 			target = AA0000000000000000000010 /* FriendWidget */;
+		};
+		AA0000000000000000000036 /* Exceptions for "ExplainShare" folder in "ExplainShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AA0000000000000000000034 /* ExplainShare */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -82,6 +100,14 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
+		AA0000000000000000000037 /* ExplainShare */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0000000000000000000036 /* Exceptions for "ExplainShare" folder in "ExplainShare" target */,
+			);
+			path = ExplainShare;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +128,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000038 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000031 /* PetCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -112,6 +146,7 @@
 				AA0000000000000000000004 /* befriend */,
 				AA0000000000000000000006 /* Shared */,
 				AA0000000000000000000005 /* FriendWidget */,
+				AA0000000000000000000037 /* ExplainShare */,
 				AA0000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -121,6 +156,7 @@
 			children = (
 				AA0000000000000000000009 /* befriend.app */,
 				AA000000000000000000000A /* FriendWidget.appex */,
+				AA0000000000000000000035 /* ExplainShare.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -149,6 +185,7 @@
 			);
 			dependencies = (
 				AA0000000000000000000014 /* PBXTargetDependency */,
+				AA000000000000000000003B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AA0000000000000000000004 /* befriend */,
@@ -187,6 +224,29 @@
 			productReference = AA000000000000000000000A /* FriendWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		AA0000000000000000000034 /* ExplainShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA000000000000000000003E /* Build configuration list for PBXNativeTarget "ExplainShare" */;
+			buildPhases = (
+				AA0000000000000000000039 /* Sources */,
+				AA0000000000000000000038 /* Frameworks */,
+				AA000000000000000000003A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000037 /* ExplainShare */,
+			);
+			name = ExplainShare;
+			packageProductDependencies = (
+				AA0000000000000000000032 /* PetCore */,
+			);
+			productName = ExplainShare;
+			productReference = AA0000000000000000000035 /* ExplainShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -201,6 +261,9 @@
 						CreatedOnToolsVersion = 26.6;
 					};
 					AA0000000000000000000010 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					AA0000000000000000000034 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 				};
@@ -225,6 +288,7 @@
 			targets = (
 				AA000000000000000000000B /* befriend */,
 				AA0000000000000000000010 /* FriendWidget */,
+				AA0000000000000000000034 /* ExplainShare */,
 			);
 		};
 /* End PBXProject section */
@@ -238,6 +302,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		AA0000000000000000000013 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA000000000000000000003A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -261,6 +332,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000039 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -268,6 +346,11 @@
 			isa = PBXTargetDependency;
 			target = AA0000000000000000000010 /* FriendWidget */;
 			targetProxy = AA0000000000000000000015 /* PBXContainerItemProxy */;
+		};
+		AA000000000000000000003B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000034 /* ExplainShare */;
+			targetProxy = AA0000000000000000000033 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -454,6 +537,66 @@
 			};
 			name = Release;
 		};
+		AA000000000000000000003C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ExplainShare/ExplainShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ExplainShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = befriend;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.richardsonjp.befriend.ExplainShare;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		AA000000000000000000003D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ExplainShare/ExplainShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ExplainShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = befriend;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.richardsonjp.befriend.ExplainShare;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -480,6 +623,15 @@
 			buildConfigurations = (
 				AA0000000000000000000028 /* Debug */,
 				AA0000000000000000000029 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA000000000000000000003E /* Build configuration list for PBXNativeTarget "ExplainShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000000000000000000003C /* Debug */,
+				AA000000000000000000003D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -515,6 +667,10 @@
 			productName = GoogleSignIn;
 		};
 		AA000000000000000000001B /* PetCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PetCore;
+		};
+		AA0000000000000000000032 /* PetCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PetCore;
 		};

@@ -10,12 +10,13 @@ import SwiftUI
 
 public struct ScreenExplainView: View {
     let thread: ChatThread
-    let openChat: () -> Void
+    /// Nil where chat can't be opened from here (the iPhone's share sheet): it says where the explanation went.
+    let openChat: (() -> Void)?
     let close: () -> Void
     @State private var question = ""
     @FocusState private var asking: Bool
 
-    public init(thread: ChatThread, openChat: @escaping () -> Void, close: @escaping () -> Void) {
+    public init(thread: ChatThread, openChat: (() -> Void)?, close: @escaping () -> Void) {
         self.thread = thread
         self.openChat = openChat
         self.close = close
@@ -65,8 +66,11 @@ public struct ScreenExplainView: View {
                     .focused($asking)
                     .onSubmit(ask)
                     .disabled(thread.state != .idle || thread.conversation.messages.isEmpty)
-                Button("Open in Chat", action: openChat)
-                    .disabled(thread.conversation.messages.isEmpty)
+                if let openChat {
+                    Button("Open in Chat", action: openChat).disabled(thread.conversation.messages.isEmpty)
+                } else if !thread.conversation.messages.isEmpty {
+                    Text("Saved to befriend's Chat").font(.caption).foregroundStyle(.secondary)
+                }
             }
             .padding(12)
         }
@@ -75,7 +79,9 @@ public struct ScreenExplainView: View {
     @ViewBuilder private var status: some View {
         switch thread.state {
         case .idle:
-            if let failure = thread.failure { Text(failure).foregroundStyle(.red).font(.callout) }
+            if let failure = thread.failure ?? (thread.conversation.messages.isEmpty ? thread.unavailable : nil) {
+                Text(failure).foregroundStyle(.red).font(.callout)
+            }
         case .answering(let text) where !text.isEmpty:
             MarkdownView(text: text, live: true)
         case .making(let what), .browsing(let what), .remembering(let what):
