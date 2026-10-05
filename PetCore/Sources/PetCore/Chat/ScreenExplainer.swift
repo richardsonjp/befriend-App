@@ -27,6 +27,36 @@ public nonisolated enum ScreenExplainer {
         public var search: String
     }
 
+    /// Where the box was taken (the Mac): the app, the window's title and, for a browser, the site. Private windows and
+    /// password managers are `hidden`: only the app's name is kept.
+    public struct Origin: Sendable, Equatable {
+        public var app: String
+        public var title: String?
+        public var domain: String?
+        public var hidden: Bool
+
+        public init(app: String, title: String? = nil, domain: String? = nil, hidden: Bool = false) {
+            self.app = app
+            let title = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.title = hidden || title?.isEmpty != false ? nil : title
+            self.domain = hidden ? nil : domain
+            self.hidden = hidden
+        }
+
+        /// "Safari · github.com · Pull request #42".
+        public var line: String { ([app, domain, title].compactMap { $0 }).joined(separator: " · ") }
+
+        public static let hiddenNote = "Private window: only the app name was used, nothing from the page was read."
+
+        /// The site of an address, without "www.": "https://www.github.com/a/b?x=1" → "github.com". Nil for non-web ones.
+        public static func domain(from address: String) -> String? {
+            guard let url = URL(string: address.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  ["http", "https"].contains(url.scheme?.lowercased()), let host = url.host(), !host.isEmpty else { return nil }
+            let lowered = host.lowercased()
+            return lowered.hasPrefix("www.") ? String(lowered.dropFirst(4)) : lowered
+        }
+    }
+
     public enum Failure: LocalizedError {
         case nothingFound
         public var errorDescription: String? {
@@ -40,10 +70,20 @@ public nonisolated enum ScreenExplainer {
     static let webPages = 3
     static let webExcerpt = 800
 
+    /// How long an explanation may be: short enough to read at a glance in the card.
+    static let maxWords = 80
+    /// Simplified Technical English's sentence cap (ASD-STE100, via github.com/danyuchn/asd-ste100-skill, MIT).
+    static let maxSentenceWords = 20
+
     static let instructions = """
         You explain a part of the user's screen they captured. You can't see it: you get the text read from it and a \
-        few labels for what it shows. Explain only from that; if something is unclear, say what you'd need. Plain, \
-        friendly English, short paragraphs and lists, **bold** section labels, no headings. Under 200 words.
+        few labels for what it shows, and the app or website it was taken from when known. Explain only from that; if \
+        something is unclear, say what you'd need. Be brief: a summary, not a lecture. Plain, friendly English, each \
+        section one or two short lines or bullets, **bold** section labels, no headings, no filler. Under \(maxWords) words. \
+        Write in plain, simplified English (STE-flavoured): at most \(maxSentenceWords) words a sentence, one idea a \
+        sentence; active voice, saying who does what; simple tenses ("it failed", not "it has failed"); verbs, not nouns \
+        made from verbs ("configure it", not "the configuration of it"); no phrasal verbs like "set up", no semicolons, \
+        no hype words; the same word for the same thing every time; steps as a numbered list.
         """
 
     /// The sections an explanation of this kind has.
@@ -69,9 +109,10 @@ public nonisolated enum ScreenExplainer {
         return String(read.prefix(readBudget))
     }
 
-    public static func glance(_ read: String, model: SystemLanguageModel) async throws -> Glance {
+    public static func glance(_ read: String, origin: Origin? = nil, model: SystemLanguageModel) async throws -> Glance {
         let session = LanguageModelSession(model: model)
-        return try await session.respond(to: "What is this part of a screen?\n\n\(read)", generating: Glance.self).content
+        let taken = origin.map { "Taken from: \($0.line)\n" } ?? ""
+        return try await session.respond(to: "What is this part of a screen?\n\(taken)\n\(read)", generating: Glance.self).content
     }
 
     /// The chat's title for it: "Screenshot · A Python TypeError on line 42".
@@ -80,11 +121,12 @@ public nonisolated enum ScreenExplainer {
         return what.isEmpty ? "Screenshot" : "Screenshot · " + what
     }
 
-    static func prompt(_ glance: Glance, read: String, web: [WebSource] = []) -> String {
+    static func prompt(_ glance: Glance, read: String, web: [WebSource] = [], origin: Origin? = nil) -> String {
+        let taken = origin.map { "Taken from (app · site · window title): \($0.line)\n\n" } ?? ""
         var prompt = """
             This is \(glance.what). Start with one line saying what it is, then these sections: \(shape(for: glance.kind)).
 
-            Read from the screenshot:
+            \(taken)Read from the screenshot:
             \(read)
             """
         if !web.isEmpty {

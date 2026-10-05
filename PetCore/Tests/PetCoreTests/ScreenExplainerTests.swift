@@ -45,6 +45,19 @@ import Testing
         #expect(online.count < offline.count + ScreenExplainer.webPages * (ScreenExplainer.webExcerpt + 60) + 200)
     }
 
+    @Test func originKeepsOnlyTheSiteAndHidesPrivateWindows() {
+        typealias Origin = ScreenExplainer.Origin
+        #expect(Origin.domain(from: "https://www.GitHub.com/a/pull/42?token=secret#x") == "github.com")
+        #expect(Origin.domain(from: "file:///Users/me/a.html") == nil)
+        #expect(Origin.domain(from: "not a url") == nil)
+        #expect(Origin(app: "Safari", title: "Pull request #42", domain: "github.com").line == "Safari · github.com · Pull request #42")
+        #expect(Origin(app: "Terminal", title: "  ").line == "Terminal")
+        #expect(Origin(app: "Chrome", title: "My bank", domain: "bank.com", hidden: true).line == "Chrome")
+        let glance = ScreenExplainer.Glance(kind: .error, what: "A Python TypeError", search: "")
+        #expect(ScreenExplainer.prompt(glance, read: "x", origin: Origin(app: "Terminal")).contains("Taken from (app · site · window title): Terminal"))
+        #expect(!ScreenExplainer.prompt(glance, read: "x").contains("Taken from"))
+    }
+
     @Test func readsTheTextInTheScreenshot() async throws {
         let read = try await ScreenExplainer.read(Self.screenshot(Self.error))
         #expect(read.contains("TypeError") && read.contains("line 42"))
@@ -69,6 +82,13 @@ import Testing
         #expect(messages.count == 2 && messages[0].role == .user && messages[1].role == .friend)
         #expect(thread.conversation.title.hasPrefix("Screenshot"))
         #expect(messages[1].text.localizedCaseInsensitiveContains("fix"))
+        let words = messages[1].text.split(whereSeparator: \.isWhitespace).count
+        #expect(words <= ScreenExplainer.maxWords + 40, "short, at a glance: \(words) words")
+        // Plain English: short sentences (with a little slack for the model) and no semicolons.
+        let sentences = messages[1].text.split(whereSeparator: { ".!?\n".contains($0) })
+        let longest = sentences.map { $0.split(whereSeparator: \.isWhitespace).count }.max() ?? 0
+        #expect(longest <= ScreenExplainer.maxSentenceWords + 5, "longest sentence: \(longest) words")
+        #expect(!messages[1].text.contains(";"))
         for _ in 0..<100 where library.attached(to: thread.conversation.id).isEmpty { try await Task.sleep(for: .milliseconds(100)) }
         #expect(library.attached(to: thread.conversation.id).count == 1)
         #expect(library.conversation(thread.conversation.id)?.messages.count == 2)

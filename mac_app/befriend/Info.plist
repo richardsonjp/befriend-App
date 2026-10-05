@@ -22,6 +22,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>befriend reads the website of the open tab so it can explain the part of the screen you boxed. Only the site's name is kept.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_befriend-pres._tcp</string>

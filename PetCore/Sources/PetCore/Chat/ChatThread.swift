@@ -41,6 +41,8 @@ public final class ChatThread {
     public private(set) var failure: String?
     /// A heads-up about the last turn that didn't stop it, e.g. the web search finding nothing.
     public private(set) var notice: String?
+    /// Where an explained screenshot was taken (M31): shown above the explanation.
+    public private(set) var origin: ScreenExplainer.Origin?
     /// The research under way: plan, sources, what it's doing.
     public private(set) var research: ResearchLog?
     /// Tokens in the instructions alone: the meter's reading before the first answer.
@@ -126,8 +128,9 @@ public final class ChatThread {
     /// Explains a captured part of the screen (M31). The screenshot is attached to this conversation, the user's turn
     /// names what it is ("Screenshot · …", the chat's title), and the explanation takes the shape that fits. With
     /// `web`, what it is is searched too and the best excerpts join the prompt.
-    public func explain(screenshot png: Data, web: Bool = false) {
+    public func explain(screenshot png: Data, web: Bool = false, origin: ScreenExplainer.Origin? = nil) {
         guard state == .idle, unavailable == nil else { return }
+        self.origin = origin
         failure = nil
         notice = nil
         state = .making("Looking…")
@@ -136,18 +139,20 @@ public final class ChatThread {
             var text = ""
             do {
                 let read = try await ScreenExplainer.read(png)
-                let glance = try await ScreenExplainer.glance(read, model: model)
+                let glance = try await ScreenExplainer.glance(read, origin: origin, model: model)
                 guard !Task.isCancelled else { return }
-                conversation.messages.append(ChatMessage(role: .user, text: ScreenExplainer.title(glance.what)))
+                // The title, then where it was taken: follow-ups (and the chat later) still know it.
+                let title = ScreenExplainer.title(glance.what)
+                conversation.messages.append(ChatMessage(role: .user, text: origin.map { title + "\n" + $0.line } ?? title))
                 library.save(conversation)
                 let file = FileManager.default.temporaryDirectory.appending(path: "Screenshot \(UUID().uuidString.prefix(8)).png")
                 try png.write(to: file)
                 library.add(file, scope: .conversation(conversation.id), temporary: true)
-                let found = web ? await lookUp(glance) : []
+                let found = web ? await lookUp(glance, origin: origin) : []
                 guard !Task.isCancelled else { return }
                 let session = LanguageModelSession(model: model, instructions: ScreenExplainer.instructions)
                 state = .answering("")
-                for try await snapshot in session.streamResponse(to: ScreenExplainer.prompt(glance, read: read, web: found)) {
+                for try await snapshot in session.streamResponse(to: ScreenExplainer.prompt(glance, read: read, web: found, origin: origin)) {
                     guard !Task.isCancelled else { break }
                     text = snapshot.content
                     state = .answering(text)
@@ -165,8 +170,9 @@ public final class ChatThread {
     }
 
     /// The web's take on a screenshot: a search and Wikipedia, at once. Nothing found is a notice, not a failure.
-    private func lookUp(_ glance: ScreenExplainer.Glance) async -> [WebSource] {
-        let query = glance.search.isEmpty ? glance.what : glance.search
+    private func lookUp(_ glance: ScreenExplainer.Glance, origin: ScreenExplainer.Origin?) async -> [WebSource] {
+        let query = [glance.search.isEmpty ? glance.what : glance.search, origin?.domain ?? origin?.app]
+            .compactMap { $0 }.joined(separator: " ")
         state = .browsing("Searching the web for “\(query)”…")
         async let searched = try? WebSearch.search(objective: "What is \(glance.what)?", queries: [query])
         async let encyclopedia = try? WebSearch.wikipedia(query, limit: 1)

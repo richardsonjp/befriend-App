@@ -51,7 +51,8 @@ final class ScreenExplainFlow {
             hotkey.catchEscape = false
             guard let box = picked else { return }
             do {
-                explain(try await ScreenCapture.capture(box), beside: box)
+                let png = try await ScreenCapture.capture(box)
+                explain(png, beside: box, origin: await WindowOrigin.at(box))
             } catch {
                 let alert = NSAlert()
                 alert.messageText = "Couldn't capture that part of the screen"
@@ -62,7 +63,7 @@ final class ScreenExplainFlow {
     }
 
     /// The card beside the box, the friend walking over to think about it, and the explanation streaming in.
-    private func explain(_ png: Data, beside box: CGRect) {
+    private func explain(_ png: Data, beside box: CGRect, origin: ScreenExplainer.Origin?) {
         card?.close()
         let thread = ChatThread(Conversation(), library: library, friend: friend())
         self.thread = thread
@@ -77,7 +78,7 @@ final class ScreenExplainFlow {
         })
         self.card = card
         friendVisit(card.panel.frame)
-        thread.explain(screenshot: png, web: web)
+        thread.explain(screenshot: png, web: web, origin: origin)
     }
 }
 

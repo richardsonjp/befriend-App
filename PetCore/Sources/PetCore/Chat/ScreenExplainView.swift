@@ -27,7 +27,7 @@ public struct ScreenExplainView: View {
 
     /// "A Python TypeError on line 42", from the chat's title.
     private var what: String {
-        let title = thread.conversation.messages.first?.text ?? ""
+        let title = thread.conversation.messages.first?.text.split(separator: "\n").first.map(String.init) ?? ""
         return title.hasPrefix("Screenshot · ") ? String(title.dropFirst("Screenshot · ".count)) : "Explain"
     }
 
@@ -46,6 +46,17 @@ public struct ScreenExplainView: View {
                     .keyboardShortcut(.cancelAction)
             }
             .padding(14)
+            if let origin = thread.origin {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(origin.line).lineLimit(1).truncationMode(.middle)
+                    if origin.hidden { Label(ScreenExplainer.Origin.hiddenNote, systemImage: "eye.slash") }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
+                .padding(.top, -6)
+            }
             Divider()
             ScrollViewReader { scroll in
                 ScrollView {
