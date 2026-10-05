@@ -56,7 +56,8 @@ public nonisolated struct IndexedPassage: Codable, Equatable, Sendable {
 
 public nonisolated struct ChatDocument: Codable, Equatable, Identifiable, Sendable {
     public enum Scope: Codable, Equatable, Hashable, Sendable {
-        /// Searched by every conversation.
+        /// The Library, searched by every conversation, until M38 removed it: only read from old files, which are
+        /// then deleted.
         case library
         /// Attached to one conversation only.
         case conversation(UUID)

@@ -117,7 +117,6 @@ struct ChatStorageTests {
         let reopened = ChatLibrary(root: root)
         #expect(reopened.conversations.map(\.id) == [conversation.id] && reopened.conversations.first?.messages == conversation.messages)
         #expect(reopened.documents(for: conversation.id).map(\.name) == ["Groceries"])
-        #expect(reopened.libraryDocuments.isEmpty)
         reopened.delete(conversation: conversation.id)
         #expect(ChatLibrary(root: root).documents.isEmpty) // attachments go with their conversation
     }
@@ -171,18 +170,34 @@ struct ComposerTests {
         #expect(ChatComposer.pastedBlock(old: "", new: String(repeating: " ", count: 2000)) == nil)
     }
 
-    @MainActor @Test func aConversationFileMovesToTheLibrary() async throws {
+    @MainActor @Test func theLibraryIsGoneAndItsFilesWithIt() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let library = ChatLibrary(root: root)
-        let conversation = UUID()
-        library.add(text: "Launch is May 3.", name: "Notes", scope: .conversation(conversation))
+        let chat = UUID()
+        library.add(text: "Shared notes from the old Library.", name: "Old", scope: .library)
+        library.add(text: "Launch is May 3.", name: "Notes", scope: .conversation(chat))
+        for _ in 0..<100 where library.documents.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(library.documents(for: chat).map(\.name) == ["Notes"], "a chat searches only its own files")
+        #expect(ChatLibrary(root: root).documents.map(\.name) == ["Notes"], "old Library files are deleted on launch")
+    }
+
+    @MainActor @Test func deleteAllRemovesEveryConversationAndItsFiles() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = ChatLibrary(root: root)
+        var first = Conversation(), second = Conversation()
+        first.messages = [ChatMessage(role: .user, text: "one")]
+        second.messages = [ChatMessage(role: .user, text: "two")]
+        library.save(first)
+        library.save(second)
+        library.add(text: "A file.", name: "File", scope: .conversation(first.id))
         for _ in 0..<100 where library.documents.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
-        let id = try #require(library.documents.first?.id)
-        library.moveToLibrary(id)
-        #expect(library.items(in: .library).map(\.name) == ["Notes"])
-        #expect(library.items(in: .conversation(conversation)).isEmpty)
-        #expect(ChatLibrary(root: root).libraryDocuments.map(\.id) == [id])
+        var changes: [ChatLibrary.Change] = []
+        library.onChange = { changes.append($0) }
+        library.deleteAllConversations()
+        #expect(library.conversations.isEmpty && library.documents.isEmpty)
+        #expect(changes.filter(\.deleted).count == 3, "each deletion syncs")
     }
 }
 

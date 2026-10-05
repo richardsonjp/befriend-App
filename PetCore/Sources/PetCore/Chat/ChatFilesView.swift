@@ -2,7 +2,7 @@
 //  ChatFilesView.swift
 //  PetCore
 //
-//  Adding files to chat, and the Library screen. The same + menu everywhere (Photos Library, Choose Files…,
+//  Adding files to chat. The same + menu everywhere (Photos Library, Choose Files…,
 //  Paste), plus drag and drop and ⌘V on the Mac. Audio and video start in the device's language; their card or row
 //  has a menu to transcribe them again in another one.
 //
@@ -15,7 +15,7 @@ import UniformTypeIdentifiers
 
 // MARK: Adding
 
-/// Everything that adds files to one scope, shared by the Library and the chat composer. Attach its pickers with
+/// Everything that adds files to one scope: the chat composer's. Attach its pickers with
 /// `.fileAdding(_:)`.
 @MainActor @Observable
 final class FileAdder {
@@ -183,7 +183,7 @@ struct PickedMedia: Transferable {
 
 // MARK: One file, as the cards and rows show it
 
-/// A file being added, or added: what the composer's cards and the Library's rows draw.
+/// A file being added, or added: what the composer's cards draw.
 struct ChatFileItem: Identifiable {
     enum Status {
         case working(String)
@@ -407,92 +407,5 @@ private struct LanguageList: View {
             Text(title).font(.subheadline.weight(.semibold))
             Text(names.isEmpty ? "Loading…" : Array(Set(names)).sorted().joined(separator: ", ")).font(.callout)
         }
-    }
-}
-
-// MARK: Library screen
-
-/// The Library, which every conversation searches, as a standard list.
-struct ChatFilesView: View {
-    let library: ChatLibrary
-    let scope: ChatDocument.Scope
-    @State private var adder: FileAdder
-
-    init(library: ChatLibrary, scope: ChatDocument.Scope) {
-        self.library = library
-        self.scope = scope
-        _adder = State(initialValue: FileAdder(library: library, scope: scope))
-    }
-
-    var body: some View {
-        let items = library.items(in: scope)
-        List {
-            if !items.isEmpty {
-                Section {
-                    ForEach(items) { item in
-                        FileRow(item: item, library: library)
-                            .contextMenu { removeButton(item) }
-                            .swipeActions { removeButton(item) }
-                    }
-                } footer: {
-                    Text("Every conversation searches the Library. Files stay on this device; audio and video use their first 15 minutes.")
-                }
-            }
-        }
-        #if os(iOS)
-        .listStyle(.insetGrouped)
-        #else
-        .listStyle(.inset)
-        #endif
-        .overlay {
-            if items.isEmpty {
-                ContentUnavailableView {
-                    Label("No Files", systemImage: "books.vertical")
-                } description: {
-                    Text("Add PDFs, text, images, audio or video. Every conversation can search them.")
-                } actions: {
-                    AddFilesMenu(adder: adder) { Text("Add Files") }
-                        .buttonStyle(.borderedProminent)
-                        .fixedSize()
-                }
-            }
-        }
-        .navigationTitle("Library")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                AddFilesMenu(adder: adder) { Label("Add Files", systemImage: "plus") }
-            }
-        }
-        .fileAdding(adder)
-    }
-
-    private func removeButton(_ item: ChatFileItem) -> some View {
-        Button(item.isWorking ? "Cancel" : "Remove", systemImage: "trash", role: .destructive) {
-            if case .ready = item.status { library.delete(document: item.id) } else { library.cancel(item.id) }
-        }
-    }
-}
-
-struct FileRow: View {
-    let item: ChatFileItem
-    let library: ChatLibrary
-
-    var body: some View {
-        HStack(spacing: 12) {
-            FileIcon(item: item, library: library, size: 40)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name).lineLimit(1)
-                Text(item.detail)
-                    .font(.caption)
-                    .foregroundStyle(item.isFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                    .lineLimit(2)
-                if item.isMedia { SpokenLanguageMenu(item: item, library: library) }
-            }
-            Spacer(minLength: 0)
-            if case .ready(let document) = item.status {
-                Text(document.addedAt, format: .dateTime.month(.abbreviated).day()).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
     }
 }

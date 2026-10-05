@@ -181,8 +181,7 @@ struct ChatComposer: View {
     }
 }
 
-/// One attached file in the composer: thumbnail or type tile, name, what it's doing; × to remove, and a menu to
-/// move it to the Library.
+/// One attached file in the composer: thumbnail or type tile, name, what it's doing; × to remove.
 struct AttachmentCard: View {
     let item: ChatFileItem
     let library: ChatLibrary
@@ -217,9 +216,6 @@ struct AttachmentCard: View {
             .accessibilityLabel(item.isWorking ? "Cancel adding \(item.name)" : "Remove \(item.name)")
         }
         .contextMenu {
-            if case .ready = item.status {
-                Button("Move to Library", systemImage: "books.vertical") { library.moveToLibrary(item.id) }
-            }
             Button(item.isWorking ? "Cancel" : "Remove", systemImage: "trash", role: .destructive, action: remove)
         }
     }

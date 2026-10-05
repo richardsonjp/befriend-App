@@ -52,6 +52,8 @@ public final class ChatLibrary {
         conversations = Self.loadAll(Conversation.self, from: conversationsDir).sorted { $0.updatedAt > $1.updatedAt }
         let saved = (try? FileManager.default.contentsOfDirectory(atPath: thumbnailsDir.path)) ?? []
         thumbnails = Set(saved.compactMap { UUID(uuidString: ($0 as NSString).deletingPathExtension) })
+        // The Library is gone (M38): its files were searched by every chat; they're deleted once, here.
+        for document in documents where document.scope == .library { erase(.document, document.id) }
     }
 
     private var thumbnailsDir: URL { root.appending(path: "Thumbnails", directoryHint: .isDirectory) }
@@ -63,11 +65,9 @@ public final class ChatLibrary {
     private var documentsDir: URL { root.appending(path: "Documents", directoryHint: .isDirectory) }
     private var conversationsDir: URL { root.appending(path: "Conversations", directoryHint: .isDirectory) }
 
-    public var libraryDocuments: [ChatDocument] { documents.filter { $0.scope == .library } }
-
-    /// What a conversation searches: the library, and files attached to it.
+    /// What a conversation searches: the files sent in it (each chat sees only its own, M34/M38).
     public func documents(for conversation: UUID) -> [ChatDocument] {
-        documents.filter { $0.scope == .library || $0.scope == .conversation(conversation) }
+        documents.filter { $0.scope == .conversation(conversation) }
     }
 
     public func attached(to conversation: UUID) -> [ChatDocument] {
@@ -165,6 +165,11 @@ public final class ChatLibrary {
         conversation(ref.conversationID)?.messages.first { $0.id == ref.messageID }
     }
 
+    /// Delete All in the chat list (M38): every conversation and its files.
+    public func deleteAllConversations() {
+        for id in conversations.map(\.id) { delete(conversation: id) }
+    }
+
     /// Also removes the files attached to it.
     public func delete(conversation id: UUID) {
         erase(.conversation, id)
@@ -248,6 +253,7 @@ public final class ChatLibrary {
             store(try JSONDecoder().decode(Conversation.self, from: data), local: false)
         case .document:
             let document = try JSONDecoder().decode(ChatDocument.self, from: data)
+            guard document.scope != .library else { return } // from a device still on the Library (M38)
             store(await Task.detached { document.embedded() }.value, local: false)
         }
     }
@@ -278,11 +284,6 @@ public final class ChatLibrary {
         erase(.document, id)
     }
 
-    /// Shares a conversation's file with every conversation.
-    public func moveToLibrary(_ id: UUID) {
-        guard let document = documents.first(where: { $0.id == id }) else { return }
-        store(document.with(scope: .library))
-    }
 
     /// Adds a file the user picked. `language` is the spoken language for audio and video; by default the device's
     /// (or English, where speech-to-text doesn't support it). `temporary` copies are deleted with the file.

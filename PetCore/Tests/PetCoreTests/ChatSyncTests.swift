@@ -208,7 +208,7 @@ struct ChatSyncTests {
         let phone = Device(), mac = Device()
         phone.sync.start()
         try await settle(phone) { phone.sync.hasKey }
-        phone.library.add(text: "The launch moved to May third.", name: "Notes", scope: .library)
+        phone.library.add(text: "The launch moved to May third.", name: "Notes", scope: .conversation(UUID()))
         try await settle(phone) { !phone.library.documents.isEmpty }
         try await Task.sleep(for: .seconds(2.3))
         try await settle(phone) { if case .synced = phone.sync.status { true } else { false } }

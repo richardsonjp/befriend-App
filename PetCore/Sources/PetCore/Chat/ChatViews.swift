@@ -2,7 +2,7 @@
 //  ChatViews.swift
 //  PetCore
 //
-//  Chat (M18): a sidebar with the Library and the saved conversations, and the chat itself. The iPhone shows it
+//  Chat (M18): a sidebar with the saved conversations, and the chat itself. The iPhone shows it
 //  full screen, the Mac in a window.
 //
 
@@ -10,7 +10,6 @@ import SwiftUI
 
 public struct ChatRoot: View {
     enum Page: Hashable {
-        case library
         case conversation(UUID)
     }
 
@@ -24,6 +23,7 @@ public struct ChatRoot: View {
     @State private var draft: (id: UUID, text: String)?
     /// Bumped on each follow-up, so the same conversation reopens with the new draft.
     @State private var opened = 0
+    @State private var deletingAll = false
 
     public init(library: ChatLibrary, friend: FriendProfile?, navigator: ChatNavigator? = nil, sync: ChatSync? = nil,
                 close: (() -> Void)? = nil) {
@@ -37,11 +37,7 @@ public struct ChatRoot: View {
     public var body: some View {
         NavigationSplitView {
             List(selection: $page) {
-                NavigationLink(value: Page.library) {
-                    Label("Library", systemImage: "books.vertical")
-                        .badge(library.libraryDocuments.count)
-                }
-                Section("Conversations") {
+                Section {
                     ForEach(library.conversations) { conversation in
                         NavigationLink(value: Page.conversation(conversation.id)) { ConversationRow(conversation: conversation) }
                         .contextMenu {
@@ -51,7 +47,26 @@ public struct ChatRoot: View {
                             Button("Delete", role: .destructive) { delete(conversation.id) }
                         }
                     }
+                } header: {
+                    HStack {
+                        Text("Conversations")
+                        Spacer()
+                        if !library.conversations.isEmpty {
+                            Button("Delete All", role: .destructive) { deletingAll = true }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                                .accessibilityHint("Deletes every conversation and its files")
+                        }
+                    }
                 }
+            }
+            .confirmationDialog("Delete all \(library.conversations.count) conversations?", isPresented: $deletingAll) {
+                Button("Delete All", role: .destructive) {
+                    page = nil
+                    library.deleteAllConversations()
+                }
+            } message: {
+                Text("Their messages and files go, here and on your other devices. This can't be undone.")
             }
             .navigationTitle("Chat")
             .safeAreaInset(edge: .bottom) {
@@ -76,20 +91,18 @@ public struct ChatRoot: View {
             .onChange(of: navigator?.pending) { _, start in follow(start) }
         } detail: {
             switch page {
-            case .library:
-                ChatFilesView(library: library, scope: .library)
             case .conversation(let id):
                 if let conversation = library.conversation(id) {
                     ChatScreen(conversation: conversation, library: library, friend: friend,
                                draft: draft?.id == id ? draft?.text ?? "" : "",
-                               newConversation: { newConversation() }, openLibrary: { page = .library })
+                               newConversation: { newConversation() })
                         .id("\(id)-\(opened)")
                 }
             case nil:
                 ContentUnavailableView {
                     Label("Ask about your files", systemImage: "bubble.left.and.text.bubble.right")
                 } description: {
-                    Text("Add files to the Library, then start a conversation. Everything stays on this device.")
+                    Text("Start a conversation, and add files to it with +. On this device's model, everything stays here.")
                 } actions: {
                     Button("New Conversation") { newConversation() }.buttonStyle(.borderedProminent)
                 }
@@ -162,17 +175,15 @@ struct ChatScreen: View {
 
     /// /new and /library: ChatRoot moves to another page.
     var newConversation: () -> Void = {}
-    var openLibrary: () -> Void = {}
     @State private var clearing = false
     /// Research mode (M28): every message runs research at this effort.
     @AppStorage("chat.research") private var researching = false
     @AppStorage("chat.researchEffort") private var effortName = ResearchEffort.medium.rawValue
 
     init(conversation: Conversation, library: ChatLibrary, friend: FriendProfile?, draft: String = "",
-         newConversation: @escaping () -> Void = {}, openLibrary: @escaping () -> Void = {}) {
+         newConversation: @escaping () -> Void = {}) {
         self.library = library
         self.newConversation = newConversation
-        self.openLibrary = openLibrary
         _draft = State(initialValue: draft)
         _thread = State(initialValue: ChatThread(conversation, library: library, friend: friend))
         // Added files wait in the message box until sent (M35).
@@ -185,6 +196,9 @@ struct ChatScreen: View {
             .safeAreaInset(edge: .bottom) { composer }
             .navigationTitle(thread.conversation.title)
             .toolbar {
+                #if os(macOS)
+                ToolbarItem { ChatModelPicker() } // M38: which model this chat answers with
+                #endif
                 ToolbarItem { ContextMeter(used: thread.contextUsed, total: thread.contextSize, agents: thread.conversation.contextAgents ?? []) }
             }
             .sheet(item: $shownSource) { PassageSheet(source: $0) }
@@ -300,7 +314,6 @@ struct ChatScreen: View {
     private func runLocally(_ command: ChatCommand, typed: String) -> Bool {
         switch command.action {
         case .newConversation: newConversation()
-        case .openLibrary: openLibrary()
         case .addFiles: adder.importing = true
         case .clear: clearing = true
         case .help: thread.note(ChatCommand.helpText, echoing: typed)
@@ -311,13 +324,9 @@ struct ChatScreen: View {
     }
 
     private var filesText: String {
-        let attached = library.attached(to: thread.conversation.id), shared = library.libraryDocuments
-        guard !attached.isEmpty || !shared.isEmpty else { return "No files yet. Add some with **+** or `/add`." }
-        func list(_ documents: [ChatDocument]) -> String {
-            documents.map { "- \($0.name) (\($0.url?.host() ?? $0.kind.title))" }.joined(separator: "\n")
-        }
-        return [attached.isEmpty ? nil : "**This conversation**\n" + list(attached),
-                shared.isEmpty ? nil : "**Library**\n" + list(shared)].compactMap { $0 }.joined(separator: "\n\n")
+        let attached = library.attached(to: thread.conversation.id)
+        guard !attached.isEmpty else { return "No files yet. Add some with **+** or `/add`." }
+        return "**This conversation**\n" + attached.map { "- \($0.name) (\($0.url?.host() ?? $0.kind.title))" }.joined(separator: "\n")
     }
 
     private var effort: ResearchEffort { ResearchEffort(rawValue: effortName) ?? .medium }

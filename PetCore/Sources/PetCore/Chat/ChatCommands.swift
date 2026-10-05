@@ -42,7 +42,7 @@ public nonisolated struct ChatCommand: Equatable, Identifiable, Sendable {
         case diagram
         case skill(ChatSkill)
         /// Handled by the screen, not the model.
-        case newConversation, clear, listFiles, addFiles, openLibrary, help
+        case newConversation, clear, listFiles, addFiles, help
     }
 
     public let name: String
@@ -87,7 +87,6 @@ public nonisolated struct ChatCommand: Equatable, Identifiable, Sendable {
     static let shortcuts: [ChatCommand] = [
         ChatCommand(name: "files", group: .library, summary: "What this conversation can search", hint: "", action: .listFiles),
         ChatCommand(name: "add", group: .library, summary: "Add files to this conversation", hint: "", action: .addFiles),
-        ChatCommand(name: "library", group: .library, summary: "Open the Library", hint: "", action: .openLibrary),
     ]
 
     static func skill(_ name: String, _ group: Group, _ summary: String, _ hint: String, file: ChatFileFormat? = nil,

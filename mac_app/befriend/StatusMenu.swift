@@ -49,6 +49,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 Label("Chat About Your Files", systemImage: "bubble.left.and.text.bubble.right").frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
+            Button { [weak self] in self?.showModels() } label: {
+                Label("Models", systemImage: "cpu").frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
         }.padding(16).frame(width: 290))
         if let button = item.button {
             button.target = self
