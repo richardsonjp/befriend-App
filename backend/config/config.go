@@ -95,6 +95,11 @@ var Config = struct {
 		BaseURL string   `env:"OPENROUTER_BASE_URL" envDefault:"https://router.requesty.ai/v1"` // any OpenAI-compatible router
 	}
 
+	// Compiler Explorer checks model-written code for the app (M40). BaseURL only changes for tests.
+	Godbolt struct {
+		BaseURL string `env:"GODBOLT_BASE_URL" envDefault:"https://godbolt.org"`
+	}
+
 	// LLM request budget. Caps sit under OpenRouter's free-tier limits (about
 	// 20/minute and 50/day without purchased credits; check your account) and count every request.
 	LLM struct {

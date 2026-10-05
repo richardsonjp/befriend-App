@@ -17,6 +17,10 @@ const purchasesPerMinute = 30
 // hatchesPerMinute bounds hatch attempts per client; each one is a full LLM generation.
 const hatchesPerMinute = 5
 
+// codeChecksPerMinute bounds code checks per client: each is a compile and a run on the public Compiler Explorer,
+// and a code answer takes up to four (a check and three fixes).
+const codeChecksPerMinute = 20
+
 // Chat sync: a device pushes each changed record separately, so a first sync sends one PUT per chat.
 const (
 	chatRecordPutsPerMinute = 600
@@ -44,6 +48,7 @@ func initAppRoute(api fiber.Router, appStore *store.Store) {
 	api.Get("/pairing/:code", codeLimit, auth, appStore.PairingHandler.Get)
 	api.Post("/pairing/:code/confirm", codeLimit, auth, appStore.PairingHandler.Confirm)
 	api.Post("/trigger-events", auth, appStore.TriggerEventHandler.Record)
+	api.Post("/code/check", middlewares.RateLimit(codeChecksPerMinute), auth, appStore.CodeCheckHandler.Check)
 	api.Delete("/trigger-events", auth, appStore.TriggerEventHandler.DeleteAll)
 	api.Get("/presence", auth, appStore.PresenceHandler.Get)
 	api.Post("/presence/claim", auth, appStore.PresenceHandler.Claim)

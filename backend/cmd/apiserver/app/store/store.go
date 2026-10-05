@@ -8,6 +8,7 @@ import (
 	"befriend/pkg/clients/apple"
 	"befriend/pkg/clients/db"
 	"befriend/pkg/clients/email"
+	"befriend/pkg/clients/godbolt"
 	"befriend/pkg/clients/idtoken"
 	"befriend/pkg/clients/openrouter"
 	"befriend/pkg/utils/logs"
@@ -33,6 +34,7 @@ import (
 	// Services
 	serviceAuthentication "befriend/internal/services/authentication"
 	serviceChatSync "befriend/internal/services/chat_sync"
+	serviceCodeCheck "befriend/internal/services/code_check"
 	serviceDevice "befriend/internal/services/device"
 	serviceEvolution "befriend/internal/services/evolution"
 	serviceFriend "befriend/internal/services/friend"
@@ -52,6 +54,7 @@ import (
 
 	// Handlers
 	handlerChatSync "befriend/cmd/apiserver/app/handlers/chat_sync"
+	handlerCodeCheck "befriend/cmd/apiserver/app/handlers/code_check"
 	handlerDevice "befriend/cmd/apiserver/app/handlers/device"
 	handlerFriend "befriend/cmd/apiserver/app/handlers/friend"
 	handlerOnboarding "befriend/cmd/apiserver/app/handlers/onboarding"
@@ -91,6 +94,7 @@ type Store struct {
 	PresenceHandler     *handlerPresence.PresenceHandler
 	SkinHandler         *handlerSkin.SkinHandler
 	ChatSyncHandler     *handlerChatSync.ChatSyncHandler
+	CodeCheckHandler    *handlerCodeCheck.CodeCheckHandler
 
 	// Middleware
 	MiddlewarePasetoAuth middlewares.MiddlewarePasetoAuth
@@ -275,6 +279,8 @@ func Init() {
 		PresenceHandler:     handlerPresence.NewPresenceHandler(presenceService),
 		SkinHandler:         handlerSkin.NewSkinHandler(skinService),
 		ChatSyncHandler:     handlerChatSync.NewChatSyncHandler(chatSyncService),
+		CodeCheckHandler: handlerCodeCheck.NewCodeCheckHandler(serviceCodeCheck.NewCodeCheckService(
+			godbolt.New(godbolt.Config{BaseURL: config.Config.Godbolt.BaseURL}))),
 
 		MiddlewarePasetoAuth: middlewares.NewMiddlewarePasetoAuth(),
 	}

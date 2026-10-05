@@ -49,4 +49,7 @@ var Registry = map[string]AppError{
 	"CHAT_RECORD_TOO_LARGE":   {Code: "CHAT_RECORD_TOO_LARGE", Status: http.StatusRequestEntityTooLarge, Message: "This chat is too large to sync"},
 	"CHAT_EXCHANGE_CONFLICT":  {Code: "CHAT_EXCHANGE_CONFLICT", Status: http.StatusConflict, Message: "This key exchange was already filled in differently"},
 	"CHAT_EXCHANGE_NOT_FOUND": {Code: "CHAT_EXCHANGE_NOT_FOUND", Status: http.StatusNotFound, Message: "Key exchange not found"},
+	// # code check (M40): Compiler Explorer couldn't be reached or answered oddly, or the language isn't checked there
+	"CODE_CHECK_FAILED":         {Code: "CODE_CHECK_FAILED", Status: http.StatusBadGateway, Message: "The code couldn't be checked right now"},
+	"CODE_LANGUAGE_UNSUPPORTED": {Code: "CODE_LANGUAGE_UNSUPPORTED", Status: http.StatusUnprocessableEntity, Message: "This language can't be checked"},
 }
