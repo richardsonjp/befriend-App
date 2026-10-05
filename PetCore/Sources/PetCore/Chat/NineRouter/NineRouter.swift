@@ -77,12 +77,24 @@ public nonisolated struct NineRouter: Sendable {
 
     // MARK: Models
 
-    /// The models and combos 9Router offers (`/v1/models`), sorted.
-    public func models() async throws -> [String] {
+    /// A model 9Router offers, with what it says about it: its window and whether it sees images.
+    public struct Listed: Equatable, Sendable {
+        public let id: String
+        public let window: Int?
+        public let seesImages: Bool
+    }
+
+    /// The models and combos 9Router offers (`/v1/models`), sorted. 9Router adds `context_length` and
+    /// `capabilities.vision` to OpenAI's format.
+    public func models() async throws -> [Listed] {
         let data = try await send(request("models", body: nil))
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let list = object["data"] as? [[String: Any]] else { throw Failure.badReply }
-        return list.compactMap { $0["id"] as? String }.sorted()
+        return list.compactMap { item -> Listed? in
+            guard let id = item["id"] as? String else { return nil }
+            let window = item["context_length"] as? Int ?? (item["capabilities"] as? [String: Any])?["contextWindow"] as? Int
+            return Listed(id: id, window: window, seesImages: (item["capabilities"] as? [String: Any])?["vision"] as? Bool ?? false)
+        }.sorted { $0.id < $1.id }
     }
 
     // MARK: Answers
@@ -98,13 +110,30 @@ public nonisolated struct NineRouter: Sendable {
         try T(try await respond(messages, model: model, schema: T.generationSchema, name: String(describing: T.self)))
     }
 
-    /// A structured answer for a schema built at run time.
+    /// A structured answer for a schema built at run time. Providers differ (tried on a real 9Router): some honour
+    /// `response_format`, some ignore it, some reject it. So the schema is also asked for in words, and a provider
+    /// that rejects `response_format` is asked once more without it.
     public func respond(_ messages: [Message], model: String, schema: GenerationSchema, name: String = "answer") async throws -> GeneratedContent {
-        var body = body(messages, model: model, maxTokens: nil, stream: false)
-        let schemaJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(schema))
-        body["response_format"] = ["type": "json_schema", "json_schema": ["name": Self.schemaName(name), "schema": schemaJSON, "strict": true]]
-        let text = try Self.content(of: try await send(request("chat/completions", body: body)))
+        let schemaData = try JSONEncoder().encode(schema)
+        let asked = Self.askingForJSON(messages, schema: String(decoding: schemaData, as: UTF8.self))
+        var body = body(asked, model: model, maxTokens: nil, stream: false)
+        body["response_format"] = ["type": "json_schema", "json_schema": ["name": Self.schemaName(name),
+                                   "schema": try JSONSerialization.jsonObject(with: schemaData), "strict": true]]
+        let text: String
+        do {
+            text = try Self.content(of: try await send(request("chat/completions", body: body)))
+        } catch Failure.provider {
+            body["response_format"] = nil
+            text = try Self.content(of: try await send(request("chat/completions", body: body)))
+        }
         do { return try GeneratedContent(json: Self.json(in: text)) } catch { throw Failure.badReply }
+    }
+
+    /// The messages with the schema asked for in words, in the system message (one is added if there's none).
+    static func askingForJSON(_ messages: [Message], schema: String) -> [Message] {
+        let rule = "Reply with only a JSON object that matches this JSON schema, and nothing else: no code fence, no comments.\n" + schema
+        guard let first = messages.first, first.role == .system else { return [.init(.system, rule)] + messages }
+        return [.init(.system, first.text + "\n\n" + rule, image: first.image)] + messages.dropFirst()
     }
 
     /// The answer as it's written: the text so far, growing.

@@ -120,3 +120,62 @@ struct PlainChatTests {
         #expect(thread.explainRetry != nil, "Explain on this Mac")
     }
 }
+
+struct ResearchWholeTests {
+    @Test func sourcesGoWholeWhenTheyFitElseTheirClosestPassages() {
+        let texts = ["The venue is the Grand Hall.", String(repeating: "Weather talk. ", count: 400) + "Tickets cost 25 dollars at the door."]
+        let whole = TeamEngine.numbered(texts, titles: ["plan.txt", "notes.txt"], about: "tickets venue", budget: 10_000)
+        #expect(whole.hasPrefix("[1] plan.txt\nThe venue is the Grand Hall.") && whole.contains("[2] notes.txt"))
+        let cut = TeamEngine.numbered(texts, titles: ["plan.txt", "notes.txt"], about: "how much do tickets cost", budget: 800)
+        #expect(ContextBudget.estimate(cut) <= 840 && ContextBudget.estimate(cut) < ContextBudget.estimate(whole), "\(ContextBudget.estimate(cut))")
+        #expect(cut.contains("Tickets cost 25 dollars") && cut.contains("[1] plan.txt"))
+    }
+
+    @Test func theModelsOwnSourceListGoes() {
+        #expect(TeamEngine.withoutOwnSources("## Summary\n- A [1]\n\n## Sources\n1. Something") == "## Summary\n- A [1]")
+        #expect(TeamEngine.withoutOwnSources("## Summary\n- A [1]") == "## Summary\n- A [1]")
+    }
+}
+
+@MainActor struct ResearchOnNineRouterTests {
+    static func library(withFile text: String) async throws -> (ChatLibrary, Conversation) {
+        let library = ChatLibrary(root: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+        let conversation = Conversation()
+        library.add(text: text, name: "launch.txt", scope: .conversation(conversation.id))
+        for _ in 0..<100 where library.documents(for: conversation.id).isEmpty { try await Task.sleep(for: .milliseconds(50)) }
+        return (library, conversation)
+    }
+
+    /// The plan and the whole report on the user's model: two calls, however many sources (gathered live).
+    @Test func aReportIsPlannedThenWrittenInOneCall() async throws {
+        let calls = Box<[[String: Any]]>([])
+        let host = "nine-\(UUID().uuidString.lowercased()).test"
+        NineRouterStub.serve(host: host) { _, body in
+            let sent = try JSONSerialization.jsonObject(with: body) as! [String: Any]
+            calls.value.append(sent)
+            let content = sent["response_format"] != nil ? #"{"questions":["When is the Befriend launch?","Where is the Befriend launch?"]}"#
+                : "## Summary\nThe Befriend launch.\n- It is on 14 November [1]\n\n## When is the Befriend launch?\nOn 14 November [1].\n\n## Sources\n1. made up"
+            return (200, NineRouterTests.json(["choices": [["message": ["role": "assistant", "content": content]]]]))
+        }
+        let (library, conversation) = try await Self.library(withFile: "The Befriend launch is on 14 November at the Grand Hall.")
+        let engine = TeamEngine(topic: "the Befriend launch", effort: .low, model: .default, library: library, conversation: conversation) { _ in }
+        engine.chosen = ChosenModel(name: "cc/claude-sonnet-4.5", limits: ModelLimits(), config: .init(baseURL: URL(string: "http://\(host)/v1")!))
+        let result = try await engine.report()
+        #expect(calls.value.count == 2, "a plan and one report, not dozens of small calls")
+        #expect(result.log.steps.map(\.question) == ["When is the Befriend launch?", "Where is the Befriend launch?"])
+        #expect(result.report.contains("## Summary\nThe Befriend launch.") && result.report.contains("cc/claude-sonnet-4.5"))
+        #expect(!result.report.contains("made up") && result.report.contains("## Sources\n1. Your files"), "the app's own source list")
+        #expect(result.sources.first?.documentName == "[1] Your files")
+        #expect(engine.uses.contains { $0.name == "Report writer" })
+    }
+
+    @Test func aFailedResearchOffersThisMac() async throws {
+        let (thread, _) = PlainChatTurnTests.thread { _, _ in (502, Data(#"{"error":{"message":"Combo exhausted"}}"#.utf8)) }
+        thread.settings.choose(.model("m"), for: .research)
+        thread.research("the Befriend launch", effort: .low, typed: "/research low the Befriend launch")
+        try await PlainChatTurnTests.idle(thread)
+        let reply = try #require(thread.conversation.messages.last)
+        #expect(reply.text == "9Router: Combo exhausted" && reply.offer == .onDevice && reply.isAside)
+        #expect(thread.retryResearch?.topic == "the Befriend launch" && thread.retryResearch?.effort == .low)
+    }
+}

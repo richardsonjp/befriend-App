@@ -105,6 +105,9 @@ final class TeamEngine {
     var siteHome: SitePage?
     /// What a fact from someone else's page must name to count: the topic's exact terms and the site's own name.
     var subjectNames: [String] = []
+    /// The user's own model for deep research (M37): the plan, then one call writes the report from every source.
+    var chosen: ChosenModel?
+    var brain: Brain { chosen.map(Brain.nine) ?? .apple(model) }
     /// Every agent's session this turn, for the context meter (M36).
     private(set) var uses: [AgentUse] = []
     private let writerInstructions: String

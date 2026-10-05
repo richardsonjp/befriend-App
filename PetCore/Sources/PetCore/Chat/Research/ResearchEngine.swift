@@ -133,6 +133,8 @@ extension TeamEngine {
         status(questions.count > 1 ? "Searching the web for \(questions.count) questions at once…" : "Searching the web…")
         await searchAll(questions, terms: terms, limit: perQuestion)
         try Task.checkCancellation()
+        // The user's own model (M37) reads it all at once: no reading passes, gaps or section writers.
+        if let chosen { return try await writtenWhole(topic: topic, questions: questions, seo: seo, on: chosen) }
 
         // 3. For each question, read the passages closest to it across every source.
         try await readAll(questions: questions)
@@ -183,10 +185,9 @@ extension TeamEngine {
             .init(name: "questions", description: "Sub-questions that together answer the topic",
                   schema: DynamicGenerationSchema(arrayOf: DynamicGenerationSchema(type: String.self), minimumElements: 2, maximumElements: count)),
         ])
-        let session = LanguageModelSession(model: model, instructions: Self.planInstructions)
         let prompt = "Topic: \(topic)\nWrite \(count) sub-questions. Keep names and websites exactly as written."
         guard let schema = try? GenerationSchema(root: root, dependencies: []),
-              let content = try? await session.respond(to: prompt, schema: schema).content,
+              let content = try? await brain.respond(instructions: Self.planInstructions, prompt: prompt, schema: schema),
               let questions = try? content.value([String].self, forProperty: "questions"), !questions.isEmpty else { return [topic] }
         await record("Planner", Self.planInstructions, prompt, content.jsonString)
         return Array(questions.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.prefix(count))
@@ -622,13 +623,14 @@ extension TeamEngine {
         return description
     }
 
+    /// `written`: a report the user's own model wrote whole (M37), in place of the summary and sections.
     private func assemble(topic: String, summary: String, sections: [(String, String)], overview: ChatDiagram?,
-                          seo: SEOReport?, seoText: String?) -> String {
+                          seo: SEOReport?, seoText: String?, written: String? = nil) -> String {
         let day = Date.now.formatted(date: .abbreviated, time: .omitted)
         var parts = ["# Research: \(Self.title(Self.cleanTopic(topic)))",
-                     "_\(log.effort.title) effort research · \(log.sources.count) sources · \(day)_",
+                     "_\(log.effort.title) effort research · \(log.sources.count) sources · \(day)" + (chosen.map { " · \($0.name)" } ?? "") + "_",
                      about.map { "**About:** \($0) [1]" } ?? "",
-                     "## Summary\n\(summary)"].filter { !$0.isEmpty }
+                     written ?? "## Summary\n\(summary)"].filter { !$0.isEmpty }
         if let overview { parts.append("## At a glance\n" + overview.markdown) }
         parts += sections.filter { $0.1 != Self.nothingFound }.map { "## \($0.0)\n\($0.1)" }
         if let seo {
@@ -650,6 +652,32 @@ extension TeamEngine {
             return "\(index + 1). \(label)\(kind)"
         }.joined(separator: "\n"))
         return parts.joined(separator: "\n\n")
+    }
+
+    /// Deep research on the user's own model (M37): every source befriend gathered, numbered, in one request (each cut
+    /// to its passages closest to the questions when they don't all fit the model's limit), and the model writes the
+    /// cited report in one go. The SEO and Sources sections are added by code, as always.
+    private func writtenWhole(topic: String, questions: [String], seo: SEOReport?, on chosen: ChosenModel) async throws
+        -> (report: String, sources: [ChatSource], log: ResearchLog) {
+        status("Writing the report with \(chosen.name)…")
+        let room = min(Self.wholeReportTokens, chosen.limits.limit / 3)
+        let material = Self.numbered(texts, titles: log.sources.map(\.title), about: ([topic] + questions).joined(separator: " "),
+                                     budget: chosen.limits.limit - room - ContextBudget.estimate(Self.wholeReportInstructions) - 200)
+        let prompt = "Topic: \(topic)\n\nQuestions (one section each):\n" + questions.map { "- \($0)" }.joined(separator: "\n")
+            + "\n\nSources:\n" + material
+        let body = try await brain.respond(instructions: Self.wholeReportInstructions, prompt: prompt, maxTokens: room)
+        await record("Report writer", Self.wholeReportInstructions, prompt, body)
+        for index in log.steps.indices { log.steps[index].done = true }
+        log.status = "Done"
+        log.finishedAt = .now
+        let cited = Set(body.matches(of: #/\[(\d+)\]/#).compactMap { Int($0.1) })
+        let sources = log.sources.enumerated().filter { cited.contains($0.offset + 1) }.map { index, source in
+            ChatSource(documentName: "[\(index + 1)] \(source.title)", kind: source.url == nil ? .text : .web, locator: .none,
+                       text: String(texts[index].prefix(3000)), url: source.url)
+        }
+        let report = assemble(topic: topic, summary: "", sections: [], overview: nil, seo: seo, seoText: seo.map(Self.seoFixes),
+                              written: Self.withoutOwnSources(body))
+        return (report, sources, log)
     }
 
     func chips() -> [ChatSource] {

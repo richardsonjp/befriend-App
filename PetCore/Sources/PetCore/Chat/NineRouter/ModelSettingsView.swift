@@ -121,13 +121,73 @@ public struct ModelSettingsView: View {
         status = nil
         Task {
             do {
-                let models = try await NineRouter(config).models()
-                settings.knownModels = models
-                status = models.isEmpty ? "Connected, but 9Router lists no models yet." : "Connected · \(models.count) models"
+                let router = NineRouter(config)
+                let models = try await router.models()
+                settings.remember(models)
+                // Listing needs no key; answering might: one tiny request says whether it works.
+                let probe = settings.model(for: .chat)?.name ?? (settings.autoCombo.isEmpty ? models.first?.id : settings.autoCombo)
+                guard let probe else { status = "Connected, but 9Router lists no models yet."; testing = false; return }
+                status = "Connected · \(models.count) models · asking \(probe)…"
+                _ = try await router.respond([.init(.user, "Reply with the word OK.")], model: probe, maxTokens: 5)
+                status = "Connected · \(models.count) models · \(probe) answers"
             } catch {
                 status = error.localizedDescription
             }
             testing = false
         }
+    }
+}
+
+/// The chat window's model, from its toolbar (M38): the same Chat choice as in Models, switched in place. Mac only,
+/// like 9Router itself.
+public struct ChatModelPicker: View {
+    @Bindable var settings: ModelSettings
+    @State private var pending: ModelChoice?
+
+    @MainActor public init(settings: ModelSettings? = nil) {
+        self.settings = settings ?? .shared
+    }
+
+    public var body: some View {
+        Menu {
+            Picker("Chat model", selection: Binding(get: { settings.choice(for: .chat) }, set: pick)) {
+                Text("Apple (on this device)").tag(ModelChoice.apple)
+                if !settings.autoCombo.isEmpty { Text("Auto · \(settings.autoCombo)").tag(ModelChoice.auto) }
+                if !settings.knownModels.isEmpty { Divider() }
+                ForEach(settings.knownModels, id: \.self) { Text($0).tag(ModelChoice.model($0)) }
+            }
+            .pickerStyle(.inline)
+            if settings.knownModels.isEmpty {
+                Text("Open Models… and Test Connection to list 9Router's models")
+            }
+        } label: {
+            Label(label, systemImage: settings.choice(for: .chat) == .apple ? "cpu" : "network")
+                .labelStyle(.titleAndIcon)
+        }
+        .fixedSize()
+        .help("The model this chat answers with")
+        .alert("Your messages go to the model's provider", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
+            Button("Use It") {
+                settings.privacyRead = true
+                if let pending { settings.choose(pending, for: .chat) }
+                pending = nil
+            }
+            Button("Cancel", role: .cancel) { pending = nil }
+        } message: {
+            Text("befriend sends the question, the conversation and its files to 9Router on this Mac, which passes them to the provider of the model you picked (unless 9Router runs it locally).")
+        }
+    }
+
+    private var label: String {
+        switch settings.choice(for: .chat) {
+        case .apple: "On this Mac"
+        case .auto: settings.autoCombo.isEmpty ? "Auto" : "Auto · \(settings.autoCombo)"
+        case .model(let model): model
+        }
+    }
+
+    private func pick(_ choice: ModelChoice) {
+        guard choice != .apple, !settings.privacyRead else { return settings.choose(choice, for: .chat) }
+        pending = choice
     }
 }

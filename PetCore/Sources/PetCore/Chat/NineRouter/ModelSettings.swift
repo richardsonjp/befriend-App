@@ -109,6 +109,8 @@ public final class ModelSettings {
         var limits: [String: ModelLimits] = [:]
         /// The models 9Router listed last time (for the pickers while it's off).
         var known: [String] = []
+        /// What 9Router said about them: the limits used until the user sets their own.
+        var listed: [String: ModelLimits] = [:]
         /// The one-time "your text goes to the provider" note was read.
         var privacyRead = false
     }
@@ -158,7 +160,18 @@ public final class ModelSettings {
 
     public func choose(_ choice: ModelChoice, for feature: ModelFeature) { stored.choices[feature] = choice }
 
-    public func limits(for model: String) -> ModelLimits { stored.limits[model] ?? ModelLimits() }
+    public func limits(for model: String) -> ModelLimits { stored.limits[model] ?? stored.listed[model] ?? ModelLimits() }
+
+    /// Most a listed model's window pre-fills its limit with: a whole 1M window per message gets expensive.
+    static let listedLimitCap = 128_000
+
+    /// What 9Router listed: the pickers' models, and each one's limit (its window, up to the cap) and image support.
+    public func remember(_ listed: [NineRouter.Listed]) {
+        stored.known = listed.map(\.id)
+        stored.listed = Dictionary(listed.map { model in
+            (model.id, ModelLimits(limit: model.window.map { min($0, Self.listedLimitCap) } ?? ModelLimits.defaultLimit, seesImages: model.seesImages))
+        }, uniquingKeysWith: { first, _ in first })
+    }
 
     public func setLimits(_ limits: ModelLimits, for model: String) { stored.limits[model] = limits }
 

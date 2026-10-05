@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import FoundationModels
 import os
 
 extension ChatThread {
@@ -31,9 +32,8 @@ extension ChatThread {
         } catch {
             Self.log.error("9Router answer failed: \(String(describing: error), privacy: .public)")
             guard text.isEmpty else { return notice = error.localizedDescription }
-            var reply = ChatMessage(role: .friend, text: (error as? LocalizedError)?.errorDescription ?? Self.message(for: error), aside: true)
-            reply.offer = .onDevice
-            return finishTurn(reply)
+            _ = offerOnDevice(after: error)
+            return
         }
         guard !text.isEmpty else { return }
         var reply = ChatMessage(role: .friend, text: text)
@@ -54,9 +54,25 @@ extension ChatThread {
 
     /// The offer under a failed 9Router answer, taken (M37): the question again, on Apple's model this once.
     public func answerOnDevice(answering answer: UUID) {
-        guard let asked = asked(before: answer) else { return }
+        guard state == .idle, let asked = asked(before: answer) else { return }
         onDeviceOnce = true // read (and cleared) as the turn starts
+        if let retry = retryResearch, retry.question == asked.question.id, let index = conversation.messages.firstIndex(where: { $0.id == retry.question }) {
+            // A research turn: the same research again, not the typed words as a chat message.
+            conversation.messages.removeSubrange(index...)
+            retryResearch = nil
+            return research(retry.topic, effort: retry.effort, typed: asked.question.text)
+        }
         resend(from: asked.question.id, as: asked.question.text)
+    }
+
+    /// 9Router couldn't answer (M37): the friend says why and offers this Mac; the message isn't used as context.
+    /// False for any other error.
+    func offerOnDevice(after error: Error) -> Bool {
+        guard let failure = error as? NineRouter.Failure else { return false }
+        var reply = ChatMessage(role: .friend, text: failure.errorDescription ?? "9Router couldn't answer.", aside: true)
+        reply.offer = .onDevice
+        finishTurn(reply)
+        return true
     }
 
     /// The offer under an answer, taken (M32): the question again, this time searching the web.
@@ -70,5 +86,18 @@ extension ChatThread {
         guard state == .idle, let asked = asked(before: answer) else { return }
         conversation.messages[asked.at].offer = nil
         research(asked.question.text, effort: effort, typed: "Deep research: " + asked.question.text)
+    }
+
+    /// What the friend says when a turn fails.
+    static func message(for error: Error) -> String {
+        if let failure = error as? NineRouter.Failure, let text = failure.errorDescription { return text }
+        return switch error as? LanguageModelSession.GenerationError {
+        case .guardrailViolation?, .refusal?: "I can't help with that one. Try asking another way?"
+        case .exceededContextWindowSize?: "That was too much for me at once. Try a shorter question, or start a new conversation."
+        case .assetsUnavailable?: "My brain isn't ready yet. Try again in a moment."
+        case .rateLimited?, .concurrentRequests?: "I'm a bit busy. Try again in a moment."
+        case .unsupportedLanguageOrLocale?: "I can't answer in that language yet."
+        default: "Something went wrong. Try again?"
+        }
     }
 }

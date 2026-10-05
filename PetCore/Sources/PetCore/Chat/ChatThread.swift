@@ -77,6 +77,10 @@ public final class ChatThread {
     @ObservationIgnored var settings = ModelSettings.shared
     /// "Answer on this Mac" was tapped: the next turn uses Apple's model.
     @ObservationIgnored var onDeviceOnce = false
+    /// This turn's 9Router model for deep research (M37), picked as it starts.
+    @ObservationIgnored private var researchModel: ChosenModel?
+    /// The research a failed 9Router turn asked for, to run again on this Mac: its question, topic and effort.
+    @ObservationIgnored var retryResearch: (question: UUID, topic: String, effort: ResearchEffort)?
     public var contextUsed: Int { conversation.contextUsed ?? baseline ?? ChatPrompt.estimate(instructions) }
 
     /// Why chat can't run here, or nil when it can.
@@ -100,6 +104,7 @@ public final class ChatThread {
         library.save(conversation)
         state = .searching // busy from the moment it's sent, so Stop works at once
         chosenModel = onDeviceOnce ? nil : settings.model(for: .chat)
+        researchModel = onDeviceOnce ? nil : settings.model(for: .research)
         onDeviceOnce = false
         let invocation = ChatCommand.parse(question)
         turn = Task {
@@ -234,6 +239,8 @@ public final class ChatThread {
         message.attachments = library.sendDrafts(of: conversation.id)
         conversation.messages.append(message)
         library.save(conversation)
+        researchModel = onDeviceOnce ? nil : settings.model(for: .research)
+        onDeviceOnce = false
         state = .researching
         turn = Task { await runTeam(topic, effort: effort) }
     }
@@ -246,6 +253,8 @@ public final class ChatThread {
         let topic = effort == nil ? request : TeamEngine.withoutFileRequest(request)
         let engine = TeamEngine(topic: topic, effort: effort, model: model, library: library, conversation: conversation,
                                 chatInstructions: instructions) { [weak self] log in self?.research = log }
+        if effort != nil { engine.chosen = researchModel }
+        let question = conversation.messages.last { $0.role == .user }?.id
         do {
             var reply: ChatMessage
             if effort != nil {
@@ -266,6 +275,8 @@ public final class ChatThread {
         } catch {
             research = nil
             guard !Task.isCancelled else { return }
+            if let effort, let question { retryResearch = (question, topic, effort) }
+            if offerOnDevice(after: error) { return }
             failure = Self.message(for: error)
             state = .idle
         }
@@ -775,16 +786,5 @@ public final class ChatThread {
     private func count(instructions: String, prompt: String = "", answer: String = "") async -> Int {
         await ContextBudget.tokens(instructions: instructions, model: model)
             + ContextBudget.tokens(prompt, model: model) + ContextBudget.tokens(answer, model: model)
-    }
-
-    static func message(for error: Error) -> String {
-        switch error as? LanguageModelSession.GenerationError {
-        case .guardrailViolation?, .refusal?: "I can't help with that one. Try asking another way?"
-        case .exceededContextWindowSize?: "That was too much for me at once. Try a shorter question, or start a new conversation."
-        case .assetsUnavailable?: "My brain isn't ready yet. Try again in a moment."
-        case .rateLimited?, .concurrentRequests?: "I'm a bit busy. Try again in a moment."
-        case .unsupportedLanguageOrLocale?: "I can't answer in that language yet."
-        default: "Something went wrong. Try again?"
-        }
     }
 }

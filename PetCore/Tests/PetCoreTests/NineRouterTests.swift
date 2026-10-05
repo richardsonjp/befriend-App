@@ -63,9 +63,13 @@ struct NineRouterTests {
         let handler: NineRouterStub.Handler = { request, _ in
             seen.value = request.value(forHTTPHeaderField: "Authorization")
             #expect(request.url?.path() == "/v1/models")
-            return (200, Self.json(["data": [["id": "kr/claude-sonnet-4.5"], ["id": "cc/claude-opus-4-7"], ["id": "befriend-auto"]]]))
+            return (200, Self.json(["data": [["id": "kr/claude-sonnet-4.5", "context_length": 1_000_000, "capabilities": ["vision": true]],
+                                             ["id": "cc/claude-opus-4-7"], ["id": "befriend-auto"]]]))
         }
-        #expect(try await Self.router(handler: handler).models() == ["befriend-auto", "cc/claude-opus-4-7", "kr/claude-sonnet-4.5"])
+        let listed = try await Self.router(handler: handler).models()
+        #expect(listed.map(\.id) == ["befriend-auto", "cc/claude-opus-4-7", "kr/claude-sonnet-4.5"])
+        #expect(listed.last == NineRouter.Listed(id: "kr/claude-sonnet-4.5", window: 1_000_000, seesImages: true))
+        #expect(listed.first?.window == nil && listed.first?.seesImages == false)
         #expect(seen.value == nil)
         _ = try await Self.router(key: "sk-local", handler: handler).models()
         #expect(seen.value == "Bearer sk-local")
@@ -97,6 +101,20 @@ struct NineRouterTests {
         }
         let glance = try await router.respond([.init(.user, "what is this?")], model: "m", generating: ScreenExplainer.Glance.self)
         #expect(glance.kind == .error && glance.what == "A Python TypeError")
+    }
+
+    @Test func aProviderThatRejectsTheSchemaFormatIsAskedInWords() async throws {
+        let attempts = Box<[[String: Any]]>([])
+        let router = Self.router { _, body in
+            let sent = try JSONSerialization.jsonObject(with: body) as! [String: Any]
+            attempts.value.append(sent)
+            if sent["response_format"] != nil { return (400, Self.json(["error": ["message": "unsupported IDE tool"]])) }
+            return (200, Self.json(["choices": [["message": ["content": #"Sure: {"kind":"code","what":"A Swift struct","search":"Swift struct"}"#]]]]))
+        }
+        let glance = try await router.respond([.init(.user, "what is this?")], model: "m", generating: ScreenExplainer.Glance.self)
+        #expect(glance.kind == .code && attempts.value.count == 2)
+        let system = ((attempts.value[1]["messages"] as? [[String: Any]])?.first?["content"] as? String) ?? ""
+        #expect(system.hasPrefix("Reply with only a JSON object") && system.contains(#""required":["kind","what","search"]"#))
     }
 
     @Test func saysWhatWentWrong() async throws {

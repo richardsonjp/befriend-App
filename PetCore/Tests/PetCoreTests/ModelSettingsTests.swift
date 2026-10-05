@@ -44,4 +44,15 @@ import Testing
         settings.apiKey = ""
         #expect(settings.config?.apiKey == nil, "no key, no header")
     }
+
+    @Test func whatNineRouterListsFillsTheLimitsUntilSet() {
+        let settings = ModelSettings(defaults: Self.defaults(), secret: InMemorySecret())
+        settings.remember([.init(id: "ag/gemini-3.8-flash", window: 1_048_576, seesImages: true), .init(id: "ag/gpt-oss", window: 128_000, seesImages: false),
+                           .init(id: "combo", window: nil, seesImages: false)])
+        #expect(settings.knownModels == ["ag/gemini-3.8-flash", "ag/gpt-oss", "combo"])
+        #expect(settings.limits(for: "ag/gemini-3.8-flash") == ModelLimits(limit: 128_000, seesImages: true), "a 1M window, capped")
+        #expect(settings.limits(for: "combo") == ModelLimits(), "nothing said: 32K, no images")
+        settings.setLimits(ModelLimits(limit: 500_000, seesImages: false), for: "ag/gemini-3.8-flash")
+        #expect(settings.limits(for: "ag/gemini-3.8-flash").limit == 500_000, "the user's own setting wins")
+    }
 }
