@@ -59,6 +59,8 @@ public nonisolated struct ResearchLog: Codable, Equatable, Sendable {
         public let question: String
         public var done = false
         public var notes = 0
+        /// A team worker's notes (M34), shown under its task.
+        public var note: String?
     }
 
     public struct Source: Codable, Equatable, Sendable {
@@ -76,6 +78,10 @@ public nonisolated struct ResearchLog: Codable, Equatable, Sendable {
     public var status = "Planning…"
     public var startedAt = Date.now
     public var finishedAt: Date?
+    /// A team's quick answer (M34) rather than a research report: shown as "How I worked this out", not a document.
+    public var team: Bool?
+
+    public var isTeam: Bool { team == true }
 }
 
 struct ResearchNote: Equatable {

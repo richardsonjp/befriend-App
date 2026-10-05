@@ -19,11 +19,11 @@ struct ResearchProgress: View {
             Button { withAnimation(.snappy) { expanded.toggle() } } label: {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Researching").font(.callout.weight(.semibold))
+                    Text(log.isTeam ? "Working it out" : "Researching").font(.callout.weight(.semibold))
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(Self.elapsed(from: log.startedAt, to: context.date)).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                     }
-                    Text("· \(log.sources.count) sources").font(.callout).foregroundStyle(.secondary)
+                    if !log.isTeam { Text("· \(log.sources.count) sources").font(.callout).foregroundStyle(.secondary) }
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 0 : -90)).foregroundStyle(.secondary)
                 }
@@ -41,7 +41,7 @@ struct ResearchProgress: View {
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.separator))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Researching, \(log.sources.count) sources so far. \(log.status)")
+        .accessibilityLabel("\(log.isTeam ? "Working it out" : "Researching"), \(log.sources.count) sources so far. \(log.status)")
     }
 
     static func elapsed(from start: Date, to end: Date) -> String {
@@ -69,7 +69,11 @@ struct ResearchTimeline: View {
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(step.question).font(.callout)
-                        if step.notes > 0 { Text("\(step.notes) findings").font(.caption2).foregroundStyle(.secondary) }
+                        if let note = step.note {
+                            Text(note).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        } else if step.notes > 0 {
+                            Text("\(step.notes) findings").font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                     .padding(.bottom, 8)
                 }
@@ -122,9 +126,10 @@ struct ResearchStepsDisclosure: View {
             Button { withAnimation(.snappy) { expanded.toggle() } } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text("Research complete").font(.callout.weight(.semibold))
-                    Text("· \(log.sources.count) sources" + (log.finishedAt.map { " · " + ResearchProgress.elapsed(from: log.startedAt, to: $0) } ?? "")
-                         + " · \(log.effort.title) effort")
+                    Text(log.isTeam ? "How I worked this out" : "Research complete").font(.callout.weight(.semibold))
+                    Text((log.isTeam ? "· \(log.steps.count) helpers" : "· \(log.sources.count) sources")
+                         + (log.finishedAt.map { " · " + ResearchProgress.elapsed(from: log.startedAt, to: $0) } ?? "")
+                         + (log.isTeam ? "" : " · \(log.effort.title) effort"))
                         .font(.callout).foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 0 : -90)).foregroundStyle(.secondary)

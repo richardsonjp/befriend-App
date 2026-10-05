@@ -114,6 +114,7 @@ public final class ChatThread {
                 case .diagram: return await makeDiagram(request: question, web: web)
                 case .file(let format): return await makeFile(format, request: question, instructions: nil, web: web)
                 case .reformat: return await reformat(question)
+                case .team: return await runTeam(question, web: web)
                 case .answer, .web, .research: break
                 }
                 await browse(for: question, web: web)
@@ -218,6 +219,28 @@ public final class ChatThread {
             }
             var reply = ChatMessage(role: .friend, text: result.report, sources: result.sources, files: files.isEmpty ? nil : files)
             reply.research = result.log
+            research = nil
+            finishTurn(reply)
+        } catch {
+            research = nil
+            guard !Task.isCancelled else { return }
+            failure = Self.message(for: error)
+            state = .idle
+        }
+    }
+
+    /// A team of agents for a question with several parts or sources (M34): the live steps show as research's do,
+    /// and the answer keeps them as "How I worked this out". A web task with the web off becomes the web offer.
+    private func runTeam(_ question: String, web: Bool) async {
+        state = .researching
+        let engine = TeamEngine(question: question, model: model, library: library, conversation: conversation,
+                                chatInstructions: instructions) { [weak self] log in self?.research = log }
+        do {
+            let result = try await engine.run(web: web)
+            guard !Task.isCancelled else { return }
+            var reply = ChatMessage(role: .friend, text: result.answer, sources: result.sources)
+            reply.research = result.log
+            reply.offer = result.wantedWeb ? .web : nil
             research = nil
             finishTurn(reply)
         } catch {

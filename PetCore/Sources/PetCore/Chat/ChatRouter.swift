@@ -13,7 +13,7 @@ import FoundationModels
 public nonisolated enum ChatRouter {
     @Generable
     public enum Route: String, CaseIterable, Sendable {
-        case answer, web, research, diagram, reformat, unclear
+        case answer, web, research, team, diagram, reformat, unclear
         case csvFile, jsonFile, calendarFile, pdfFile, htmlFile, markdownFile, textFile
     }
 
@@ -36,6 +36,8 @@ public nonisolated enum ChatRouter {
         case diagram
         /// Fix or reformat text the user pasted (M33).
         case reformat
+        /// A question with several parts or sources: a team of agents (M34).
+        case team
         case clarify
     }
 
@@ -43,6 +45,7 @@ public nonisolated enum ChatRouter {
         You route a chat message to the helper that should take it. Pick one:
         answer: a question or chat the friend can answer from what it knows or the user's files ("what is recursion?", "thanks!", "summarize my notes").
         web: needs current or outside facts: news, prices, weather, scores, a named product, company or website ("weather in Jakarta today", "latest iPhone price").
+        team: one question with several parts, or that combines several sources: the user's files, the web, earlier in this chat ("compare my notes on the launch with what the news says", "pros and cons of A and B for my budget").
         research: asks for a broad investigation across many sources ("compare the best budget laptops this year", "research the EV market in Indonesia").
         reformat: asks to fix, reformat, prettify, indent or clean up text they pasted: JSON, a curl command, code, YAML, SQL ("fix this json: {a:1,}", "reformat this curl").
         diagram: asks to draw a flowchart, mind map, timeline, gantt, pie chart or sequence diagram ("draw how login works").
@@ -66,7 +69,7 @@ public nonisolated enum ChatRouter {
     }
 
     static func makesSomething(_ route: Route) -> Bool {
-        ![.answer, .web, .research, .reformat, .unclear].contains(route)
+        ![.answer, .web, .research, .team, .reformat, .unclear].contains(route)
     }
 
     /// What to do. `check` is the instant guardrail's verdict: "unclear" only stops a borderline message (real words
@@ -83,6 +86,7 @@ public nonisolated enum ChatRouter {
         case .research: return .research
         case .diagram: return .diagram
         case .reformat: return .reformat
+        case .team: return .team
         case .unclear: return check == .unsure ? .clarify : .answer
         case .csvFile: return .file(.csv)
         case .jsonFile: return .file(.json)

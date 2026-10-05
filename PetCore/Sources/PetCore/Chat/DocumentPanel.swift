@@ -108,6 +108,6 @@ struct DocumentPanel: View {
 }
 
 extension ChatMessage {
-    /// Shown as a document (card + panel) rather than a chat bubble: research reports.
-    var isDocument: Bool { research != nil }
+    /// Shown as a document (card + panel) rather than a chat bubble: research reports (not a team's answer).
+    var isDocument: Bool { research.map { !$0.isTeam } ?? false }
 }
