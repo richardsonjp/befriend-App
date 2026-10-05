@@ -24,7 +24,6 @@ struct ChatComposer: View {
     /// The card's height as it grows (files, more lines), so the chat can keep its last message in view.
     var onHeight: (CGFloat) -> Void = { _ in }
     @FocusState private var focused: Bool
-    @State private var selection: TextSelection?
     /// The highlighted row of the "/" menu.
     @State private var highlighted = 0
     @State private var confirmingClear = false
@@ -59,7 +58,9 @@ struct ChatComposer: View {
                     Button("Remove All", role: .destructive) { library.removeAll(in: .draft(conversation), web: false) }
                 }
             }
-            TextField("Ask about your files", text: $draft, selection: $selection, axis: .vertical)
+            // ponytail: no `selection:` binding. A multi-line field bound to one crashed on a new line ("String index is out
+            // of bounds", Shift- or Option-Return), so Shift-Return adds the line at the end, not at the cursor.
+            TextField("Ask about your files", text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...8)
                 .frame(maxWidth: .infinity, alignment: .leading) // fill the card, full screen too
@@ -96,6 +97,9 @@ struct ChatComposer: View {
                 webButton
                 ResearchButton(on: $research, effort: $effort)
                 Spacer()
+                #if os(macOS)
+                ChatModelPicker() // which model answers (M39): only Apple's until 9Router connects
+                #endif
                 sendButton
             }
             .controlSize(.large)
@@ -152,19 +156,12 @@ struct ChatComposer: View {
     /// Puts "/name " in the box; commands that need nothing typed after them run right away.
     private func pick(_ command: ChatCommand) {
         draft = "/" + command.name + " "
-        selection = TextSelection(insertionPoint: draft.endIndex)
         if command.hint.isEmpty { send() } // the rest wait for what goes after them
     }
 
-    /// Shift-Return: a new line where the cursor is (Return sends).
+    /// Shift-Return: a new line (Return sends).
     private func insertNewline() {
-        guard case .selection(let range)? = selection?.indices, range.upperBound <= draft.endIndex else {
-            draft += "\n"
-            return
-        }
-        let offset = draft.distance(from: draft.startIndex, to: range.lowerBound)
-        draft.replaceSubrange(range, with: "\n")
-        selection = TextSelection(insertionPoint: draft.index(draft.startIndex, offsetBy: offset + 1))
+        draft += "\n"
     }
 
     /// If `new` is `old` with a long block pasted in, the draft without it and the block.
