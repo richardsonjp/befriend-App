@@ -5,7 +5,8 @@
 //  Memory past the 4K window (M26). Every question and answer is a "turn", embedded on this device and searched
 //  like a file passage. Quick recall puts the few most related older turns into the prompt; deep recall reads up to
 //  four slices of history, each in its own 4K session that notes what matters for the question, and the answer is
-//  written from those notes. Messages the user linked are always recalled together.
+//  written from those notes. Messages the user linked are always recalled together. Only the conversation's own
+//  history: each chat sees itself, never the others (M34).
 //
 
 import Foundation
@@ -54,7 +55,6 @@ public nonisolated enum ChatMemory {
     static let deepCandidates = 40
     /// Similarity a turn needs to count as related; other conversations need more.
     static let minScore = 0.35
-    static let otherConversationScore = 0.55
     /// This many strong matches make a question worth a deep recall even without "earlier".
     static let deepWhenStrong = 6
     static let strongScore = 0.6
@@ -91,18 +91,17 @@ public nonisolated enum ChatMemory {
         public let linked: Bool
     }
 
-    /// Ranks older turns for a question. The current conversation's turns still in the prompt are excluded; other
-    /// conversations only count when clearly related. Linked turns follow the turns they're linked to.
+    /// Ranks this conversation's older turns for a question; turns still in the prompt and other conversations are
+    /// left out. Linked turns follow the turns they're linked to.
     static func rank(question: String, vector: [Double]?, turns: [ChatTurn], vectors: [UUID: [Double]],
                      current: UUID, excluding inPrompt: Set<UUID>, links: (MessageRef) -> [MessageRef]) -> [Scored] {
         let words = Retriever.keywords(question)
         var scored: [Scored] = turns.compactMap { turn in
-            guard !(turn.conversationID == current && turn.messages.contains(where: { inPrompt.contains($0.id) })) else { return nil }
+            guard turn.conversationID == current, !turn.messages.contains(where: { inPrompt.contains($0.id) }) else { return nil }
             let similarity = vector.flatMap { question in vectors[turn.messages[0].id].map { Retriever.cosine(question, $0) } } ?? 0
             let shared = words.intersection(Retriever.keywords(turn.text())).count
             let score = similarity + Double(shared) * Retriever.keywordWeight
-            let threshold = turn.conversationID == current ? minScore : otherConversationScore
-            return score >= threshold ? Scored(turn: turn, score: score, linked: false) : nil
+            return score >= minScore ? Scored(turn: turn, score: score, linked: false) : nil
         }
         .sorted { $0.score > $1.score }
         // Links: a recalled turn brings the turns linked to any of its messages, right after it.
@@ -158,11 +157,9 @@ public nonisolated enum ChatMemory {
         return ("Recalled from earlier (older than the conversation above):\n" + lines.joined(separator: "\n"), Array(fitting))
     }
 
-    /// "3 Oct" or "3 Oct, Launch planning" for another conversation.
-    static func label(_ turn: ChatTurn, current: UUID? = nil) -> String {
-        let day = turn.date.formatted(.dateTime.day().month(.abbreviated))
-        let title = turn.conversationTitle.count > 22 ? String(turn.conversationTitle.prefix(21)) + "…" : turn.conversationTitle
-        return current == nil || turn.conversationID == current ? day : "\(day), \(title)"
+    /// "3 Oct".
+    static func label(_ turn: ChatTurn) -> String {
+        turn.date.formatted(.dateTime.day().month(.abbreviated))
     }
 
     static let passInstructions = """
@@ -171,9 +168,9 @@ public nonisolated enum ChatMemory {
         where it came from if that matters. If nothing in them helps, write exactly: Nothing relevant.
         """
 
-    static func passPrompt(question: String, slice: [Scored], current: UUID) -> String {
+    static func passPrompt(question: String, slice: [Scored]) -> String {
         "New question: \(question)\n\nEarlier messages:\n" + slice.sorted { $0.turn.date < $1.turn.date }.map { item in
-            "(\(label(item.turn, current: current)))\n" + item.turn.text()
+            "(\(label(item.turn)))\n" + item.turn.text()
         }.joined(separator: "\n\n")
     }
 
@@ -182,10 +179,9 @@ public nonisolated enum ChatMemory {
         text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("nothing relevant")
     }
 
-    /// The chip under an answer: "Remembered · 3 Oct" (and the other conversation's title).
-    static func source(_ item: Scored, current: UUID) -> ChatSource {
-        ChatSource(documentName: "Remembered · " + label(item.turn, current: current), kind: .memory, locator: .none,
-                   text: (item.turn.conversationID == current ? "" : "From “\(item.turn.conversationTitle)”\n\n") + item.turn.text(cap: 4000))
+    /// The chip under an answer: "Remembered · 3 Oct".
+    static func source(_ item: Scored) -> ChatSource {
+        ChatSource(documentName: "Remembered · " + label(item.turn), kind: .memory, locator: .none, text: item.turn.text(cap: 4000))
     }
 }
 

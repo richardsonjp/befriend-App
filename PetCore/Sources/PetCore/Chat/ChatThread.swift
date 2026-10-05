@@ -676,7 +676,7 @@ public final class ChatThread {
     private func recall(for question: String) async -> (block: String?, sources: [ChatSource]) {
         let current = conversation.id
         let inView = Set(conversation.messages[conversation.summarizedCount...].map(\.id))
-        let turns = library.conversations.map { $0.id == current ? conversation : $0 }.flatMap(ChatMemory.turns)
+        let turns = ChatMemory.turns(of: conversation) // this chat only (M34)
         guard !turns.isEmpty else { return (nil, []) }
         let vectors = await library.memory.vectors(for: turns)
         let ranked = ChatMemory.rank(question: question, vector: Retriever.embed(question), turns: turns, vectors: vectors,
@@ -684,7 +684,7 @@ public final class ChatThread {
         guard !ranked.isEmpty else { return (nil, []) }
         guard ChatMemory.wantsDeep(question, ranked: ranked), model.isAvailable else {
             guard let quick = ChatMemory.quickBlock(ranked) else { return (nil, []) }
-            return (quick.text, quick.used.map { ChatMemory.source($0, current: current) })
+            return (quick.text, quick.used.map(ChatMemory.source))
         }
         let slices = ChatMemory.slices(ranked)
         var notes: [String] = []
@@ -693,15 +693,15 @@ public final class ChatThread {
             guard !Task.isCancelled else { break }
             state = .remembering(slices.count == 1 ? "Remembering…" : "Remembering… (pass \(index + 1) of \(slices.count))")
             let session = LanguageModelSession(model: model, instructions: ChatMemory.passInstructions)
-            guard let note = try? await session.respond(to: ChatMemory.passPrompt(question: question, slice: slice, current: current)).content,
+            guard let note = try? await session.respond(to: ChatMemory.passPrompt(question: question, slice: slice)).content,
                   !ChatMemory.isEmptyNote(note) else { continue }
             notes.append(note.trimmingCharacters(in: .whitespacesAndNewlines))
             used += slice.prefix(2)
         }
         guard !notes.isEmpty else { return (nil, []) }
-        var block = "Notes from earlier conversations, read just now for this question:\n" + notes.joined(separator: "\n")
+        var block = "Notes from earlier in this conversation, read just now for this question:\n" + notes.joined(separator: "\n")
         if ChatPrompt.estimate(block) > Self.notesBudget { block = String(block.prefix(Self.notesBudget * 3)) + "…" }
-        return (block, used.prefix(4).map { ChatMemory.source($0, current: current) })
+        return (block, used.prefix(4).map(ChatMemory.source))
     }
 
     /// Summarises the oldest messages the history budget can't hold, a chunk at a time, showing `.compacting`.

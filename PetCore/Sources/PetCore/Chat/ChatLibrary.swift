@@ -116,9 +116,10 @@ public final class ChatLibrary {
 
     // MARK: Links (M26)
 
-    /// Links two messages both ways (or unlinks them), saving both conversations so the link syncs.
+    /// Links two messages of one conversation both ways (or unlinks them), saving so the link syncs. Each chat only
+    /// sees itself (M34): no links to other chats.
     public func link(_ a: MessageRef, _ b: MessageRef, on: Bool = true) {
-        guard a != b else { return }
+        guard a != b, !on || a.conversationID == b.conversationID else { return }
         for (from, to) in [(a, b), (b, a)] {
             guard var conversation = conversation(from.conversationID),
                   let index = conversation.messages.firstIndex(where: { $0.id == from.messageID }) else { continue }
@@ -130,9 +131,10 @@ public final class ChatLibrary {
         }
     }
 
-    /// The messages linked to this one.
+    /// The messages linked to this one, in its own conversation (links to other chats from before M34 are ignored).
     public func links(of ref: MessageRef) -> [MessageRef] {
-        conversation(ref.conversationID)?.messages.first { $0.id == ref.messageID }?.links ?? []
+        (conversation(ref.conversationID)?.messages.first { $0.id == ref.messageID }?.links ?? [])
+            .filter { $0.conversationID == ref.conversationID }
     }
 
     public func message(_ ref: MessageRef) -> ChatMessage? {

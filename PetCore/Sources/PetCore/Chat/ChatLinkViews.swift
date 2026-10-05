@@ -19,7 +19,7 @@ struct LinkPicker: View {
         let linked = Set(library.links(of: from))
         NavigationStack {
             List {
-                ForEach(library.conversations) { conversation in
+                ForEach(library.conversations.filter { $0.id == from.conversationID }) { conversation in
                     let matches = conversation.messages.filter { message in
                         !message.isAside && message.id != from.messageID
                             && (query.isEmpty || message.text.localizedCaseInsensitiveContains(query))
@@ -92,12 +92,7 @@ struct LinkBadge: View {
                     ForEach(links, id: \.self) { target in
                         HStack(alignment: .top) {
                             if let message = library.message(target) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    LinkRowText(message: message)
-                                    if target.conversationID != ref.conversationID, let other = library.conversation(target.conversationID) {
-                                        Text("in “\(other.title)”").font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                }
+                                LinkRowText(message: message)
                             } else {
                                 Text("A message that was deleted").foregroundStyle(.secondary)
                             }
