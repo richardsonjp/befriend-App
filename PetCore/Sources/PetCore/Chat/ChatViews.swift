@@ -196,9 +196,6 @@ struct ChatScreen: View {
             .safeAreaInset(edge: .bottom) { composer }
             .navigationTitle(thread.conversation.title)
             .toolbar {
-                #if os(macOS)
-                ToolbarItem { ChatModelPicker() } // M38: which model this chat answers with
-                #endif
                 ToolbarItem { ContextMeter(used: thread.contextUsed, total: thread.contextSize, agents: thread.conversation.contextAgents ?? []) }
             }
             .sheet(item: $shownSource) { PassageSheet(source: $0) }

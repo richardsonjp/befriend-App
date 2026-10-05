@@ -181,9 +181,50 @@ public final class ModelSettings {
         return NineRouter.Config(baseURL: url, apiKey: apiKey)
     }
 
-    /// The 9Router model a feature uses, or nil for Apple's (also when Auto has no combo named, or the address is bad).
+    // MARK: Connection
+
+    public enum Connection: Equatable, Sendable {
+        /// Not checked yet this launch.
+        case unknown
+        case checking
+        case connected
+        /// No key, or 9Router didn't answer: why, for the pickers.
+        case unavailable(String)
+    }
+
+    /// Whether 9Router answers with the saved key (M39). Until it does, every feature uses Apple's model and the
+    /// pickers list only Apple's; the saved choices come back once it connects.
+    public internal(set) var connection = Connection.unknown
+
+    public var isConnected: Bool { connection == .connected }
+
+    /// Checks 9Router: lists its models (filling the pickers and each model's limits), then asks one model for a
+    /// word, since listing needs no key but answering does. Without a key there's nothing to check.
+    public func connect() async {
+        guard !apiKey.isEmpty else { return connection = .unavailable("Add your 9Router key in Models… to use your own models.") }
+        guard let config else { return connection = .unavailable("The 9Router address in Models… isn't a web address.") }
+        connection = .checking
+        do {
+            let router = NineRouter(config)
+            let listed = try await router.models()
+            remember(listed)
+            let probe = model(named: choice(for: .chat)) ?? (autoCombo.isEmpty ? nil : autoCombo) ?? listed.first?.id
+            guard let probe else { return connection = .unavailable("9Router lists no models yet.") }
+            _ = try await router.respond([.init(.user, "Reply with the word OK.")], model: probe, maxTokens: 5)
+            connection = .connected
+        } catch {
+            connection = .unavailable(error.localizedDescription)
+        }
+    }
+
+    private func model(named choice: ModelChoice) -> String? {
+        if case .model(let name) = choice { name } else { nil }
+    }
+
+    /// The 9Router model a feature uses, or nil for Apple's: also while 9Router isn't connected, when Auto has no
+    /// combo named, or when the address is bad.
     public func model(for feature: ModelFeature) -> ChosenModel? {
-        guard let config else { return nil }
+        guard isConnected, let config else { return nil }
         let name: String
         switch choice(for: feature) {
         case .apple: return nil

@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import PetCore
 import SwiftUI
 
 @main
@@ -25,5 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         menu = StatusMenu(controller: controller)
         Task { await controller.start() }
+        // Whether the user's own models are on (M39): until 9Router answers with the key, everything uses Apple's.
+        Task { await ModelSettings.shared.connect() }
     }
 }

@@ -114,32 +114,26 @@ public struct ModelSettingsView: View {
         pending = (feature, choice)
     }
 
+    /// The same check the chat's picker uses: list the models, then one word from a model with the key.
     private func test() {
         settings.apiKey = key
-        guard let config = settings.config else { status = "That address isn't a web address."; return }
         testing = true
         status = nil
         Task {
-            do {
-                let router = NineRouter(config)
-                let models = try await router.models()
-                settings.remember(models)
-                // Listing needs no key; answering might: one tiny request says whether it works.
-                let probe = settings.model(for: .chat)?.name ?? (settings.autoCombo.isEmpty ? models.first?.id : settings.autoCombo)
-                guard let probe else { status = "Connected, but 9Router lists no models yet."; testing = false; return }
-                status = "Connected · \(models.count) models · asking \(probe)…"
-                _ = try await router.respond([.init(.user, "Reply with the word OK.")], model: probe, maxTokens: 5)
-                status = "Connected · \(models.count) models · \(probe) answers"
-            } catch {
-                status = error.localizedDescription
+            await settings.connect()
+            switch settings.connection {
+            case .connected: status = "Connected · \(settings.knownModels.count) models · your models are on in chat"
+            case .unavailable(let why): status = why
+            default: break
             }
             testing = false
         }
     }
 }
 
-/// The chat window's model, from its toolbar (M38): the same Chat choice as in Models, switched in place. Mac only,
-/// like 9Router itself.
+/// The chat's model, in the message box (M39): Apple's on this Mac, or one of the user's own through 9Router, which
+/// are only offered once 9Router answers with the saved key. The same Chat choice as in Models. Mac only, like
+/// 9Router itself.
 public struct ChatModelPicker: View {
     @Bindable var settings: ModelSettings
     @State private var pending: ModelChoice?
@@ -150,22 +144,31 @@ public struct ChatModelPicker: View {
 
     public var body: some View {
         Menu {
-            Picker("Chat model", selection: Binding(get: { settings.choice(for: .chat) }, set: pick)) {
-                Text("Apple (on this device)").tag(ModelChoice.apple)
-                if !settings.autoCombo.isEmpty { Text("Auto · \(settings.autoCombo)").tag(ModelChoice.auto) }
-                if !settings.knownModels.isEmpty { Divider() }
-                ForEach(settings.knownModels, id: \.self) { Text($0).tag(ModelChoice.model($0)) }
+            Picker("Model", selection: Binding(get: { shown }, set: pick)) {
+                Text("Apple (on this Mac)").tag(ModelChoice.apple)
+                if settings.isConnected {
+                    if !settings.autoCombo.isEmpty { Text("Auto · \(settings.autoCombo)").tag(ModelChoice.auto) }
+                    if !settings.knownModels.isEmpty { Divider() }
+                    ForEach(settings.knownModels, id: \.self) { Text($0).tag(ModelChoice.model($0)) }
+                }
             }
             .pickerStyle(.inline)
-            if settings.knownModels.isEmpty {
-                Text("Open Models… and Test Connection to list 9Router's models")
+            if let why = unavailable {
+                Divider()
+                Text(why)
+                Button("Check 9Router Again") { Task { await settings.connect() } }
             }
         } label: {
-            Label(label, systemImage: settings.choice(for: .chat) == .apple ? "cpu" : "network")
-                .labelStyle(.titleAndIcon)
+            HStack(spacing: 4) {
+                if settings.connection == .checking { ProgressView().controlSize(.mini) }
+                Text(label).lineLimit(1)
+            }
         }
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .fixedSize()
-        .help("The model this chat answers with")
+        .help("The model that answers in chat")
+        .task { if settings.connection == .unknown { await settings.connect() } }
         .alert("Your messages go to the model's provider", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
             Button("Use It") {
                 settings.privacyRead = true
@@ -178,10 +181,22 @@ public struct ChatModelPicker: View {
         }
     }
 
+    /// What answers now: the saved choice only while 9Router is connected.
+    private var shown: ModelChoice { settings.isConnected ? settings.choice(for: .chat) : .apple }
+
+    private var unavailable: String? {
+        switch settings.connection {
+        case .unavailable(let why): why
+        case .unknown: "9Router isn't checked yet."
+        case .checking: "Checking 9Router…"
+        case .connected: nil
+        }
+    }
+
     private var label: String {
-        switch settings.choice(for: .chat) {
-        case .apple: "On this Mac"
-        case .auto: settings.autoCombo.isEmpty ? "Auto" : "Auto · \(settings.autoCombo)"
+        switch shown {
+        case .apple: "Apple"
+        case .auto: "Auto · \(settings.autoCombo)"
         case .model(let model): model
         }
     }
