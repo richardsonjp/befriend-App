@@ -163,6 +163,8 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
     public var links: [MessageRef]?
     /// The plan and sources of a research report (M28).
     public var research: ResearchLog?
+    /// The 9Router model that wrote this answer (M37), for the chip under it; nil on-device.
+    public var model: String?
     /// Files sent with this message: shown on it, and searched by the conversation from then on.
     public var attachments: [Attachment]?
 
@@ -177,6 +179,8 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
 
     public enum Offer: String, Codable, Sendable {
         case web, research
+        /// The user's own model couldn't answer (M37): ask again on Apple's model, this once.
+        case onDevice
 
         /// What the router's pick offers: the web only when the toggle is off (it's never searched unasked), and
         /// research always (it's long and online, so it waits for a tap).
@@ -209,6 +213,7 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
         copy.research = research
         copy.offer = offer
         copy.attachments = attachments
+        copy.model = model
         return copy
     }
 

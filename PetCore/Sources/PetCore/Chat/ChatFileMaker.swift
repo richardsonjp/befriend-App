@@ -71,8 +71,8 @@ public nonisolated enum ChatFileMaker {
 
     /// `instructions` adds a skill's own rules; `material` is the conversation and file passages to draw on.
     public static func make(_ format: ChatFileFormat, request: String, material: String, instructions extra: String? = nil,
-                            columns: [String]? = nil, now: Date = .now, model: SystemLanguageModel = .default) async throws -> ChatFile {
-        guard model.isAvailable else { throw Failure.unavailable }
+                            columns: [String]? = nil, now: Date = .now, brain: Brain = .onDevice) async throws -> ChatFile {
+        if case .apple(let model) = brain, !model.isAvailable { throw Failure.unavailable }
         // The small model gets "next Monday" wrong on its own: it gets a table of the coming days to read from.
         // The small model can't do date arithmetic: dates are worked out here and written in beside their words.
         let material = annotateDates(material, now: now), request = annotateDates(request, now: now)
@@ -84,13 +84,13 @@ public nonisolated enum ChatFileMaker {
             let drawing = format != .txt && DiagramIntent.mentions(request)
             let rules = [extra, drawing ? "Don't draw diagrams, charts or ASCII art: the app adds the diagram after your text." : nil]
                 .compactMap { $0 }.joined(separator: "\n\n")
-            var markdown = try await respond(documentInstructions, rules.isEmpty ? nil : rules, prompt, model: model)
+            var markdown = try await respond(documentInstructions, rules.isEmpty ? nil : rules, prompt, brain: brain)
             guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.nothing }
             let title = Self.title(of: markdown) ?? String(request.prefix(40))
             // "…with a flowchart": drawn from the same material and added at the end (not in plain text).
             if drawing {
                 let kind = DiagramIntent.kind(request)
-                if let diagram = try? await DiagramMaker.make(kind, request: request, material: material, model: model) {
+                if let diagram = try? await DiagramMaker.make(kind, request: request, material: material, brain: brain) {
                     markdown = placing(diagram, in: markdown)
                 }
             }
@@ -101,11 +101,11 @@ public nonisolated enum ChatFileMaker {
             }
             return ChatFile(name: fileName(title, format), format: format, data: data)
         case .csv, .json:
-            let (title, table) = try await makeTable(prompt, extra, columns: columns, model: model)
+            let (title, table) = try await makeTable(prompt, extra, columns: columns, brain: brain)
             let data = format == .csv ? ChatFileWriter.csv(table) : try ChatFileWriter.json(table)
             return ChatFile(name: fileName(title, format), format: format, data: data)
         case .ics:
-            let (title, events) = try await makeEvents(prompt, extra, now: now, model: model)
+            let (title, events) = try await makeEvents(prompt, extra, now: now, brain: brain)
             return ChatFile(name: fileName(title, .ics), format: .ics, data: ChatFileWriter.ics(events, calendarName: title, now: now))
         }
     }
@@ -126,15 +126,14 @@ public nonisolated enum ChatFileMaker {
     /// Documents stop at this many tokens, so material and writing fit the 4K window together.
     static let documentTokens = 1400
 
-    private static func respond(_ base: String, _ extra: String?, _ prompt: String, model: SystemLanguageModel) async throws -> String {
-        let session = LanguageModelSession(model: model, instructions: base + (extra.map { "\n\n" + $0 } ?? ""))
-        return try await session.respond(to: prompt, options: GenerationOptions(maximumResponseTokens: documentTokens)).content
+    private static func respond(_ base: String, _ extra: String?, _ prompt: String, brain: Brain) async throws -> String {
+        try await brain.respond(instructions: base + (extra.map { "\n\n" + $0 } ?? ""), prompt: prompt, maxTokens: documentTokens)
     }
 
     // MARK: Tables
 
     /// With `fixed` columns (a skill's), every row must have exactly those cells.
-    static func makeTable(_ prompt: String, _ extra: String?, columns fixed: [String]?, model: SystemLanguageModel) async throws -> (String, ChatTable) {
+    static func makeTable(_ prompt: String, _ extra: String?, columns fixed: [String]?, brain: Brain) async throws -> (String, ChatTable) {
         let cell = DynamicGenerationSchema(type: String.self)
         let row = fixed.map { DynamicGenerationSchema(arrayOf: cell, minimumElements: $0.count, maximumElements: $0.count) }
             ?? DynamicGenerationSchema(arrayOf: cell)
@@ -149,8 +148,8 @@ public nonisolated enum ChatFileMaker {
                                     ?? "One row per item, with a value for every column",
                                 schema: DynamicGenerationSchema(arrayOf: row, minimumElements: 1, maximumElements: 60)))
         let root = DynamicGenerationSchema(name: "Table", description: "A table", properties: properties)
-        let session = LanguageModelSession(model: model, instructions: tableInstructions + (extra.map { "\n\n" + $0 } ?? ""))
-        let content = try await session.respond(to: prompt, schema: try GenerationSchema(root: root, dependencies: [])).content
+        let content = try await brain.respond(instructions: tableInstructions + (extra.map { "\n\n" + $0 } ?? ""), prompt: prompt,
+                                              schema: try GenerationSchema(root: root, dependencies: []))
         let columns = try fixed ?? content.value([String].self, forProperty: "columns").map { $0.trimmingCharacters(in: .whitespaces) }
         let rows = try content.value([[String]].self, forProperty: "rows").filter { !$0.allSatisfy(\.isEmpty) }
         guard !columns.isEmpty, !rows.isEmpty else { throw Failure.nothing }
@@ -159,7 +158,7 @@ public nonisolated enum ChatFileMaker {
 
     // MARK: Events
 
-    static func makeEvents(_ prompt: String, _ extra: String?, now: Date, model: SystemLanguageModel) async throws -> (String, [ChatEvent]) {
+    static func makeEvents(_ prompt: String, _ extra: String?, now: Date, brain: Brain) async throws -> (String, [ChatEvent]) {
         let text = DynamicGenerationSchema(type: String.self)
         let event = DynamicGenerationSchema(name: "Event", description: "A calendar event", properties: [
             .init(name: "title", description: "What it is", schema: text),
@@ -173,8 +172,8 @@ public nonisolated enum ChatFileMaker {
             .init(name: "title", description: "A short name for this set of events", schema: text),
             .init(name: "events", description: "The events", schema: DynamicGenerationSchema(arrayOf: event, minimumElements: 1, maximumElements: 30)),
         ])
-        let session = LanguageModelSession(model: model, instructions: eventInstructions + (extra.map { "\n\n" + $0 } ?? ""))
-        let content = try await session.respond(to: prompt, schema: try GenerationSchema(root: root, dependencies: [])).content
+        let content = try await brain.respond(instructions: eventInstructions + (extra.map { "\n\n" + $0 } ?? ""), prompt: prompt,
+                                              schema: try GenerationSchema(root: root, dependencies: []))
         let items = try content.value([GeneratedContent].self, forProperty: "events")
         let events = items.compactMap { item -> ChatEvent? in
             guard let title = try? item.value(String.self, forProperty: "title"), !title.isEmpty,

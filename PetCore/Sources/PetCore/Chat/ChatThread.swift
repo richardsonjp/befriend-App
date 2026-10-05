@@ -14,7 +14,7 @@ import os
 
 @MainActor @Observable
 public final class ChatThread {
-    private static let log = Logger(subsystem: "com.richardsonjp.befriend", category: "chat")
+    static let log = Logger(subsystem: "com.richardsonjp.befriend", category: "chat")
 
     public enum State: Equatable {
         case idle
@@ -36,26 +36,26 @@ public final class ChatThread {
     /// Pages kept from one web search (links in the message come on top).
     nonisolated static let webPages = 5
 
-    public private(set) var conversation: Conversation
-    public private(set) var state = State.idle
-    public private(set) var failure: String?
+    public internal(set) var conversation: Conversation
+    public internal(set) var state = State.idle
+    public internal(set) var failure: String?
     /// A heads-up about the last turn that didn't stop it, e.g. the web search finding nothing.
-    public private(set) var notice: String?
+    public internal(set) var notice: String?
     /// Where an explained screenshot was taken (M31): shown above the explanation.
     public private(set) var origin: ScreenExplainer.Origin?
     /// The research under way: plan, sources, what it's doing.
     public private(set) var research: ResearchLog?
     /// Tokens in the instructions alone: the meter's reading before the first answer.
     public private(set) var baseline: Int?
-    private let library: ChatLibrary
-    private let instructions: String
+    let library: ChatLibrary
+    let instructions: String
     private let handOverInstructions: String
     private let model = SystemLanguageModel.default
     @ObservationIgnored private var turn: Task<Void, Never>?
     /// Pages this question's browsing saved: they rank first for it.
-    @ObservationIgnored private var justFound: Set<UUID> = []
+    @ObservationIgnored var justFound: Set<UUID> = []
     /// Sites named in this question that couldn't be read: the answer says so first.
-    @ObservationIgnored private var unreadSites: [String] = []
+    @ObservationIgnored var unreadSites: [String] = []
 
     public init(_ conversation: Conversation, library: ChatLibrary, friend: FriendProfile?) {
         self.conversation = conversation
@@ -66,6 +66,15 @@ public final class ChatThread {
     }
 
     public var contextSize: Int { model.contextSize }
+
+    /// This turn's 9Router model (M37), picked as it's sent: nil means Apple's.
+    @ObservationIgnored private var chosenModel: ChosenModel?
+    /// What files, diagrams, skills and hand-overs run on: the turn's model.
+    private var brain: Brain { chosenModel.map(Brain.nine) ?? .apple(model) }
+    /// Which model each feature uses (tests use their own).
+    @ObservationIgnored var settings = ModelSettings.shared
+    /// "Answer on this Mac" was tapped: the next turn uses Apple's model.
+    @ObservationIgnored var onDeviceOnce = false
     public var contextUsed: Int { conversation.contextUsed ?? baseline ?? ChatPrompt.estimate(instructions) }
 
     /// Why chat can't run here, or nil when it can.
@@ -88,6 +97,8 @@ public final class ChatThread {
         conversation.messages.append(message)
         library.save(conversation)
         state = .searching // busy from the moment it's sent, so Stop works at once
+        chosenModel = onDeviceOnce ? nil : settings.model(for: .chat)
+        onDeviceOnce = false
         let invocation = ChatCommand.parse(question)
         turn = Task {
             switch invocation?.command.action {
@@ -109,6 +120,15 @@ public final class ChatThread {
                 guard !Task.isCancelled else { return }
                 await answer(invocation?.argument ?? question)
             case nil:
+                // The user's own model (M37): app actions by code as always, the rest in one call that sees it all.
+                if let chosen = chosenModel {
+                    if let reply = Reformatter.byCode(question) { return finishTurn(ChatMessage(role: .friend, text: reply)) }
+                    if DiagramIntent.detect(question), FileIntent.detect(question) == nil { return await makeDiagram(request: question, web: web) }
+                    if let format = FileIntent.detect(question) { return await makeFile(format, request: question, instructions: nil, web: web) }
+                    await browse(for: question, web: web)
+                    guard !Task.isCancelled else { return }
+                    return await plainAnswer(question, chosen: chosen)
+                }
                 let action = await route(question)
                 guard !Task.isCancelled else { return } // stopped: stop() already tidied up
                 switch action {
@@ -283,11 +303,11 @@ public final class ChatThread {
             let file: ChatFile
             do {
                 file = try await ChatFileMaker.make(format, request: ask, material: gathered.text, instructions: instructions,
-                                                    columns: columns, model: model)
+                                                    columns: columns, brain: brain)
             } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
                 // Too much to fit with room to write: try once with the first half of the material.
                 file = try await ChatFileMaker.make(format, request: ask, material: String(gathered.text.prefix(gathered.text.count / 2)),
-                                                    instructions: instructions, columns: columns, model: model)
+                                                    instructions: instructions, columns: columns, brain: brain)
             }
             guard !Task.isCancelled else { return }
             let line = await handOver("a \(format.title) file called \(file.name)")
@@ -339,9 +359,9 @@ public final class ChatThread {
         do {
             let diagram: ChatDiagram
             do {
-                diagram = try await DiagramMaker.make(kind, request: ask, material: gathered.text, model: model)
+                diagram = try await DiagramMaker.make(kind, request: ask, material: gathered.text, brain: brain)
             } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
-                diagram = try await DiagramMaker.make(kind, request: ask, material: String(gathered.text.prefix(gathered.text.count / 2)), model: model)
+                diagram = try await DiagramMaker.make(kind, request: ask, material: String(gathered.text.prefix(gathered.text.count / 2)), brain: brain)
             }
             guard !Task.isCancelled else { return }
             let line = await handOver("a \(kind.title.lowercased())")
@@ -364,10 +384,10 @@ public final class ChatThread {
         guard !Task.isCancelled else { return }
         state = .making("Working on \(name)…")
         do {
-            let session = LanguageModelSession(model: model, instructions: ChatFileMaker.skillInstructions + "\n\n" + skill.instructions)
             let material = await material(for: ask).text
             unreadSites = []
-            let output = try await session.respond(to: (material.isEmpty ? "" : "Material:\n\(material)\n\n") + "Request: \(ask)").content
+            let output = try await brain.respond(instructions: ChatFileMaker.skillInstructions + "\n\n" + skill.instructions,
+                                                 prompt: (material.isEmpty ? "" : "Material:\n\(material)\n\n") + "Request: \(ask)")
             guard !Task.isCancelled else { return }
             let line = await handOver(name)
             let result = String(decoding: ChatFileWriter.markdown(output), as: UTF8.self) // no wrapping code fence
@@ -379,7 +399,7 @@ public final class ChatThread {
         }
     }
 
-    private func finishTurn(_ reply: ChatMessage) {
+    func finishTurn(_ reply: ChatMessage) {
         conversation.messages.append(reply)
         library.save(conversation)
         state = .idle
@@ -428,10 +448,9 @@ public final class ChatThread {
     /// not the chat's Markdown rules).
     private func handOver(_ what: String) async -> String {
         let fallback = "Here's \(what)!"
-        guard model.isAvailable else { return fallback }
-        let session = LanguageModelSession(model: model, instructions: handOverInstructions)
+        if case .apple(let model) = brain, !model.isAvailable { return fallback }
         let prompt = "Hand the user \(what), which is ready. One short, warm sentence, under 15 words."
-        guard let line = try? await session.respond(to: prompt).content.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let line = try? await brain.respond(instructions: handOverInstructions, prompt: prompt).trimmingCharacters(in: .whitespacesAndNewlines),
               !line.isEmpty, line.count < 160, !line.contains("`"), !line.contains("\n") else { return fallback }
         return line
     }
@@ -451,26 +470,6 @@ public final class ChatThread {
         conversation.contextUsed = nil
         conversation.contextAgents = nil
         send(text, web: web)
-    }
-
-    /// The question the friend's `answer` replied to, and where that answer is.
-    private func asked(before answer: UUID) -> (question: ChatMessage, at: Int)? {
-        guard let at = conversation.messages.firstIndex(where: { $0.id == answer }),
-              let question = conversation.messages[..<at].last(where: { $0.role == .user }) else { return nil }
-        return (question, at)
-    }
-
-    /// The offer under an answer, taken (M32): the question again, this time searching the web.
-    public func searchWeb(answering answer: UUID) {
-        guard let asked = asked(before: answer) else { return }
-        resend(from: asked.question.id, as: asked.question.text, web: true)
-    }
-
-    /// The offer under an answer, taken (M32): deep research on its question. The answer stays, without the offer.
-    public func deepResearch(answering answer: UUID, effort: ResearchEffort) {
-        guard state == .idle, let asked = asked(before: answer) else { return }
-        conversation.messages[asked.at].offer = nil
-        research(asked.question.text, effort: effort, typed: "Deep research: " + asked.question.text)
     }
 
     /// A diagram edited in place (M29): its code in a friend's message swapped for the new code.
@@ -654,7 +653,7 @@ public final class ChatThread {
     static let cutOff = "Cut off: that was more than I can write at once."
 
     /// The meter after a turn (M36): one agent's use, or the fullest of many and each one's.
-    private func meter(_ uses: [AgentUse]) {
+    func meter(_ uses: [AgentUse]) {
         conversation.contextUsed = uses.map(\.tokens).max()
         conversation.contextAgents = uses.count > 1 ? uses : nil
     }

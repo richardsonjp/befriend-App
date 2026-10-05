@@ -169,7 +169,7 @@ extension TeamEngine {
         let request = kind == .mindmap
             ? "A mind map of \(Self.title(Self.cleanTopic(topic))): 4 to 6 main areas of what it does, each with 2 or 3 short examples. Labels of 1 to 4 words."
             : topic
-        let overview = (try? await DiagramMaker.make(kind, request: request, material: String(written.prefix(6000)), model: model))
+        let overview = (try? await DiagramMaker.make(kind, request: request, material: String(written.prefix(6000)), brain: .apple(model)))
             .flatMap { Self.groundedMap($0, in: written, root: Self.siteName(siteHome?.url) ?? Self.title(Self.cleanTopic(topic))) }
         log.status = "Done"
         log.finishedAt = .now

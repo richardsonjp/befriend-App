@@ -9,6 +9,13 @@ final class NineRouterStub: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var handlers: [String: Handler] = [:]
     static let lock = NSLock()
 
+    /// Answers `host` on the shared session too (the app's code makes its own clients).
+    static func serve(host: String, handler: @escaping Handler) {
+        lock.withLock { handlers[host] = handler }
+        _ = registered
+    }
+    private static let registered: Void = { URLProtocol.registerClass(NineRouterStub.self) }()
+
     static func session(host: String, handler: @escaping Handler) -> URLSession {
         lock.withLock { handlers[host] = handler }
         let configuration = URLSessionConfiguration.ephemeral
@@ -16,7 +23,8 @@ final class NineRouterStub: URLProtocol, @unchecked Sendable {
         return URLSession(configuration: configuration)
     }
 
-    override class func canInit(with request: URLRequest) -> Bool { true }
+    /// Only the tests' own hosts (also when registered for the shared session).
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host()?.hasSuffix(".test") == true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func stopLoading() {}
 

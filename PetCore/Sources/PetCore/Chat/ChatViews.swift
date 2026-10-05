@@ -373,7 +373,13 @@ struct MessageList: View {
                                openDocument: message.isDocument ? { openDocument(message.id) } : nil)
                     // Only under the last answer: taking an older one would redo the chat from there.
                     if let offer = message.offer, message.id == conversation.messages.last?.id, thread.state == .idle {
-                        OfferButton(offer: offer, take: { level in offer == .web ? searchWeb(message.id) : deepResearch(message.id, level) })
+                        OfferButton(offer: offer, take: { level in
+                            switch offer {
+                            case .web: searchWeb(message.id)
+                            case .research: deepResearch(message.id, level)
+                            case .onDevice: thread.answerOnDevice(answering: message.id)
+                            }
+                        })
                     }
                 }
             }
@@ -394,6 +400,8 @@ struct OfferButton: View {
             switch offer {
             case .web:
                 Button { take(nil) } label: { Label("Search the web for this", systemImage: "globe") }
+            case .onDevice:
+                Button { take(nil) } label: { Label("Answer on this Mac", systemImage: "cpu") }
             case .research:
                 Menu {
                     ForEach(ResearchEffort.allCases) { level in
@@ -512,6 +520,7 @@ struct MessageRow: View {
             if let log = message.research { ResearchStepsDisclosure(log: log) } // above the report, as in Claude
             if let attachments = message.attachments, !attachments.isEmpty { attachmentRow(attachments) }
             if let openDocument { DocumentCard(message: message, open: openDocument) } else { bubble(mine: mine) }
+            if let model = message.model { Text("via \(model)").font(.caption2).foregroundStyle(.secondary) } // M37
             ForEach(message.files ?? []) { ChatFileCard(file: $0) }
             if !message.sources.isEmpty { sources }
             HStack(spacing: 10) {

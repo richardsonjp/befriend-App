@@ -47,7 +47,7 @@ public nonisolated enum DiagramMaker {
         """
 
     public static func make(_ kind: ChatDiagramKind, request: String, material: String,
-                            model: SystemLanguageModel = .default) async throws -> ChatDiagram {
+                            brain: Brain = .onDevice) async throws -> ChatDiagram {
         let text = DynamicGenerationSchema(type: String.self)
         func list(_ item: DynamicGenerationSchema, _ max: Int, _ description: String) -> DynamicGenerationSchema.Property {
             .init(name: "items", description: description, schema: DynamicGenerationSchema(arrayOf: item, minimumElements: 1, maximumElements: max))
@@ -107,22 +107,21 @@ public nonisolated enum DiagramMaker {
             ])
             root = DynamicGenerationSchema(name: "Pie", description: "A pie chart", properties: [title, list(slice, 10, "The parts")])
         }
-        let session = LanguageModelSession(model: model, instructions: instructions)
         let prompt = (material.isEmpty ? "" : "Material:\n\(material)\n\n") + "Request: \(request)"
             + (kind == .gantt ? "\n\n" + ChatFileMaker.calendarNote(.now) : "")
-        let content = try await session.respond(to: ChatFileMaker.annotateDates(prompt, now: .now),
-                                                schema: try GenerationSchema(root: root, dependencies: [])).content
+        let content = try await brain.respond(instructions: instructions, prompt: ChatFileMaker.annotateDates(prompt, now: .now),
+                                              schema: try GenerationSchema(root: root, dependencies: []))
         let name = (try? content.value(String.self, forProperty: "title")) ?? ""
         let diagram: ChatDiagram
         if kind == .flowchart {
             // The model lists the happy path; a second look finds where it can fail, as decisions.
             var steps = try flowSteps(content)
             if steps.filter({ !$0.label.isEmpty }).count < 3 { // two boxes isn't a process: one more try
-                let again = try await LanguageModelSession(model: model, instructions: instructions)
-                    .respond(to: ChatFileMaker.annotateDates(prompt, now: .now), schema: try GenerationSchema(root: root, dependencies: [])).content
+                let again = try await brain.respond(instructions: instructions, prompt: ChatFileMaker.annotateDates(prompt, now: .now),
+                                                    schema: try GenerationSchema(root: root, dependencies: []))
                 if let more = try? flowSteps(again), more.count > steps.count { steps = more }
             }
-            diagram = flowchart(title: name, steps: await withFailures(steps, request: request, model: model))
+            diagram = flowchart(title: name, steps: await withFailures(steps, request: request, brain: brain))
         } else {
             diagram = try decode(kind, title: name, content)
         }
@@ -147,7 +146,7 @@ public nonisolated enum DiagramMaker {
 
     /// The steps where things can go wrong, as decisions with their failure ending. The model can't wire branches
     /// on its own (it drew only the happy path), but it can say which steps can fail, one at a time.
-    static func withFailures(_ steps: [FlowStep], request: String, model: SystemLanguageModel) async -> [FlowStep] {
+    static func withFailures(_ steps: [FlowStep], request: String, brain: Brain) async -> [FlowStep] {
         let real = steps.filter { !$0.label.isEmpty && referencedStep($0.label) == nil }
         guard real.count >= 3, real.filter(\.question).count < 3 else { return steps }
         let text = DynamicGenerationSchema(type: String.self)
@@ -161,9 +160,8 @@ public nonisolated enum DiagramMaker {
                   schema: DynamicGenerationSchema(arrayOf: check, minimumElements: 0, maximumElements: 3)),
         ])
         let numbered = real.enumerated().map { "\($0.offset + 1). \($0.element.label)" }.joined(separator: "\n")
-        let session = LanguageModelSession(model: model, instructions: failureInstructions)
         guard let schema = try? GenerationSchema(root: root, dependencies: []),
-              let content = try? await session.respond(to: "Process: \(request)\n\nSteps:\n\(numbered)", schema: schema).content,
+              let content = try? await brain.respond(instructions: failureInstructions, prompt: "Process: \(request)\n\nSteps:\n\(numbered)", schema: schema),
               let items = try? content.value([GeneratedContent].self, forProperty: "checks") else { return steps }
         let checks = items.compactMap { item -> (Int, String, String)? in
             guard let number = try? item.value(Int.self, forProperty: "step"),
