@@ -41,14 +41,16 @@ private struct ExplainShareView: View {
     @State private var image: UIImage?
     @State private var loaded = false
     @State private var thread: ChatThread?
+    /// Off: explained on this iPhone only. On: what it is gets looked up on the web as well.
+    @AppStorage("explain.web") private var web = false
 
     var body: some View {
         NavigationStack {
             Group {
                 if let thread {
-                    ScreenExplainView(thread: thread, openChat: nil, close: done)
+                    ScreenExplainView(thread: thread, web: web, openChat: nil, close: done)
                 } else if let image {
-                    CropView(image: image, explain: explain, cancel: done)
+                    CropView(image: image, web: $web, explain: explain, cancel: done)
                 } else if loaded {
                     ContentUnavailableView("No picture to explain", systemImage: "photo",
                                            description: Text("Share a screenshot or a photo with befriend."))
@@ -68,13 +70,14 @@ private struct ExplainShareView: View {
         guard let root = ExplainInbox.newLibrary(), let png = cropped.pngData() else { return done() }
         let thread = ChatThread(Conversation(), library: ChatLibrary(root: root), friend: nil)
         self.thread = thread
-        thread.explain(screenshot: png)
+        thread.explain(screenshot: png, web: web)
     }
 }
 
 /// The screenshot with a box over the part to explain: drag to draw a new box; the whole picture until you do.
 private struct CropView: View {
     let image: UIImage
+    @Binding var web: Bool
     let explain: (UIImage) -> Void
     let cancel: () -> Void
     /// The box in the picture's own 0…1 coordinates.
@@ -110,6 +113,10 @@ private struct CropView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: cancel) }
+            ToolbarItem(placement: .bottomBar) {
+                Toggle(isOn: $web) { Label("Search the web too", systemImage: "globe") }
+                    .toggleStyle(.button)
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Explain") { explain(image.cropped(to: box)) }
                     .disabled(box.width < 0.02 || box.height < 0.02)

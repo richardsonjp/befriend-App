@@ -124,8 +124,9 @@ public final class ChatThread {
     }
 
     /// Explains a captured part of the screen (M31). The screenshot is attached to this conversation, the user's turn
-    /// names what it is ("Screenshot · …", the chat's title), and the explanation takes the shape that fits.
-    public func explain(screenshot png: Data) {
+    /// names what it is ("Screenshot · …", the chat's title), and the explanation takes the shape that fits. With
+    /// `web`, what it is is searched too and the best excerpts join the prompt.
+    public func explain(screenshot png: Data, web: Bool = false) {
         guard state == .idle, unavailable == nil else { return }
         failure = nil
         notice = nil
@@ -142,9 +143,11 @@ public final class ChatThread {
                 let file = FileManager.default.temporaryDirectory.appending(path: "Screenshot \(UUID().uuidString.prefix(8)).png")
                 try png.write(to: file)
                 library.add(file, scope: .conversation(conversation.id), temporary: true)
+                let found = web ? await lookUp(glance) : []
+                guard !Task.isCancelled else { return }
                 let session = LanguageModelSession(model: model, instructions: ScreenExplainer.instructions)
                 state = .answering("")
-                for try await snapshot in session.streamResponse(to: ScreenExplainer.prompt(glance, read: read)) {
+                for try await snapshot in session.streamResponse(to: ScreenExplainer.prompt(glance, read: read, web: found)) {
                     guard !Task.isCancelled else { break }
                     text = snapshot.content
                     state = .answering(text)
@@ -159,6 +162,17 @@ public final class ChatThread {
             conversation.messages.append(ChatMessage(role: .friend, text: text))
             library.save(conversation)
         }
+    }
+
+    /// The web's take on a screenshot: a search and Wikipedia, at once. Nothing found is a notice, not a failure.
+    private func lookUp(_ glance: ScreenExplainer.Glance) async -> [WebSource] {
+        let query = glance.search.isEmpty ? glance.what : glance.search
+        state = .browsing("Searching the web for “\(query)”…")
+        async let searched = try? WebSearch.search(objective: "What is \(glance.what)?", queries: [query])
+        async let encyclopedia = try? WebSearch.wikipedia(query, limit: 1)
+        let found = WebSource.distinct(((await searched) ?? []) + ((await encyclopedia) ?? []))
+        if found.isEmpty { notice = "Couldn't search the web; explained from the screenshot alone." }
+        return found
     }
 
     /// The effort a /research without one uses (the composer's Research menu sets it).

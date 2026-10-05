@@ -20,6 +20,8 @@ final class ExplainHotkey {
     /// A modifier tap is set but Input Monitoring isn't allowed yet.
     private(set) var needsPermission = false
     @ObservationIgnored var onTrigger: () -> Void = {}
+    /// Esc, anywhere, while `catchEscape` is on (picking a box): works even when befriend isn't the app in front.
+    @ObservationIgnored var onEscape: () -> Void = {}
     /// Paused while the shortcut recorder listens, so recording ⌘⌥ doesn't start a capture.
     @ObservationIgnored var paused = false
 
@@ -28,6 +30,7 @@ final class ExplainHotkey {
     @ObservationIgnored private var tapSource: CFRunLoopSource?
     @ObservationIgnored private var hotKey: EventHotKeyRef?
     @ObservationIgnored private var hotKeyHandler: EventHandlerRef?
+    @ObservationIgnored private var escapeKey: EventHotKeyRef?
     @ObservationIgnored private var permissionRetry: Timer?
 
     init() {
@@ -58,6 +61,19 @@ final class ExplainHotkey {
                 guard let self else { return timer.invalidate() }
                 if CGPreflightListenEventAccess() { timer.invalidate(); self.start() }
             }
+        }
+    }
+
+    /// Takes Esc from every app while on; gives it back when off.
+    var catchEscape: Bool {
+        get { escapeKey != nil }
+        set {
+            if let escapeKey { UnregisterEventHotKey(escapeKey) }
+            escapeKey = nil
+            guard newValue else { return }
+            installHotKeyHandler()
+            RegisterEventHotKey(UInt32(kVK_Escape), 0, EventHotKeyID(signature: Self.signature, id: Self.escapeID),
+                                GetApplicationEventTarget(), 0, &escapeKey)
         }
     }
 
@@ -116,21 +132,32 @@ final class ExplainHotkey {
 
     // MARK: Key shortcut
 
+    private static let signature: OSType = 0x6266_7264 // "bfrd"
+    private static let escapeID: UInt32 = 2
+
+    private func installHotKeyHandler() {
+        guard hotKeyHandler == nil else { return }
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, info in
+            guard let info, let event else { return noErr }
+            var id = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &id)
+            let hotkey = Unmanaged<ExplainHotkey>.fromOpaque(info).takeUnretainedValue()
+            MainActor.assumeIsolated {
+                if id.id == ExplainHotkey.escapeID { hotkey.onEscape() } else if !hotkey.paused { hotkey.onTrigger() }
+            }
+            return noErr
+        }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &hotKeyHandler)
+    }
+
     private func registerHotKey() {
         guard let keyCode = shortcut.keyCode else { return }
-        if hotKeyHandler == nil {
-            var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-            InstallEventHandler(GetApplicationEventTarget(), { _, _, info in
-                guard let info else { return noErr }
-                let hotkey = Unmanaged<ExplainHotkey>.fromOpaque(info).takeUnretainedValue()
-                MainActor.assumeIsolated { if !hotkey.paused { hotkey.onTrigger() } }
-                return noErr
-            }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &hotKeyHandler)
-        }
+        installHotKeyHandler()
         let mods = shortcut.modifiers
         let carbon = (mods.contains(.command) ? cmdKey : 0) | (mods.contains(.option) ? optionKey : 0)
             | (mods.contains(.shift) ? shiftKey : 0) | (mods.contains(.control) ? controlKey : 0)
-        RegisterEventHotKey(UInt32(keyCode), UInt32(carbon), EventHotKeyID(signature: 0x6266_7264, id: 1), // "bfrd"
+        RegisterEventHotKey(UInt32(keyCode), UInt32(carbon), EventHotKeyID(signature: Self.signature, id: 1),
                             GetApplicationEventTarget(), 0, &hotKey)
     }
 }

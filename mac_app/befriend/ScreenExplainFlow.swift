@@ -32,17 +32,24 @@ final class ScreenExplainFlow {
         self.friendVisit = friendVisit
         self.friendDone = friendDone
         hotkey.onTrigger = { [weak self] in self?.begin() }
+        hotkey.onEscape = { ScreenCapture.cancel() }
     }
 
     func start() { hotkey.start() }
 
-    /// Dims the screens for a box to be dragged; one capture at a time.
+    /// Whether explaining also searches the web (the popover's toggle); off, nothing leaves the Mac.
+    static let webKey = "explain.web"
+
+    /// Dims the screens for a box to be dragged; one capture at a time. Again while picking cancels it.
     func begin() {
-        guard !busy else { return }
+        guard !busy else { return ScreenCapture.cancel() }
         busy = true
         Task {
             defer { busy = false }
-            guard let box = await ScreenCapture.pick() else { return }
+            hotkey.catchEscape = true
+            let picked = await ScreenCapture.pick()
+            hotkey.catchEscape = false
+            guard let box = picked else { return }
             do {
                 explain(try await ScreenCapture.capture(box), beside: box)
             } catch {
@@ -59,7 +66,8 @@ final class ScreenExplainFlow {
         card?.close()
         let thread = ChatThread(Conversation(), library: library, friend: friend())
         self.thread = thread
-        let card = ExplainCard(thread: thread, beside: box, openChat: { [weak self, weak thread] in
+        let web = UserDefaults.standard.bool(forKey: Self.webKey)
+        let card = ExplainCard(thread: thread, web: web, beside: box, openChat: { [weak self, weak thread] in
             guard let self, let thread else { return }
             self.card?.close()
             self.openChat(ChatStart(conversation: thread.conversation.id, draft: ""))
@@ -69,7 +77,7 @@ final class ScreenExplainFlow {
         })
         self.card = card
         friendVisit(card.panel.frame)
-        thread.explain(screenshot: png)
+        thread.explain(screenshot: png, web: web)
     }
 }
 
@@ -77,6 +85,7 @@ final class ScreenExplainFlow {
 struct ExplainControls: View {
     let flow: ScreenExplainFlow
     @State private var recording = false
+    @AppStorage(ScreenExplainFlow.webKey) private var web = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -90,6 +99,9 @@ struct ExplainControls: View {
                 ShortcutRecorder(hotkey: flow.hotkey, recording: $recording)
             }
             .font(.callout)
+            Toggle("Search the web too", isOn: $web)
+                .font(.callout)
+                .help("Off: explained on this Mac only. On: what it is gets looked up on the web as well.")
             if flow.hotkey.needsPermission {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Tapping \(flow.hotkey.shortcut.display) needs Input Monitoring.").font(.caption).foregroundStyle(.secondary)

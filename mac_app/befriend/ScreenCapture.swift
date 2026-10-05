@@ -2,8 +2,8 @@
 //  ScreenCapture.swift
 //  befriend
 //
-//  Picking a part of the screen to explain (M31): every display dims, you drag a box with the crosshair, Esc or a
-//  click without dragging cancels. The box is captured with ScreenCaptureKit (Screen Recording permission).
+//  Picking a part of the screen to explain (M31): every display dims, you drag a box with the crosshair; Esc, the
+//  Cancel button, the shortcut again, a right-click or a click without dragging cancels. The box is captured with ScreenCaptureKit (Screen Recording permission).
 //
 
 import AppKit
@@ -28,6 +28,9 @@ enum ScreenCapture {
         }
     }
 
+    /// Ends the box picking, if it's on, as cancelled.
+    @MainActor static func cancel() { SelectionOverlay.current?.cancel() }
+
     /// The box as a PNG, at the display's full resolution.
     @MainActor static func capture(_ rect: CGRect) async throws -> Data {
         guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else { throw Failure.notAllowed }
@@ -44,14 +47,17 @@ enum ScreenCapture {
 @MainActor private final class SelectionOverlay {
     private var windows: [NSWindow] = []
     private var finish: ((CGRect?) -> Void)?
-    /// Keeps itself alive until the user is done.
-    private var retainSelf: SelectionOverlay?
+    /// The one on screen; it keeps itself alive until the user is done.
+    static var current: SelectionOverlay?
 
     init(finish: @escaping (CGRect?) -> Void) { self.finish = finish }
 
+    func cancel() { done(nil) }
+
     func show() {
-        retainSelf = self
-        NSApp.activate()
+        Self.current?.cancel()
+        Self.current = self
+        NSApp.activate(ignoringOtherApps: true) // cooperative activate() is often refused when a hotkey starts this
         windows = NSScreen.screens.map { screen in
             let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.level = .screenSaver
@@ -60,10 +66,12 @@ enum ScreenCapture {
             window.hasShadow = false
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            window.contentView = SelectionView { [weak self, weak window] box in
+            let view = SelectionView { [weak self, weak window] box in
                 guard let self, let window else { return }
                 self.done(box.map { window.convertToScreen($0) })
             }
+            view.addHint(cancel: { [weak self] in self?.cancel() })
+            window.contentView = view
             window.setFrame(screen.frame, display: true)
             window.orderFrontRegardless()
             return window
@@ -78,7 +86,7 @@ enum ScreenCapture {
         windows = []
         let finish = finish
         self.finish = nil
-        retainSelf = nil
+        if Self.current === self { Self.current = nil }
         // Let the dimming leave the screen before it's captured.
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(120))
@@ -95,6 +103,7 @@ private final class SelectionView: NSView {
     private let done: (CGRect?) -> Void
     private var start: NSPoint?
     private var box: NSRect?
+    private var onCancel: (() -> Void)?
 
     init(done: @escaping (CGRect?) -> Void) {
         self.done = done
@@ -102,6 +111,23 @@ private final class SelectionView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// "Drag over the part to explain · [Cancel]" at the top of the display.
+    func addHint(cancel: @escaping () -> Void) {
+        onCancel = cancel
+        let label = NSTextField(labelWithString: "Drag over the part to explain")
+        label.textColor = .white
+        let button = NSButton(title: "Cancel", target: self, action: #selector(cancelPressed))
+        let bar = NSStackView(views: [label, button])
+        bar.edgeInsets = NSEdgeInsets(top: 6, left: 14, bottom: 6, right: 8)
+        bar.wantsLayer = true
+        bar.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
+        bar.layer?.cornerRadius = 10
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(bar)
+        NSLayoutConstraint.activate([bar.centerXAnchor.constraint(equalTo: centerXAnchor),
+                                     bar.topAnchor.constraint(equalTo: topAnchor, constant: 48)])
+    }
 
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -141,5 +167,8 @@ private final class SelectionView: NSView {
         if event.keyCode == UInt16(kVK_Escape) { done(nil) } else { super.keyDown(with: event) }
     }
 
+    @objc private func cancelPressed() { onCancel?() }
+
     override func rightMouseDown(with event: NSEvent) { done(nil) }
 }
+

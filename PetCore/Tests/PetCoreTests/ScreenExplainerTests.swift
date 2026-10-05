@@ -35,6 +35,16 @@ import Testing
         #expect(ScreenExplainer.title("  ") == "Screenshot")
     }
 
+    @Test func webExcerptsOnlyJoinThePromptWhenFound() {
+        let glance = ScreenExplainer.Glance(kind: .error, what: "A Python TypeError", search: "TypeError unsupported operand int str")
+        let offline = ScreenExplainer.prompt(glance, read: "TypeError")
+        #expect(!offline.contains("Found on the web"))
+        let pages = (1...5).map { WebSource(url: URL(string: "https://example.com/\($0)")!, title: "Page \($0)", text: String(repeating: "x", count: 2_000)) }
+        let online = ScreenExplainer.prompt(glance, read: "TypeError", web: pages)
+        #expect(online.contains("[example.com] Page 3") && !online.contains("Page 4"))
+        #expect(online.count < offline.count + ScreenExplainer.webPages * (ScreenExplainer.webExcerpt + 60) + 200)
+    }
+
     @Test func readsTheTextInTheScreenshot() async throws {
         let read = try await ScreenExplainer.read(Self.screenshot(Self.error))
         #expect(read.contains("TypeError") && read.contains("line 42"))

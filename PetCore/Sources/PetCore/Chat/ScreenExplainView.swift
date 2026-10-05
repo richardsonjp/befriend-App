@@ -10,14 +10,17 @@ import SwiftUI
 
 public struct ScreenExplainView: View {
     let thread: ChatThread
+    /// Follow-ups search the web too, like the explanation did.
+    let web: Bool
     /// Nil where chat can't be opened from here (the iPhone's share sheet): it says where the explanation went.
     let openChat: (() -> Void)?
     let close: () -> Void
     @State private var question = ""
     @FocusState private var asking: Bool
 
-    public init(thread: ChatThread, openChat: (() -> Void)?, close: @escaping () -> Void) {
+    public init(thread: ChatThread, web: Bool = false, openChat: (() -> Void)?, close: @escaping () -> Void) {
         self.thread = thread
+        self.web = web
         self.openChat = openChat
         self.close = close
     }
@@ -32,6 +35,10 @@ public struct ScreenExplainView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Label(what, systemImage: "text.viewfinder").font(.headline).lineLimit(2)
+                Image(systemName: web ? "globe" : "lock.shield")
+                    .foregroundStyle(.secondary)
+                    .help(web ? "Searching the web too" : "On this device only")
+                    .accessibilityLabel(web ? "Searching the web too" : "On this device only")
                 Spacer(minLength: 8)
                 Button("Close", systemImage: "xmark", action: close)
                     .labelStyle(.iconOnly)
@@ -79,6 +86,9 @@ public struct ScreenExplainView: View {
     @ViewBuilder private var status: some View {
         switch thread.state {
         case .idle:
+            if let notice = thread.notice {
+                Label(notice, systemImage: "globe").font(.caption).foregroundStyle(.secondary)
+            }
             if let failure = thread.failure ?? (thread.conversation.messages.isEmpty ? thread.unavailable : nil) {
                 Text(failure).foregroundStyle(.red).font(.callout)
             }
@@ -94,7 +104,7 @@ public struct ScreenExplainView: View {
     private func ask() {
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        thread.send(text)
+        thread.send(text, web: web)
         question = ""
     }
 }

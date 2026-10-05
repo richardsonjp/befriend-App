@@ -19,7 +19,7 @@ import SwiftUI
     private var monitors: [Any] = []
     private var onClose: () -> Void
 
-    init(thread: ChatThread, beside box: CGRect, openChat: @escaping () -> Void, onClose: @escaping () -> Void) {
+    init(thread: ChatThread, web: Bool, beside box: CGRect, openChat: @escaping () -> Void, onClose: @escaping () -> Void) {
         self.onClose = onClose
         let frame = Self.frame(beside: box)
         panel = CardPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -31,7 +31,7 @@ import SwiftUI
         panel.becomesKeyOnlyIfNeeded = true
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: ScreenExplainView(thread: thread, openChat: openChat, close: { [weak self] in self?.close() })
+        panel.contentView = NSHostingView(rootView: ScreenExplainView(thread: thread, web: web, openChat: openChat, close: { [weak self] in self?.close() })
             .frame(width: Self.size.width, height: Self.size.height)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)))
