@@ -127,6 +127,8 @@ final class MacController {
 
     init() {
         uploader = TriggerLogUploader(api: api, fileURL: MacConfig.triggerQueueURL)
+        // Code answers are compiled and run on Compiler Explorer through the backend (M40).
+        CodeCheck.checker = { [api] language, source in try await api.checkCode(language: language, source: source) }
         pomodoro.onFocusEnded = MacPomodoro.announce
         pomodoro.onMoment = { [weak self] in self?.pomodoroMoment($0) }
         shop.start()

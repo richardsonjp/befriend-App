@@ -87,6 +87,8 @@ final class AppModel {
 
     init() {
         surfaces = SurfaceController(api: api)
+        // Code answers are compiled and run on Compiler Explorer through the backend (M40).
+        CodeCheck.checker = { [api] language, source in try await api.checkCode(language: language, source: source) }
         let queueURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroup)
             ?? URL.applicationSupportDirectory
         uploader = TriggerLogUploader(api: api, fileURL: queueURL.appending(path: "trigger-queue.json"))

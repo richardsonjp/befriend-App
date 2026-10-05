@@ -36,7 +36,7 @@ extension ChatThread {
             return
         }
         guard !text.isEmpty else { return }
-        var reply = ChatMessage(role: .friend, text: text, files: CodeAnswer.file(for: question, answer: text).map { [$0] })
+        var reply = ChatMessage(role: .friend, text: text)
         reply.model = chosen.name
         conversation.messages.append(reply)
         let sent = request.messages.map { ContextBudget.estimate($0.text) }.reduce(0, +) + ContextBudget.estimate(text)
@@ -86,6 +86,30 @@ extension ChatThread {
         guard state == .idle, let asked = asked(before: answer) else { return }
         conversation.messages[asked.at].offer = nil
         research(asked.question.text, effort: effort, typed: "Deep research: " + asked.question.text)
+    }
+
+    /// A code answer (M40): planned, written, then compiled and run on Compiler Explorer through the backend, with
+    /// the errors fixed by the turn's model. Unchecked (signed out, setting off, a language it doesn't check), it's
+    /// the code as written.
+    func writeCode(_ question: String) async {
+        state = .making("Planning the code…")
+        let earlier = conversation.messages.dropLast().filter { !$0.isAside }.suffix(2)
+            .map { "\($0.role == .user ? "User" : "Friend"): \(PetBrain.quote($0.text, 600))" }.joined(separator: "\n")
+        let writer = CodeWriter(brain: brain, checker: CodeCheck.isOn ? CodeCheck.checker : nil) { [weak self] in self?.state = .making($0) }
+        do {
+            let outcome = try await writer.write(question, earlier: earlier.isEmpty ? "" : "Earlier in this chat:\n\(earlier)\n\n")
+            guard !Task.isCancelled else { return }
+            var reply = ChatMessage(role: .friend, text: outcome.markdown, files: outcome.file.map { [$0] })
+            reply.model = brain.modelName
+            // Unchecked or still broken code from the small on-device model gets the warning.
+            if !outcome.works, brain.modelName == nil { notice = CodeAnswer.onDeviceNotice }
+            finishTurn(reply)
+        } catch {
+            guard !Task.isCancelled else { return }
+            if offerOnDevice(after: error) { return }
+            failure = Self.message(for: error)
+            state = .idle
+        }
     }
 
     /// What the friend says when a turn fails.

@@ -16,6 +16,7 @@ public struct ModelSettingsView: View {
     @State private var status: String?
     /// A pick waiting for the privacy note to be read.
     @State private var pending: (feature: ModelFeature, choice: ModelChoice)?
+    @State private var checkCode = CodeCheck.isOn
 
     @MainActor public init(settings: ModelSettings? = nil) {
         self.settings = settings ?? .shared
@@ -52,6 +53,13 @@ public struct ModelSettingsView: View {
                 Text("Use for")
             } footer: {
                 Text("With a 9Router model, a feature sends the conversation, files and question to that model in one go. Apple's model keeps everything on this Mac.")
+            }
+
+            Section {
+                Toggle("Check code on Compiler Explorer", isOn: $checkCode)
+                    .onChange(of: checkCode) { _, on in CodeCheck.isOn = on }
+            } footer: {
+                Text("Code answers are compiled, fixed and run once on godbolt.org through befriend's server, on either model. Only the code goes, never the conversation.")
             }
 
             if !inUse.isEmpty {
