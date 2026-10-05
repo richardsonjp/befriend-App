@@ -69,6 +69,7 @@ struct ChatFileMakerTests {
         #expect(text.contains("May 3rd at 10:00 [2027-05-03 10:00]"))
         #expect(text.contains("next Monday [2026-10-05]"))
         #expect(ChatFileMaker.annotateDates("No dates here.", now: now) == "No dates here.")
+        #expect(ChatFileMaker.annotateDates("Call me tomorrow.", now: now).contains("tomorrow [2026-10-02]"), "from now, not the real clock")
     }
 
     @Test func eventsParseLocalTimes() throws {

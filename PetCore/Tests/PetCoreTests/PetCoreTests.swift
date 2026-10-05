@@ -90,7 +90,8 @@ struct PetStateMachineTests {
         pet.apply(PetReaction(action: .jump, mood: .excited, dialogue: "Yay!"))
         #expect(pet.action == .jump && pet.dialogue == "Yay!")
 
-        try await Task.sleep(for: .milliseconds(300))
+        // Waits for it to settle rather than a fixed 300 ms: under a busy full test run the timers fire late.
+        for _ in 0..<60 where pet.action != .idle || pet.dialogue != nil { try await Task.sleep(for: .milliseconds(50)) }
         #expect(pet.action == .idle)
         #expect(pet.dialogue == nil)
         #expect(pet.mood == .excited)

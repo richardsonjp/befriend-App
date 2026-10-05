@@ -218,7 +218,7 @@ public nonisolated enum ChatFileMaker {
             let words = text[range]
             let timed = words.range(of: #"\d:\d|\d\s*(am|pm|a\.m\.|p\.m\.)|noon|midnight"#, options: [.regularExpression, .caseInsensitive]) != nil
             let named = words.range(of: #"\b(19|20)\d\d\b"#, options: .regularExpression) != nil
-            var resolved = date
+            var resolved = Self.relative(words, detected: date, now: now)
             if !named, let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now), resolved < yesterday,
                let next = Calendar.current.date(byAdding: .year, value: 1, to: resolved) {
                 resolved = next
@@ -229,6 +229,25 @@ public nonisolated enum ChatFileMaker {
             result.insert(contentsOf: " [\(formatter.string(from: resolved))]", at: result.index(result.startIndex, offsetBy: text.distance(from: text.startIndex, to: range.upperBound)))
         }
         return result
+    }
+
+    /// The detector reads "next Monday" or "tomorrow" from the real clock, never from `now`: move those to `now`.
+    /// A weekday is the next one after `now`'s day; "today", "tomorrow", "in 3 days" move by the days between.
+    static func relative(_ words: Substring, detected: Date, now: Date) -> Date {
+        let calendar = Calendar.current
+        let lower = words.lowercased()
+        guard lower.range(of: #"\b(today|tonight|tomorrow|yesterday|next|this|coming|in \d+ (day|week)s?)\b|day\b"#,
+                          options: .regularExpression) != nil,
+              lower.range(of: #"\d{1,2}(st|nd|rd|th)?\s+(of\s+)?[a-z]{3,}|[a-z]{3,}\s+\d{1,2}\b|\d+/\d+"#, options: .regularExpression) == nil
+        else { return detected } // a calendar date ("May 3rd", "3/5") doesn't depend on today
+        let names = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+        let time = calendar.dateComponents([.hour, .minute], from: detected)
+        if let weekday = names.firstIndex(where: { lower.contains($0) }),
+           let day = calendar.nextDate(after: calendar.startOfDay(for: now), matching: DateComponents(weekday: weekday + 1), matchingPolicy: .nextTime) {
+            return calendar.date(bySettingHour: time.hour ?? 0, minute: time.minute ?? 0, second: 0, of: day) ?? day
+        }
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: .now), to: calendar.startOfDay(for: now)).day ?? 0
+        return calendar.date(byAdding: .day, value: days, to: detected) ?? detected
     }
 
     /// A date without a year the model placed in the past ("May 3rd" in October) means the next one.
