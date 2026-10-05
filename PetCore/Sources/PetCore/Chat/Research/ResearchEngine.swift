@@ -2,7 +2,7 @@
 //  ResearchEngine.swift
 //  PetCore
 //
-//  Deep research (M28), the way research assistants do it, fitted to a 4K on-device model: every step is its own
+//  Deep research (M28), on the team engine since M34, the way research assistants do it, fitted to a 4K on-device model: every step is its own
 //  fresh session. Plan sub-questions → gather sources (web search per question, a named site's key pages, the
 //  user's files and earlier chats) → read each source once and note facts per question → look for gaps and search
 //  again → write each section from its notes with [n] citations → a summary, an SEO section for a named site, and
@@ -90,38 +90,11 @@ struct ResearchNote: Equatable {
     let source: Int
 }
 
-@MainActor
-final class ResearchEngine {
-    private let model: SystemLanguageModel
-    private let library: ChatLibrary
-    private let conversation: Conversation
-    private let update: (ResearchLog) -> Void
-    private var log: ResearchLog
-    private var texts: [String] = [] // each source's text, by index
-    private var notes: [ResearchNote] = []
-    /// Every source cut into passages (with their meaning vectors), and which passages each question has seen.
-    private var chunks: [(source: Int, text: String, vector: [Double]?)] = []
-    private var shown: Set<String> = []
-    private var siteHome: SitePage?
-    /// What a fact from someone else's page must name to count: the topic's exact terms and the site's own name.
-    private var subjectNames: [String] = []
-
-    init(topic: String, effort: ResearchEffort, model: SystemLanguageModel, library: ChatLibrary, conversation: Conversation,
-         update: @escaping (ResearchLog) -> Void) {
-        self.model = model
-        self.library = library
-        self.conversation = conversation
-        self.update = update
-        self.log = ResearchLog(topic: topic, effort: effort)
-    }
-
-    private func status(_ text: String) {
-        log.status = text
-        update(log)
-    }
-
+/// Deep research is the team engine at a research effort (M34): the same sources, reading and notes as a quick team
+/// answer, with more questions, gap rounds and a cited report.
+extension TeamEngine {
     /// The report (Markdown), its sources for chips, and the log.
-    func run() async throws -> (report: String, sources: [ChatSource], log: ResearchLog) {
+    func report() async throws -> (report: String, sources: [ChatSource], log: ResearchLog) {
         let topic = log.topic, depth = log.effort
         let terms = ExactTerms.find(topic)
         subjectNames = terms
@@ -219,7 +192,7 @@ final class ResearchEngine {
     }
 
     @discardableResult
-    private func add(_ title: String, _ url: URL?, _ kind: String, _ text: String) -> Int? {
+    func add(_ title: String, _ url: URL?, _ kind: String, _ text: String) -> Int? {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !log.sources.contains(where: { url != nil && $0.url.map(WebSearch.pageKey) == url.map(WebSearch.pageKey) }) else { return nil }
         // A site's pages often share one title: tell them apart by path.
@@ -234,7 +207,7 @@ final class ResearchEngine {
     }
 
     /// The user's files: what's closest to the topic and each question, as one source.
-    private func addOwnMaterial(topic: String, questions: [String]) {
+    func addOwnMaterial(topic: String, questions: [String]) {
         let documents = library.documents(for: conversation.id).filter { $0.kind != .web }
         var passages: [String] = []
         for query in [topic] + questions {
@@ -250,7 +223,7 @@ final class ResearchEngine {
     /// one local model. Pages are added in the order asked, so the report doesn't depend on which search answered first.
     /// `external`: leave out pages of this site (looking for what others say).
     /// ponytail: no cap beyond the effort's question count; add one if the search API starts rate-limiting.
-    private func searchAll(_ questions: [String], terms: [String], limit: Int, external: URL? = nil) async {
+    func searchAll(_ questions: [String], terms: [String], limit: Int, external: URL? = nil) async {
         let found = await Self.inOrder(questions) { await Self.found($0, terms: terms, external: external) }
         for sources in found {
             for source in sources.prefix(limit) { add(source.title, source.url, "web", source.text) }
@@ -281,7 +254,7 @@ final class ResearchEngine {
     /// One question at a time: the passages closest to it from every source (meaning plus shared words), and
     /// facts for that question only. Shown one source against all questions at once, the small model filed facts
     /// under the wrong question (pricing as "how to contact them").
-    private func readAll(questions: [String], only: [Int]? = nil) async throws {
+    func readAll(questions: [String], only: [Int]? = nil) async throws {
         let chunked = Set(chunks.map(\.source))
         for index in texts.indices where !chunked.contains(index) {
             for piece in Chunker.passages(from: [(texts[index], .none)]) { chunks.append((index, piece.text, Retriever.embed(piece.text))) }
@@ -672,7 +645,7 @@ final class ResearchEngine {
         return parts.joined(separator: "\n\n")
     }
 
-    private func chips() -> [ChatSource] {
+    func chips() -> [ChatSource] {
         log.sources.enumerated().filter { index, _ in notes.contains { $0.source == index } }.map { index, source in
             ChatSource(documentName: "[\(index + 1)] \(source.title)", kind: source.url == nil ? .text : .web, locator: .none,
                        text: String(texts[index].prefix(3000)), url: source.url)

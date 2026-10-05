@@ -20,10 +20,10 @@ struct ResearchTests {
         #expect(ChatThread.requestedReportFormats("antartech.co and make it a pdf") == [.pdf])
         #expect(ChatThread.requestedReportFormats("the EV market, export as markdown") == [.md])
         #expect(ChatThread.requestedReportFormats("antartech.co especially their line of work. make them into a pdf and md fiile") == [.pdf, .md])
-        #expect(ResearchEngine.withoutFileRequest("antartech.co especially their line of work. make them into a pdf and md fiile")
+        #expect(TeamEngine.withoutFileRequest("antartech.co especially their line of work. make them into a pdf and md fiile")
                 == "antartech.co especially their line of work")
-        #expect(ResearchEngine.withoutFileRequest("the EV market, export as markdown") == "the EV market")
-        #expect(ResearchEngine.withoutFileRequest("pdf readers on the market") == "pdf readers on the market")
+        #expect(TeamEngine.withoutFileRequest("the EV market, export as markdown") == "the EV market")
+        #expect(TeamEngine.withoutFileRequest("pdf readers on the market") == "pdf readers on the market")
     }
 
     @Test func effortsGrow() {
@@ -33,16 +33,16 @@ struct ResearchTests {
     }
 
     @Test @MainActor func topicsAndNames() {
-        #expect(ResearchEngine.cleanTopic("research about antartech.co website") == "antartech.co")
-        #expect(ResearchEngine.cleanTopic("Deep research on the EV market") == "EV market")
-        #expect(ResearchEngine.organisation("Antartech Solutions - Software House") == "Antartech Solutions")
+        #expect(TeamEngine.cleanTopic("research about antartech.co website") == "antartech.co")
+        #expect(TeamEngine.cleanTopic("Deep research on the EV market") == "EV market")
+        #expect(TeamEngine.organisation("Antartech Solutions - Software House") == "Antartech Solutions")
     }
 
     @Test @MainActor func nonFactsAndSectionCleanup() {
-        #expect(ResearchEngine.isNonFact("The source does not state who uses antartech.co"))
-        #expect(!ResearchEngine.isNonFact("PT Sparknickel uses its procurement system [6]"))
+        #expect(TeamEngine.isNonFact("The source does not state who uses antartech.co"))
+        #expect(!TeamEngine.isNonFact("PT Sparknickel uses its procurement system [6]"))
         let messy = "## Offerings\nThey build apps [1].\n[2]\n[3], [4]\nThey build apps [1].\nThey also do branding [2]."
-        #expect(ResearchEngine.cleanSection(messy) == "They build apps [1].\nThey also do branding [2].")
+        #expect(TeamEngine.cleanSection(messy) == "They build apps [1].\nThey also do branding [2].")
     }
 
     @Test func keyPagesComeFirst() {
@@ -78,24 +78,24 @@ struct ResearchQualityTests {
         let facts = "Antartech is a software house offering web and app development [1]. Clients include MGW Express and PT Sparknickel."
         let section = "Antartech builds web and apps for MGW Express [1]. Alex Smith and Jordan Lee are its founders [2]. "
             + "It raised a funding round of $500,000. According to the text, reviews are positive. They serve PT Sparknickel [1]."
-        let kept = ResearchEngine.grounded(section, in: facts)
+        let kept = TeamEngine.grounded(section, in: facts)
         #expect(kept.contains("MGW Express [1]") && kept.contains("PT Sparknickel [1]"))
         #expect(!kept.contains("Alex Smith") && !kept.contains("500,000") && !kept.contains("the text"))
     }
 
     @Test func factsMustComeFromTheirSource() {
-        #expect(!ResearchEngine.supported("Key processes include software design, development, testing, and deployment", by: "Our portfolio. See our work."))
-        #expect(ResearchEngine.supported("They replaced 47 Excel spreadsheets with one smart pricing engine",
+        #expect(!TeamEngine.supported("Key processes include software design, development, testing, and deployment", by: "Our portfolio. See our work."))
+        #expect(TeamEngine.supported("They replaced 47 Excel spreadsheets with one smart pricing engine",
                                          by: "We replaced 47 Excel spreadsheets with one smart pricing engine for export logistics."))
-        #expect(ResearchEngine.grounded("Quality at antarctic.co is maintained through testing [4].", in: "antartech.co tests its software").isEmpty)
-        #expect(ResearchEngine.grounded("These challenges are not explicitly mentioned. No differentiation was mentioned in [5].", in: "x").isEmpty)
+        #expect(TeamEngine.grounded("Quality at antarctic.co is maintained through testing [4].", in: "antartech.co tests its software").isEmpty)
+        #expect(TeamEngine.grounded("These challenges are not explicitly mentioned. No differentiation was mentioned in [5].", in: "x").isEmpty)
     }
 
     @Test func outsideFactsMustNameTheSubject() {
         let names = ["antartech.co", "antartech solutions"]
-        #expect(!ResearchEngine.aboutSubject("Donna Karina works at Universitas Padjadjaran", kind: "web", names: names))
-        #expect(ResearchEngine.aboutSubject("Donna Karina is CPO at Antartech", kind: "web", names: names))
-        #expect(ResearchEngine.aboutSubject("They built MGW Express", kind: "site", names: names))
+        #expect(!TeamEngine.aboutSubject("Donna Karina works at Universitas Padjadjaran", kind: "web", names: names))
+        #expect(TeamEngine.aboutSubject("Donna Karina is CPO at Antartech", kind: "web", names: names))
+        #expect(TeamEngine.aboutSubject("They built MGW Express", kind: "site", names: names))
     }
 
     @Test func seoFixesFollowTheMeasurements() {
@@ -104,30 +104,30 @@ struct ResearchQualityTests {
                     h2Count: 1, canonical: nil, robots: nil, lang: "en", openGraph: true, structuredData: [], images: 0,
                     imagesWithoutAlt: 0, internalLinks: 3, externalLinks: 0, words: 900, bytes: 1000)
         }
-        let fixes = ResearchEngine.seoFixes(SEOReport(pages: [page("/", h1: ["A"]), page("/about-us", h1: [])], robotsTxt: true, sitemap: true))
+        let fixes = TeamEngine.seoFixes(SEOReport(pages: [page("/", h1: ["A"]), page("/about-us", h1: [])], robotsTxt: true, sitemap: true))
         #expect(fixes.contains("own title") && fixes.contains("`<h1>` heading** on /about-us") && !fixes.contains("Open Graph"))
     }
 
     @Test func refusalsFillerAndLeadingCitations() {
         let facts = "A growing Indonesian export logistics company is a client. Useful for export forwarders, freight companies and 3PL providers."
-        #expect(ResearchEngine.grounded("I'm sorry, but I cannot complete that request.", in: facts).isEmpty)
-        #expect(ResearchEngine.grounded("The tech stack is then used to define the client's requirements and capabilities.", in: facts).isEmpty)
-        #expect(ResearchEngine.citationsLast("[9] A growing Indonesian export logistics company is a client. [8] It suits freight companies.")
+        #expect(TeamEngine.grounded("I'm sorry, but I cannot complete that request.", in: facts).isEmpty)
+        #expect(TeamEngine.grounded("The tech stack is then used to define the client's requirements and capabilities.", in: facts).isEmpty)
+        #expect(TeamEngine.citationsLast("[9] A growing Indonesian export logistics company is a client. [8] It suits freight companies.")
                 == "A growing Indonesian export logistics company is a client. [9] It suits freight companies. [8]")
     }
 
     @Test func keyFactsSkipFragmentsAndRepeats() {
         let notes = ["Client", "Richardson Jayaputra is the Chief Executive Officer", "Richardson Jayaputra is Chief Executive Officer of Antartech",
                      "Rizky Syawal is the Chief Technology Officer"].enumerated().map { ResearchNote(question: 0, fact: $0.element, source: $0.offset) }
-        #expect(ResearchEngine.keyFacts(notes).map(\.fact) == ["Richardson Jayaputra is the Chief Executive Officer", "Rizky Syawal is the Chief Technology Officer"])
+        #expect(TeamEngine.keyFacts(notes).map(\.fact) == ["Richardson Jayaputra is the Chief Executive Officer", "Rizky Syawal is the Chief Technology Officer"])
     }
 
     @Test func summaryIsOneSentenceThenBullets() {
-        let tidy = ResearchEngine.tidySummary(["Antartech is a software house.", "- It builds logistics platforms [8]", "Stray line.",
+        let tidy = TeamEngine.tidySummary(["Antartech is a software house.", "- It builds logistics platforms [8]", "Stray line.",
                                                "- It builds logistics platforms [9]", "- A", "- B", "- C", "- D", "- E", "- F"])
         #expect(tidy.hasPrefix("Antartech is a software house.\n- It builds logistics platforms [8]\n- Stray line."))
         #expect(tidy.components(separatedBy: "\n").count == 7 && !tidy.contains("[9]"))
-        #expect(ResearchEngine.grounded("It builds apps [1]. It builds apps [2].", in: "it builds apps") == "It builds apps [1].")
+        #expect(TeamEngine.grounded("It builds apps [1]. It builds apps [2].", in: "it builds apps") == "It builds apps [1].")
     }
 
     @Test func overviewMapKeepsBackedShortLabels() {
@@ -137,25 +137,25 @@ struct ResearchQualityTests {
             .init(label: "Markets", children: ["Indonesia", "Singapore"]),
             .init(label: "Galactic expansion plans", children: ["Mars"]),
         ])
-        let kept = ResearchEngine.groundedMap(map, in: report, root: "Fazz")
+        let kept = TeamEngine.groundedMap(map, in: report, root: "Fazz")
         #expect(kept == .mindmap(root: "Fazz", branches: [.init(label: "Payment infrastructure", children: ["Business accounts", "Fazz Agen"]),
                                                           .init(label: "Markets", children: ["Indonesia", "Singapore"])]))
-        #expect(ResearchEngine.siteName(URL(string: "https://www.antartech.co/about")) == "Antartech")
-        #expect(!ResearchEngine.aboutSubject("Email Us: fazzaindia@gmail.com, Fazza India", kind: "web", names: ["fazz.com", "fazz"]))
+        #expect(TeamEngine.siteName(URL(string: "https://www.antartech.co/about")) == "Antartech")
+        #expect(!TeamEngine.aboutSubject("Email Us: fazzaindia@gmail.com, Fazza India", kind: "web", names: ["fazz.com", "fazz"]))
     }
 
     @Test func pageChromeIsNotAFact() {
-        #expect(ResearchEngine.isChrome("See Pricing See Our Works"))
-        #expect(ResearchEngine.isChrome("Our Portfolio See our work Category All Client Project Description Tech Stack"))
-        #expect(!ResearchEngine.isChrome("Antartech replaced 47 spreadsheets with a smart pricing engine"))
+        #expect(TeamEngine.isChrome("See Pricing See Our Works"))
+        #expect(TeamEngine.isChrome("Our Portfolio See our work Category All Client Project Description Tech Stack"))
+        #expect(!TeamEngine.isChrome("Antartech replaced 47 spreadsheets with a smart pricing engine"))
     }
 
     @Test func citationsMoveToSentenceEnds() {
-        #expect(ResearchEngine.citationsLast("For example, [8] describes a payment system.") == "For example, [8] describes a payment system.")
-        #expect(ResearchEngine.citationsLast("[8] Mistakes cost most once they cross an ocean [9].") == "Mistakes cost most once they cross an ocean [9].")
-        #expect(ResearchEngine.grounded("The client is an Indonesian export logistics company, suggesting a global reach.",
+        #expect(TeamEngine.citationsLast("For example, [8] describes a payment system.") == "For example, [8] describes a payment system.")
+        #expect(TeamEngine.citationsLast("[8] Mistakes cost most once they cross an ocean [9].") == "Mistakes cost most once they cross an ocean [9].")
+        #expect(TeamEngine.grounded("The client is an Indonesian export logistics company, suggesting a global reach.",
                                         in: "A growing Indonesian export logistics company is a client") == "The client is an Indonesian export logistics company.")
-        #expect(ResearchEngine.citationsLast("[1] Antartech.co builds apps. [2] It is in Jakarta.") == "Antartech.co builds apps. [1] It is in Jakarta. [2]")
+        #expect(TeamEngine.citationsLast("[1] Antartech.co builds apps. [2] It is in Jakarta.") == "Antartech.co builds apps. [1] It is in Jakarta. [2]")
     }
 
     @Test func seoSaysCommonIssuesOnce() {
@@ -204,7 +204,7 @@ struct ResearchSearchOrderTests {
     /// Searches run at once, but pages come back in the order asked: the first finishing last changes nothing.
     @Test func searchesRunAtOnceAndKeepTheirOrder() async {
         let inFlight = InFlight()
-        let results = await ResearchEngine.inOrder([3, 2, 1]) { delay in
+        let results = await TeamEngine.inOrder([3, 2, 1]) { delay in
             await inFlight.enter()
             try? await Task.sleep(for: .milliseconds(100 * delay))
             await inFlight.leave()

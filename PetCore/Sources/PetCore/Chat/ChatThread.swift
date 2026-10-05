@@ -199,15 +199,15 @@ public final class ChatThread {
     private func runResearch(_ request: String, effort: ResearchEffort) async {
         state = .researching
         // "… make them into a pdf and md file" is about the output, not the topic.
-        let topic = ResearchEngine.withoutFileRequest(request)
-        let engine = ResearchEngine(topic: topic, effort: effort, model: model, library: library, conversation: conversation) { [weak self] log in
+        let topic = TeamEngine.withoutFileRequest(request)
+        let engine = TeamEngine(topic: topic, effort: effort, model: model, library: library, conversation: conversation) { [weak self] log in
             self?.research = log
         }
         do {
-            let result = try await engine.run()
+            let result = try await engine.report()
             guard !Task.isCancelled else { return }
             // The report lives in the chat; file copies only when the request asked for them.
-            let title = "Research – " + ResearchEngine.title(ResearchEngine.cleanTopic(topic))
+            let title = "Research – " + TeamEngine.title(TeamEngine.cleanTopic(topic))
             var files: [ChatFile] = []
             for format in Self.requestedReportFormats(request) {
                 let data = switch format {
@@ -233,10 +233,10 @@ public final class ChatThread {
     /// and the answer keeps them as "How I worked this out". A web task with the web off becomes the web offer.
     private func runTeam(_ question: String, web: Bool) async {
         state = .researching
-        let engine = TeamEngine(question: question, model: model, library: library, conversation: conversation,
+        let engine = TeamEngine(topic: question, effort: nil, model: model, library: library, conversation: conversation,
                                 chatInstructions: instructions) { [weak self] log in self?.research = log }
         do {
-            let result = try await engine.run(web: web)
+            let result = try await engine.answer(web: web)
             guard !Task.isCancelled else { return }
             var reply = ChatMessage(role: .friend, text: result.answer, sources: result.sources)
             reply.research = result.log

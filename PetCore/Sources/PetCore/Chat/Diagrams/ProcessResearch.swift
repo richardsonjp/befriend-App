@@ -128,7 +128,7 @@ enum ProcessResearch {
             let quote = ((try? item.value(String.self, forProperty: "quote")) ?? "").trimmingCharacters(in: .whitespaces)
             // The step must be in its passage (its quote is, or most of its words are), and the short label about it.
             let grounded = documented(quote, in: passage.text) && !Retriever.keywords(label).isDisjoint(with: Retriever.keywords(quote))
-                || ResearchEngine.supported(label, by: passage.text)
+                || TeamEngine.supported(label, by: passage.text)
             guard grounded, isAction(label) else { continue } // the box text itself does something
             quotes.append(quote.isEmpty ? label : quote)
             let question = (try? item.value(Bool.self, forProperty: "question")) ?? false

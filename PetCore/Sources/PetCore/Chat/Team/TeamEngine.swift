@@ -6,6 +6,8 @@
 //  web, this chat so far, or plain reasoning) works in its own clean 4K session and hands back a few short notes; a
 //  writer sees only the question and the notes and writes one concise answer; a checker flags what the notes don't
 //  back, and the writer fixes it once. Agents take turns on the one on-device model; web searches run at once.
+//  Files and web are looked up the way deep research does it (ResearchEngine.swift): one pool of sources, read
+//  per task into facts checked against their source. Deep research is this engine at a research effort.
 //
 
 import Foundation
@@ -54,9 +56,11 @@ final class TeamEngine {
     static let maxTasks = 4
     /// Most a worker's notes may take in the writer's prompt (tokens).
     static let noteBudget = 150
-    /// Most material a worker reads at once (tokens), leaving room for its instructions and notes in 4K.
+    /// Most of this chat a worker reads at once (tokens), leaving room for its instructions and notes in 4K.
     static let materialBudget = 2_400
-    static let nothingFound = "Nothing found."
+    static let nothingNoted = "Nothing found."
+    /// Web pages kept per web task.
+    static let pagesPerTask = 3
 
     static let leadInstructions = """
         You lead a small team answering the user's question. Split it into 2 to 4 short tasks, each for one helper: \
@@ -79,24 +83,32 @@ final class TeamEngine {
         concise, a few sentences or a short list. Don't write source numbers and don't mention the notes or helpers. \
         If the notes don't answer part of it, say so briefly.
         """
-    static let checkInstructions = """
+    static let answerCheckInstructions = """
         You check an answer against the notes it was written from. List the statements in the answer that no note \
         supports. Rewording is fine; only list claims with no backing.
         """
 
-    private let model: SystemLanguageModel
-    private let library: ChatLibrary
-    private let conversation: Conversation
+    let model: SystemLanguageModel
+    let library: ChatLibrary
+    let conversation: Conversation
+    let update: (ResearchLog) -> Void
+    var log: ResearchLog
+    // The pool every lookup reads from (deep research and team tasks alike).
+    var texts: [String] = [] // each source's text, by index
+    var notes: [ResearchNote] = []
+    /// Every source cut into passages (with their meaning vectors), and which passages each question has seen.
+    var chunks: [(source: Int, text: String, vector: [Double]?)] = []
+    var shown: Set<String> = []
+    var siteHome: SitePage?
+    /// What a fact from someone else's page must name to count: the topic's exact terms and the site's own name.
+    var subjectNames: [String] = []
     private let writerInstructions: String
-    private let update: (ResearchLog) -> Void
-    private var log: ResearchLog
-    /// Everything the workers read, numbered from 1 for their notes.
-    private var sources: [ChatSource] = []
     /// The last two messages before the question, for every agent: "given my budget" means the one said earlier.
     private let recent: String
 
-    init(question: String, model: SystemLanguageModel, library: ChatLibrary, conversation: Conversation,
-         chatInstructions: String, update: @escaping (ResearchLog) -> Void) {
+    /// `effort` nil: a quick team answer (`answer(web:)`); else deep research at that effort (`report()`).
+    init(topic: String, effort: ResearchEffort?, model: SystemLanguageModel, library: ChatLibrary, conversation: Conversation,
+         chatInstructions: String = "", update: @escaping (ResearchLog) -> Void) {
         self.model = model
         self.library = library
         self.conversation = conversation
@@ -104,38 +116,53 @@ final class TeamEngine {
         self.update = update
         self.recent = conversation.messages.dropLast().filter { !$0.isAside }.suffix(2)
             .map { "\($0.role == .user ? "User" : "Friend"): \(PetBrain.quote($0.text, 200))" }.joined(separator: "\n")
-        var log = ResearchLog(topic: question, effort: .low)
-        log.team = true
-        log.status = "Planning…"
+        // A quick answer reads like low-effort research: one pass per task.
+        var log = ResearchLog(topic: topic, effort: effort ?? .low)
+        log.team = effort == nil ? true : nil
         self.log = log
     }
 
-    private func status(_ text: String) {
+    func status(_ text: String) {
         log.status = text
         update(log)
     }
 
     /// The answer, the sources its notes used, the log, and whether a web task was left out (the web is off).
-    func run(web: Bool) async throws -> (answer: String, sources: [ChatSource], log: ResearchLog, wantedWeb: Bool) {
+    func answer(web: Bool) async throws -> (answer: String, sources: [ChatSource], log: ResearchLog, wantedWeb: Bool) {
         let question = log.topic
-        let planned = await plan(question, web: web)
-        let tasks = Self.usable(planned, question: question, web: web, hasHistory: conversation.messages.count > 1)
+        subjectNames = ExactTerms.find(question)
+        let planned = await lead(question, web: web)
+        let documents = library.documents(for: conversation.id).filter { $0.kind != .web }
+        let tasks = Self.usable(planned, question: question, web: web, hasHistory: conversation.messages.count > 1) { ask in
+            !Retriever.rank(ask, vector: Retriever.embed(ask), in: documents).isEmpty
+        }
         log.steps = tasks.map { ResearchLog.Step(question: "\($0.worker.label): \($0.ask)") }
         update(log)
         try Task.checkCancellation()
 
-        // The web for every web task at once (the network is the slow part), then each worker in turn on the model.
-        let webTasks = tasks.filter { $0.worker == .web }
-        if !webTasks.isEmpty { status("Searching the web…") }
-        let pages = await ResearchEngine.inOrder(webTasks.map(\.ask)) { await ResearchEngine.found($0, terms: [], external: nil) }
-        var pagesByAsk: [String: [WebSource]] = [:]
-        for (task, found) in zip(webTasks, pages) { pagesByAsk[task.ask] = Array(found.prefix(3)) }
+        // Look-ups go to the shared pool: the user's files, then the web for every web task at once; then each
+        // look-up task is read into facts from it, as deep research reads its questions.
+        let asks = tasks.map(\.ask)
+        let lookups = tasks.indices.filter { tasks[$0].worker == .files || tasks[$0].worker == .web }
+        let fileAsks = tasks.filter { $0.worker == .files }.map(\.ask)
+        if !fileAsks.isEmpty { addOwnMaterial(topic: question, questions: fileAsks) }
+        let webAsks = tasks.filter { $0.worker == .web }.map(\.ask)
+        if !webAsks.isEmpty {
+            status("Searching the web…")
+            await searchAll(webAsks, terms: subjectNames, limit: Self.pagesPerTask)
+        }
+        if !lookups.isEmpty { try await readAll(questions: asks, only: lookups) }
 
-        var notes: [(task: TeamTask, text: String)] = []
+        var written: [(task: TeamTask, text: String)] = []
         for (index, task) in tasks.enumerated() {
-            status("\(task.worker.label): \(task.ask)")
-            let note = await work(task, pages: pagesByAsk[task.ask] ?? [])
-            notes.append((task, note))
+            let note: String
+            if lookups.contains(index) {
+                note = Self.bullets(notes.filter { $0.question == index })
+            } else {
+                status("\(task.worker.label): \(task.ask)")
+                note = await think(task)
+            }
+            written.append((task, note))
             log.steps[index].done = true
             log.steps[index].note = note
             log.steps[index].notes = Self.isNothing(note) ? 0 : note.split(separator: "\n").count
@@ -144,8 +171,8 @@ final class TeamEngine {
         }
 
         status("Writing…")
-        let found = notes.filter { !Self.isNothing($0.text) }
-        let notesText = Self.notesBlock(found.isEmpty ? notes : found)
+        let found = written.filter { !Self.isNothing($0.text) }
+        let notesText = Self.notesBlock(found.isEmpty ? written : found)
         var answer = try await write(question: question, notes: notesText)
         try Task.checkCancellation()
         status("Checking…")
@@ -156,14 +183,14 @@ final class TeamEngine {
         }
         log.status = "Done"
         log.finishedAt = .now
-        return (answer, Self.cited(sources, by: found.map(\.text)), log, planned.contains { $0.worker == .web } && !web)
+        return (answer, chips(), log, planned.contains { $0.worker == .web } && !web)
     }
 
     private var earlier: String { recent.isEmpty ? "" : "Earlier in this chat:\n\(recent)\n\n" }
 
     // MARK: Lead
 
-    private func plan(_ question: String, web: Bool) async -> [TeamTask] {
+    private func lead(_ question: String, web: Bool) async -> [TeamTask] {
         let files = library.documents(for: conversation.id).filter { $0.kind != .web }.count
         let available = [files > 0 ? "files (\(files))" : nil, web ? "web" : nil, conversation.messages.count > 1 ? "thisChat" : nil, "reasoning"]
             .compactMap { $0 }.joined(separator: ", ")
@@ -174,60 +201,39 @@ final class TeamEngine {
     }
 
     /// The lead's tasks the team can do: the web only when it's on, this chat only when there's history; at most
-    /// four; none left (or no plan) → think about the question itself.
-    static func usable(_ tasks: [TeamTask], question: String, web: Bool, hasHistory: Bool) -> [TeamTask] {
+    /// four; none left (or no plan) → think about the question itself. The small lead often plans "reasoning" for
+    /// what's in the user's files ("ticket prices from my launch plan"): a task `matchesFiles` reads the files, and
+    /// a question that matches them always gets a files task.
+    static func usable(_ tasks: [TeamTask], question: String, web: Bool, hasHistory: Bool,
+                       matchesFiles: (String) -> Bool = { _ in false }) -> [TeamTask] {
         var seen = Set<String>()
+        let tasks = tasks.map { $0.worker == .reasoning && matchesFiles($0.ask) ? TeamTask(worker: .files, ask: $0.ask) : $0 }
         let kept = tasks.filter { task in
             !task.ask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && (web || task.worker != .web) && (hasHistory || task.worker != .thisChat)
                 && seen.insert(task.worker.rawValue + "|" + task.ask.lowercased()).inserted
         }
-        return kept.isEmpty ? [TeamTask(worker: .reasoning, ask: question)] : Array(kept.prefix(maxTasks))
+        let files = !kept.contains { $0.worker == .files } && matchesFiles(question) ? [TeamTask(worker: .files, ask: question)] : []
+        let all = files + kept
+        return all.isEmpty ? [TeamTask(worker: .reasoning, ask: question)] : Array(all.prefix(maxTasks))
     }
 
     // MARK: Workers
 
-    private func work(_ task: TeamTask, pages: [WebSource]) async -> String {
-        let material: String
-        switch task.worker {
-        case .files: material = filesMaterial(for: task.ask)
-        case .web: material = webMaterial(pages, for: task.ask)
-        case .thisChat: material = chatMaterial()
-        case .reasoning: material = ""
-        }
-        if task.worker != .reasoning, material.isEmpty { return Self.nothingFound }
+    /// This chat and reasoning: a session of their own (look-ups are read from the pool instead).
+    private func think(_ task: TeamTask) async -> String {
+        let material = task.worker == .thisChat ? chatMaterial() : ""
+        if task.worker == .thisChat, material.isEmpty { return Self.nothingNoted }
         let prompt = earlier + "Task: \(task.ask)" + (material.isEmpty ? "" : "\n\nMaterial:\n\(material)")
         let session = LanguageModelSession(model: model, instructions: task.worker == .reasoning ? Self.reasoningInstructions : Self.workerInstructions)
-        let note = (try? await session.respond(to: prompt, options: GenerationOptions(maximumResponseTokens: 220)).content) ?? Self.nothingFound
+        let note = (try? await session.respond(to: prompt, options: GenerationOptions(maximumResponseTokens: 220)).content) ?? Self.nothingNoted
         return Self.trimmed(note)
     }
 
-    /// The number the workers cite `source` by (the same source keeps its number).
-    private func numbered(_ source: ChatSource) -> Int {
-        if let index = sources.firstIndex(where: { $0.label == source.label && $0.text == source.text }) { return index + 1 }
-        sources.append(source)
-        return sources.count
-    }
-
-    private func filesMaterial(for ask: String) -> String {
-        let documents = library.documents(for: conversation.id).filter { $0.kind != .web }
-        let hits = Retriever.rank(ask, vector: Retriever.embed(ask), in: documents).prefix(8)
-        return Self.fitting(hits.map { hit in "[\(numbered(hit.source))] (\(hit.source.label)) \(hit.passage.text)" })
-    }
-
-    private func webMaterial(_ pages: [WebSource], for ask: String) -> String {
-        let vector = Retriever.embed(ask)
-        // Each page cut into passages; the ones closest to the task, across pages.
-        let passages = pages.flatMap { page in
-            Chunker.passages(from: [(page.text, .none)]).map { (page: page, text: $0.text) }
-        }
-        let ranked = passages.map { item in
-            (item, vector.flatMap { question in Retriever.embed(item.text).map { Retriever.cosine(question, $0) } } ?? 0)
-        }.sorted { $0.1 > $1.1 }.prefix(8).map(\.0)
-        return Self.fitting(ranked.map { item in
-            let number = numbered(ChatSource(documentName: item.page.title, kind: .web, locator: .none, text: item.text, url: item.page.url))
-            return "[\(number)] (\(item.page.site)) \(item.text)"
-        })
+    /// A look-up task's facts as notes, with the pool's source numbers: "- It costs $5 [2]".
+    static func bullets(_ facts: [ResearchNote]) -> String {
+        let lines = keyFacts(facts).prefix(5).map { "- \($0.fact.trimmingCharacters(in: .whitespacesAndNewlines)) [\($0.source + 1)]" }
+        return lines.isEmpty ? nothingNoted : trimmed(lines.joined(separator: "\n"))
     }
 
     private func chatMaterial() -> String {
@@ -239,17 +245,15 @@ final class TeamEngine {
         return lines.suffix(kept).joined(separator: "\n")
     }
 
-    /// The leading lines that fit the material budget.
-    static func fitting(_ lines: some Sequence<String>) -> String {
-        let lines = Array(lines)
-        return lines.prefix(ChatPrompt.fitting(lines.map { ChatPrompt.estimate($0) + 2 }, budget: materialBudget)).joined(separator: "\n")
-    }
-
     static func trimmed(_ note: String) -> String {
         // Only the bullet points when there are any: the small model opens with "I can't look things up, but…".
         let lines = note.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
         let bullets = lines.filter { $0.range(of: #"^([-*•]|\d+[.)])\s"#, options: .regularExpression) != nil }
         let note = (bullets.isEmpty ? note : bullets.joined(separator: "\n")).trimmingCharacters(in: .whitespacesAndNewlines)
+        // "I'm sorry, but I can't assist with that." is no note.
+        if bullets.isEmpty, note.range(of: #"(?i)^(i'?m sorry|i apologi[sz]e|i can'?t|i cannot|i am unable|sorry)"#, options: .regularExpression) != nil {
+            return nothingNoted
+        }
         guard ChatPrompt.estimate(note) > noteBudget else { return note }
         // Whole lines up to the budget.
         var kept: [String] = [], used = 0
@@ -269,15 +273,6 @@ final class TeamEngine {
         notes.map { "\($0.task.worker.label), on \"\($0.task.ask)\":\n\($0.text)" }.joined(separator: "\n\n")
     }
 
-    /// The sources the notes cite ([2]).
-    static func cited(_ sources: [ChatSource], by notes: [String]) -> [ChatSource] {
-        let numbers = Set(notes.flatMap { note in
-            note.matches(of: #/\[(\d+)\]/#).compactMap { Int($0.1) }
-        })
-        let used = sources.enumerated().filter { numbers.contains($0.offset + 1) }.map(\.element)
-        return ChatSource.merged(used)
-    }
-
     // MARK: Writer and checker
 
     private func write(question: String, notes: String, fix: (draft: String, unsupported: [String])? = nil) async throws -> String {
@@ -291,7 +286,7 @@ final class TeamEngine {
     }
 
     private func check(_ answer: String, notes: String) async -> [String] {
-        let session = LanguageModelSession(model: model, instructions: Self.checkInstructions)
+        let session = LanguageModelSession(model: model, instructions: Self.answerCheckInstructions)
         let prompt = "Notes:\n\(notes)\n\nAnswer:\n\(answer)"
         let flagged = (try? await session.respond(to: prompt, generating: Check.self).content.unsupported) ?? []
         return flagged.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
