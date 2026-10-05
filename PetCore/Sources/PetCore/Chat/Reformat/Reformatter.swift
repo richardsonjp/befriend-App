@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import FoundationModels
 
 public nonisolated enum Reformatter {
     /// What to repair: the first fenced block when there is one, else the whole message.
@@ -38,5 +39,37 @@ public nonisolated enum Reformatter {
               let (json, fixes) = LenientJSON.repair(String(text[start...])) else { return nil } // the lead-in isn't a fix
         let what = fixes.isEmpty ? "Reformatted JSON (it was already valid):" : "Fixed JSON: " + fixes.joined(separator: ", ") + "."
         return what + "\n\n```json\n" + json + "\n```"
+    }
+
+    // MARK: The model, for everything else (YAML, SQL, XML…)
+
+    /// Only the pasted text and the request go in: no files, history or memories to crowd the fix out.
+    static let taskInstructions = """
+        Fix and reformat the text the user pasted, as their message asks. Reply with only the fixed text in one fenced \
+        block tagged with its language (```yaml, ```sql, ```xml), then nothing else. Keep everything the text says; \
+        change only what makes it broken or messy.
+        """
+    /// Prompt headings and separators.
+    static let overhead = 60
+
+    /// Most tokens of pasted text the model may rewrite: the fix comes back about as long, so half the room left.
+    static func maxInputTokens(contextSize: Int, instructionTokens: Int) -> Int {
+        max(0, (contextSize - instructionTokens - overhead) / 2)
+    }
+
+    /// Tokens in `text`: the model's count when it can give one, else 2 characters a token (code and symbols take
+    /// more tokens than prose's 3).
+    static func tokens(_ text: String, model: SystemLanguageModel) async -> Int {
+        if #available(iOS 26.4, macOS 26.4, *), model.isAvailable, let count = try? await model.tokenCount(for: text) {
+            return count
+        }
+        return max(1, text.count / 2)
+    }
+
+    /// The friend's reply to text too long to rewrite in one go.
+    static func tooLong(maxTokens: Int) -> String {
+        let characters = max(100, maxTokens * 2 / 100 * 100)
+        return "That's too long for me to rewrite in one go: I can fix about \(characters) characters at a time. "
+            + "Paste a smaller part and I'll fix it."
     }
 }

@@ -420,7 +420,7 @@ struct ChatStatus: View {
                 Label(failure, systemImage: "exclamationmark.bubble").foregroundStyle(.secondary)
             }
             if let notice = thread.notice {
-                Label(notice, systemImage: "globe").font(.callout).foregroundStyle(.secondary)
+                Label(notice, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
             }
         case .checking:
             working("Thinking…", symbol: "ellipsis.bubble")

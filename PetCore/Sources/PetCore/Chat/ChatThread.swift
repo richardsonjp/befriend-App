@@ -113,9 +113,7 @@ public final class ChatThread {
                 case .clarify: return clarify()
                 case .diagram: return await makeDiagram(request: question, web: web)
                 case .file(let format): return await makeFile(format, request: question, instructions: nil, web: web)
-                case .reformat:
-                    // ponytail: only what code repairs (JSON) for now; the rest is answered as before (M33 C).
-                    if let reply = Reformatter.byCode(question) { return finishTurn(ChatMessage(role: .friend, text: reply)) }
+                case .reformat: return await reformat(question)
                 case .answer, .web, .research: break
                 }
                 await browse(for: question, web: web)
@@ -620,6 +618,19 @@ public final class ChatThread {
                                      question: asked, recalled: recall.block, note: groundingNote)
 
         let session = LanguageModelSession(model: model, instructions: instructions)
+        guard let text = await stream(prompt, in: session) else { return }
+        var reply = ChatMessage(role: .friend, text: text, sources: ChatSource.merged(passages.map(\.source)) + recall.sources)
+        reply.offer = offer
+        conversation.messages.append(reply)
+        conversation.contextUsed = await count(instructions: instructions, prompt: prompt, answer: text)
+        library.save(conversation)
+    }
+
+    static let cutOff = "Cut off: that was more than I can write at once."
+
+    /// Streams the answer into `state`. Nil when nothing was written (`failure` says why); stopped, or out of room
+    /// after some text (with the cut-off notice), keeps what was written.
+    private func stream(_ prompt: String, in session: LanguageModelSession) async -> String? {
         var text = ""
         do {
             state = .answering("")
@@ -630,15 +641,28 @@ public final class ChatThread {
             }
         } catch is CancellationError {
             // Stopped: keep what was written.
+        } catch LanguageModelSession.GenerationError.exceededContextWindowSize where !text.isEmpty {
+            notice = Self.cutOff
         } catch {
             Self.log.error("Chat answer failed: \(String(describing: error), privacy: .public)")
-            if text.isEmpty { return failure = Self.message(for: error) }
+            if text.isEmpty { failure = Self.message(for: error) }
         }
-        guard !text.isEmpty else { return }
-        var reply = ChatMessage(role: .friend, text: text, sources: ChatSource.merged(passages.map(\.source)) + recall.sources)
-        reply.offer = offer
-        conversation.messages.append(reply)
-        conversation.contextUsed = await count(instructions: instructions, prompt: prompt, answer: text)
+        return text.isEmpty ? nil : text
+    }
+
+    /// The reformat agent (M33): code when it can (JSON, curl), else the model with nothing but the pasted text and
+    /// the request, so the whole window is the text and its fix. Too long to fit twice: said at once.
+    private func reformat(_ question: String) async {
+        if let reply = Reformatter.byCode(question) { return finishTurn(ChatMessage(role: .friend, text: reply)) }
+        defer { if !Task.isCancelled { state = .idle } }
+        let room = Reformatter.maxInputTokens(contextSize: contextSize,
+                                               instructionTokens: await count(instructions: Reformatter.taskInstructions))
+        guard await Reformatter.tokens(question, model: model) <= room else {
+            return finishTurn(ChatMessage(role: .friend, text: Reformatter.tooLong(maxTokens: room)))
+        }
+        let session = LanguageModelSession(model: model, instructions: Reformatter.taskInstructions)
+        guard let text = await stream(question, in: session) else { return }
+        conversation.messages.append(ChatMessage(role: .friend, text: text))
         library.save(conversation)
     }
 

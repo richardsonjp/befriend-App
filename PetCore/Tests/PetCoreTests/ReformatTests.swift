@@ -148,3 +148,22 @@ struct CurlFormatterTests {
         #expect(reply.contains("```bash\ncurl https://x.io \\\n  -X POST \\\n  -d '{\n  \"a\": 1\n}'\n```"))
     }
 }
+
+struct ReformatModelTests {
+    @Test func tooBigIsSaidBeforeTheModelRuns() {
+        // 4K window, 100 instruction tokens: (4096 − 100 − 60) / 2 = 1968 tokens of input at most.
+        #expect(Reformatter.maxInputTokens(contextSize: 4096, instructionTokens: 100) == 1968)
+        #expect(Reformatter.maxInputTokens(contextSize: 100, instructionTokens: 100) == 0)
+        #expect(Reformatter.tooLong(maxTokens: 1968).contains("about 3900 characters"))
+    }
+
+    @Test func fixesBrokenYAMLOnTheModel() async throws {
+        let model = SystemLanguageModel.default
+        guard model.isAvailable else { return }
+        let message = "fix this yaml:\nserver:\n  port: 8080\n   host: localhost\n  tags: [a, b\nname:app"
+        #expect(Reformatter.byCode(message) == nil, "not JSON or curl: the model's turn")
+        let session = LanguageModelSession(model: model, instructions: Reformatter.taskInstructions)
+        let reply = try await session.respond(to: message).content
+        #expect(reply.contains("```yaml"), "\(reply)")
+    }
+}
