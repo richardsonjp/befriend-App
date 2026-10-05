@@ -203,7 +203,7 @@ final class TeamEngine {
     /// The lead's tasks the team can do: the web only when it's on, this chat only when there's history; at most
     /// four; none left (or no plan) → think about the question itself. The small lead often plans "reasoning" for
     /// what's in the user's files ("ticket prices from my launch plan"): a task `matchesFiles` reads the files, and
-    /// a question that matches them always gets a files task.
+    /// a question that matches them is always read from the files as a whole.
     static func usable(_ tasks: [TeamTask], question: String, web: Bool, hasHistory: Bool,
                        matchesFiles: (String) -> Bool = { _ in false }) -> [TeamTask] {
         var seen = Set<String>()
@@ -213,7 +213,9 @@ final class TeamEngine {
                 && (web || task.worker != .web) && (hasHistory || task.worker != .thisChat)
                 && seen.insert(task.worker.rawValue + "|" + task.ask.lowercased()).inserted
         }
-        let files = !kept.contains { $0.worker == .files } && matchesFiles(question) ? [TeamTask(worker: .files, ask: question)] : []
+        // The whole question too: the lead's own files task can miss ("What is the URL of my launch plan?").
+        let asked = kept.contains { $0.worker == .files && $0.ask.lowercased() == question.lowercased() }
+        let files = !asked && matchesFiles(question) ? [TeamTask(worker: .files, ask: question)] : []
         let all = files + kept
         return all.isEmpty ? [TeamTask(worker: .reasoning, ask: question)] : Array(all.prefix(maxTasks))
     }

@@ -16,7 +16,8 @@ struct TeamPlanTests {
                 == [TeamTask(worker: .reasoning, ask: "why is the sky blue?")], "no plan: think about the question")
         let reasoned = [TeamTask(worker: .reasoning, ask: "ticket price in my plan"), TeamTask(worker: .reasoning, ask: "is it a good deal")]
         let mine = TeamEngine.usable(reasoned, question: "my launch?", web: false, hasHistory: false) { $0.contains("my") }
-        #expect(mine.map(\.worker) == [.files, .reasoning], "a task about the user's files reads them")
+        #expect(mine.map(\.ask) == ["my launch?", "ticket price in my plan", "is it a good deal"])
+        #expect(mine.map(\.worker) == [.files, .files, .reasoning], "a task about the user's files reads them, and so does the question")
         #expect(TeamEngine.usable([reasoned[1]], question: "is my launch ok?", web: false, hasHistory: false) { $0.contains("my") }
                 .map(\.worker) == [.files, .reasoning], "a question matching the files always reads them")
     }
