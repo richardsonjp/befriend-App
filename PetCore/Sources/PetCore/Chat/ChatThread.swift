@@ -113,11 +113,11 @@ public final class ChatThread {
                 case .clarify: return clarify()
                 case .diagram: return await makeDiagram(request: question, web: web)
                 case .file(let format): return await makeFile(format, request: question, instructions: nil, web: web)
-                case .answer, .web, .research: break // slice B offers the web and research
+                case .answer, .web, .research: break
                 }
                 await browse(for: question, web: web)
                 guard !Task.isCancelled else { return }
-                await answer(question)
+                await answer(question, offering: ChatMessage.Offer.after(action, web: web))
             default:
                 state = .idle // screen commands never reach here
             }
@@ -444,6 +444,26 @@ public final class ChatThread {
         send(text, web: web)
     }
 
+    /// The question the friend's `answer` replied to, and where that answer is.
+    private func asked(before answer: UUID) -> (question: ChatMessage, at: Int)? {
+        guard let at = conversation.messages.firstIndex(where: { $0.id == answer }),
+              let question = conversation.messages[..<at].last(where: { $0.role == .user }) else { return nil }
+        return (question, at)
+    }
+
+    /// The offer under an answer, taken (M32): the question again, this time searching the web.
+    public func searchWeb(answering answer: UUID) {
+        guard let asked = asked(before: answer) else { return }
+        resend(from: asked.question.id, as: asked.question.text, web: true)
+    }
+
+    /// The offer under an answer, taken (M32): deep research on its question. The answer stays, without the offer.
+    public func deepResearch(answering answer: UUID, effort: ResearchEffort) {
+        guard state == .idle, let asked = asked(before: answer) else { return }
+        conversation.messages[asked.at].offer = nil
+        research(asked.question.text, effort: effort, typed: "Deep research: " + asked.question.text)
+    }
+
     /// A diagram edited in place (M29): its code in a friend's message swapped for the new code.
     public func replaceDiagram(in messageID: UUID, from old: String, to new: String) {
         guard state == .idle, let index = conversation.messages.firstIndex(where: { $0.id == messageID }),
@@ -552,7 +572,7 @@ public final class ChatThread {
         return last.text
     }
 
-    private func answer(_ question: String) async {
+    private func answer(_ question: String, offering offer: ChatMessage.Offer? = nil) async {
         // A stopped turn leaves the state alone: the next message may already be under way.
         defer { if !Task.isCancelled { state = .idle } }
         let budget = ChatPrompt.split(contextSize: contextSize, instructions: ChatPrompt.estimate(instructions),
@@ -612,8 +632,9 @@ public final class ChatThread {
             if text.isEmpty { return failure = Self.message(for: error) }
         }
         guard !text.isEmpty else { return }
-        conversation.messages.append(ChatMessage(role: .friend, text: text,
-                                                 sources: ChatSource.merged(passages.map(\.source)) + recall.sources))
+        var reply = ChatMessage(role: .friend, text: text, sources: ChatSource.merged(passages.map(\.source)) + recall.sources)
+        reply.offer = offer
+        conversation.messages.append(reply)
         conversation.contextUsed = await count(instructions: instructions, prompt: prompt, answer: text)
         library.save(conversation)
     }

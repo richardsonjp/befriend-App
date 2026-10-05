@@ -48,3 +48,24 @@ struct ChatRouterTests {
         #expect(misses.count <= 1, "\(misses)")
     }
 }
+
+struct ChatOfferTests {
+    @Test func webIsOfferedOnlyWhenItsOffAndResearchAlways() {
+        typealias Offer = ChatMessage.Offer
+        #expect(Offer.after(.web, web: false) == .web)
+        #expect(Offer.after(.web, web: true) == nil, "already searched")
+        #expect(Offer.after(.research, web: false) == .research)
+        #expect(Offer.after(.research, web: true) == .research)
+        #expect(Offer.after(.answer, web: false) == nil)
+        #expect(Offer.after(.file(.csv), web: false) == nil)
+    }
+
+    @Test func oldMessagesLoadAndOffersSurviveSaving() throws {
+        var message = ChatMessage(role: .friend, text: "Sunny, probably.")
+        let old = try JSONEncoder().encode(message)
+        #expect(try JSONDecoder().decode(ChatMessage.self, from: old).offer == nil)
+        message.offer = .web
+        #expect(try JSONDecoder().decode(ChatMessage.self, from: JSONEncoder().encode(message)).offer == .web)
+        #expect(message.with(text: "Edited").offer == .web)
+    }
+}

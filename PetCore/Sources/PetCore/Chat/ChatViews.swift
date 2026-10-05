@@ -157,6 +157,8 @@ struct ChatScreen: View {
     @AppStorage("chat.web") private var web = false
     @AppStorage("chat.webExplained") private var webExplained = false
     @State private var explainingWeb = false
+    /// The answer whose "Search the web" offer waits for the web explanation (M32).
+    @State private var pendingWeb: UUID?
 
     /// /new and /library: ChatRoot moves to another page.
     var newConversation: () -> Void = {}
@@ -204,11 +206,13 @@ struct ChatScreen: View {
                 Text("Its messages go; its files stay.")
             }
             .alert("Search the web?", isPresented: $explainingWeb) {
-                Button("Turn On") {
+                Button(pendingWeb == nil ? "Turn On" : "Search") {
                     webExplained = true
-                    web = true
+                    // From an offer: this question only; the toggle stays as it was.
+                    if let answer = pendingWeb { thread.searchWeb(answering: answer) } else { web = true }
+                    pendingWeb = nil
                 }
-                Button("Cancel", role: .cancel) {}
+                Button("Cancel", role: .cancel) { pendingWeb = nil }
             } message: {
                 Text("""
                     Your question is sent to Parallel Search (or Firecrawl if it's busy) and Wikipedia to find pages. \
@@ -241,7 +245,11 @@ struct ChatScreen: View {
             ScrollView {
                 MessageList(thread: thread, library: library, editing: $editing, linking: $linking, showSource: { shownSource = $0 },
                             openDocument: { document = $0 },
-                            resend: { id, text in thread.resend(from: id, as: text, web: web) })
+                            resend: { id, text in thread.resend(from: id, as: text, web: web) },
+                            searchWeb: { answer in
+                                if webExplained { thread.searchWeb(answering: answer) } else { pendingWeb = answer; explainingWeb = true }
+                            },
+                            deepResearch: { answer, level in thread.deepResearch(answering: answer, effort: level ?? effort) })
                     .padding()
             }
             .scrollDismissesKeyboard(.interactively)
@@ -341,6 +349,9 @@ struct MessageList: View {
     let showSource: (ChatSource) -> Void
     var openDocument: (UUID) -> Void = { _ in }
     let resend: (UUID, String) -> Void
+    var searchWeb: (UUID) -> Void = { _ in }
+    /// Nil effort: the composer's.
+    var deepResearch: (UUID, ResearchEffort?) -> Void = { _, _ in }
 
     var body: some View {
         let conversation = thread.conversation
@@ -359,11 +370,42 @@ struct MessageList: View {
                                link: message.isAside ? nil : { linking = MessageRef(conversationID: conversation.id, messageID: message.id) },
                                editDiagram: thread.state == .idle ? { thread.replaceDiagram(in: message.id, from: $0, to: $1) } : nil,
                                openDocument: message.isDocument ? { openDocument(message.id) } : nil)
+                    // Only under the last answer: taking an older one would redo the chat from there.
+                    if let offer = message.offer, message.id == conversation.messages.last?.id, thread.state == .idle {
+                        OfferButton(offer: offer, take: { level in offer == .web ? searchWeb(message.id) : deepResearch(message.id, level) })
+                    }
                 }
             }
             ChatStatus(thread: thread)
             Color.clear.frame(height: 1).id(Self.end)
         }
+    }
+}
+
+/// The friend's offer under its answer (M32): the web, or deep research (a tap: the composer's effort; the menu:
+/// another).
+struct OfferButton: View {
+    let offer: ChatMessage.Offer
+    let take: (ResearchEffort?) -> Void
+
+    var body: some View {
+        Group {
+            switch offer {
+            case .web:
+                Button { take(nil) } label: { Label("Search the web for this", systemImage: "globe") }
+            case .research:
+                Menu {
+                    ForEach(ResearchEffort.allCases) { level in
+                        Button("\(level.title) · \(level.estimate)") { take(level) }
+                    }
+                } label: {
+                    Label("Deep research this", systemImage: "binoculars")
+                } primaryAction: { take(nil) }
+                .fixedSize()
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 }
 

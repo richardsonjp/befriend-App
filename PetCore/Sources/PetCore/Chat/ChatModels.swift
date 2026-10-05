@@ -158,6 +158,22 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
     public var links: [MessageRef]?
     /// The plan and sources of a research report (M28).
     public var research: ResearchLog?
+    /// A button under the friend's answer (M32): search the web for the question, or research it in depth.
+    public var offer: Offer?
+
+    public enum Offer: String, Codable, Sendable {
+        case web, research
+
+        /// What the router's pick offers: the web only when the toggle is off (it's never searched unasked), and
+        /// research always (it's long and online, so it waits for a tap).
+        static func after(_ action: ChatRouter.Action, web: Bool) -> Offer? {
+            switch action {
+            case .web: web ? nil : .web
+            case .research: .research
+            default: nil
+            }
+        }
+    }
 
     public init(id: UUID = UUID(), role: Role, text: String, sources: [ChatSource] = [], date: Date = .now, aside: Bool = false,
                 files: [ChatFile]? = nil) {
@@ -177,6 +193,7 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
         var copy = ChatMessage(id: id, role: role, text: text, sources: sources, date: date, aside: isAside, files: files)
         copy.links = links
         copy.research = research
+        copy.offer = offer
         return copy
     }
 
