@@ -16,10 +16,10 @@ struct ResearchTests {
     }
 
     @Test func reportFilesOnlyWhenAsked() {
-        #expect(ChatThread.requestedReportFormats("antartech.co").isEmpty)
-        #expect(ChatThread.requestedReportFormats("antartech.co and make it a pdf") == [.pdf])
-        #expect(ChatThread.requestedReportFormats("the EV market, export as markdown") == [.md])
-        #expect(ChatThread.requestedReportFormats("antartech.co especially their line of work. make them into a pdf and md fiile") == [.pdf, .md])
+        #expect(TeamEngine.requestedReportFormats("antartech.co").isEmpty)
+        #expect(TeamEngine.requestedReportFormats("antartech.co and make it a pdf") == [.pdf])
+        #expect(TeamEngine.requestedReportFormats("the EV market, export as markdown") == [.md])
+        #expect(TeamEngine.requestedReportFormats("antartech.co especially their line of work. make them into a pdf and md fiile") == [.pdf, .md])
         #expect(TeamEngine.withoutFileRequest("antartech.co especially their line of work. make them into a pdf and md fiile")
                 == "antartech.co especially their line of work")
         #expect(TeamEngine.withoutFileRequest("the EV market, export as markdown") == "the EV market")

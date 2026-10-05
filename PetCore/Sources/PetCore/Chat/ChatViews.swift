@@ -185,7 +185,7 @@ struct ChatScreen: View {
             .safeAreaInset(edge: .bottom) { composer }
             .navigationTitle(thread.conversation.title)
             .toolbar {
-                ToolbarItem { ContextMeter(used: thread.contextUsed, total: thread.contextSize) }
+                ToolbarItem { ContextMeter(used: thread.contextUsed, total: thread.contextSize, agents: thread.conversation.contextAgents ?? []) }
             }
             .sheet(item: $shownSource) { PassageSheet(source: $0) }
             .sheet(item: $linking) { LinkPicker(library: library, from: $0) }
@@ -632,6 +632,8 @@ struct SummaryDivider: View {
 struct ContextMeter: View {
     let used: Int
     let total: Int
+    /// A turn of many agents (M36): each has its own window, and `used` is the fullest.
+    var agents: [AgentUse] = []
     @State private var explaining = false
 
     var body: some View {
@@ -645,23 +647,42 @@ struct ContextMeter: View {
                         .rotationEffect(.degrees(-90))
                 }
                 .frame(width: 16, height: 16)
-                Text(label).font(.caption.monospacedDigit()).fixedSize() // never "2,3…"
+                Text(label + (agents.isEmpty ? "" : " · \(agents.count) agents")).font(.caption.monospacedDigit()).fixedSize() // never "2,3…"
             }
         }
         .buttonStyle(.plain)
-        .help("Context used by the last answer: instructions, passages, conversation and answer")
+        .help(agents.isEmpty ? "Context used by the last answer: instructions, passages, conversation and answer"
+              : "The last turn's \(agents.count) agents each had their own window; this is the fullest")
         .popover(isPresented: $explaining) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(used.formatted()) of \(total.formatted()) tokens").font(.headline.monospacedDigit())
-                Text("How much of the on-device model's memory the last answer used: instructions, file passages, the conversation and the answer. Near full, older messages get summarised.")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if agents.isEmpty {
+                    Text("How much of the on-device model's memory the last answer used: instructions, file passages, the conversation and the answer. Near full, older messages get summarised.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("The last turn was a team of \(agents.count) agents, each with its own \(total.formatted())-token window. The fullest is shown above.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(agents.enumerated()), id: \.offset) { _, agent in
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(agent.name).font(.caption).lineLimit(1)
+                                    Spacer(minLength: 8)
+                                    Text(agent.tokens.formatted()).font(.caption.monospacedDigit())
+                                        .foregroundStyle(color(total > 0 ? Double(agent.tokens) / Double(total) : 0))
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 220)
+                }
             }
             .padding()
             .frame(width: 280)
             .presentationCompactAdaptation(.popover)
         }
         .accessibilityLabel("Context used")
-        .accessibilityValue("\(used) of \(total) tokens")
+        .accessibilityValue("\(used) of \(total) tokens" + (agents.isEmpty ? "" : ", the fullest of \(agents.count) agents"))
     }
 
     /// The Mac has room for "2,310 / 4,096"; the iPhone's toolbar gets "2.3k/4.1k".

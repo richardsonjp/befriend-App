@@ -38,6 +38,12 @@ public nonisolated enum ContextBudget {
         return estimate(instructions)
     }
 
+    /// One agent's session: its instructions, prompt and answer.
+    static func use(_ name: String, instructions: String, prompt: String, answer: String, model: SystemLanguageModel) async -> AgentUse {
+        let tokens = await tokens(instructions: instructions, model: model) + tokens(prompt, model: model) + tokens(answer, model: model)
+        return AgentUse(name: name, tokens: tokens)
+    }
+
     static func estimate(_ text: String) -> Int {
         max(1, Int((Double(text.count) / fallbackCharactersPerToken).rounded(.up)))
     }

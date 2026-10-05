@@ -101,7 +101,7 @@ public final class ChatThread {
                 await answer(request)
             case .research?:
                 let split = ResearchIntent.split(invocation?.argument ?? "")
-                await runResearch(split.topic, effort: split.effort ?? researchEffort)
+                await runTeam(split.topic, effort: split.effort ?? researchEffort)
             case .diagram?:
                 await makeDiagram(request: invocation?.argument ?? "", web: web)
             case .web?:
@@ -116,7 +116,7 @@ public final class ChatThread {
                 case .diagram: return await makeDiagram(request: question, web: web)
                 case .file(let format): return await makeFile(format, request: question, instructions: nil, web: web)
                 case .reformat: return await reformat(question)
-                case .team: return await runTeam(question, web: web)
+                case .team: return await runTeam(question, effort: nil, web: web)
                 case .answer, .web, .research: break
                 }
                 await browse(for: question, web: web)
@@ -139,7 +139,7 @@ public final class ChatThread {
         state = .making("Looking…")
         turn = Task {
             defer { if !Task.isCancelled { state = .idle } }
-            var text = ""
+            var text = "", asked = ""
             do {
                 let read = try await ScreenExplainer.read(png)
                 let glance = try await ScreenExplainer.glance(read, origin: origin, model: model)
@@ -160,8 +160,8 @@ public final class ChatThread {
                 state = .answering("")
                 // Capped (M36): an explanation once ran on for 1,700 words.
                 let options = GenerationOptions(maximumResponseTokens: ContextBudget.explainCeiling)
-                for try await snapshot in session.streamResponse(to: ScreenExplainer.prompt(glance, read: read, web: found, origin: origin),
-                                                                 options: options) {
+                asked = ScreenExplainer.prompt(glance, read: read, web: found, origin: origin)
+                for try await snapshot in session.streamResponse(to: asked, options: options) {
                     guard !Task.isCancelled else { break }
                     text = snapshot.content
                     state = .answering(text)
@@ -174,6 +174,7 @@ public final class ChatThread {
             }
             guard !text.isEmpty else { return }
             conversation.messages.append(ChatMessage(role: .friend, text: text))
+            meter([AgentUse(name: "Explain", tokens: await count(instructions: ScreenExplainer.instructions, prompt: asked, answer: text))])
             library.save(conversation)
         }
     }
@@ -203,55 +204,33 @@ public final class ChatThread {
         conversation.messages.append(message)
         library.save(conversation)
         state = .researching
-        turn = Task { await runResearch(topic, effort: effort) }
+        turn = Task { await runTeam(topic, effort: effort) }
     }
 
-    private func runResearch(_ request: String, effort: ResearchEffort) async {
+    /// The team engine (M34): a quick answer (`effort` nil; a web task with the web off becomes the web offer), or
+    /// deep research at that effort (a report, with file copies when the request asks). Live steps show either way.
+    private func runTeam(_ request: String, effort: ResearchEffort?, web: Bool = true) async {
         state = .researching
         // "… make them into a pdf and md file" is about the output, not the topic.
-        let topic = TeamEngine.withoutFileRequest(request)
-        let engine = TeamEngine(topic: topic, effort: effort, model: model, library: library, conversation: conversation) { [weak self] log in
-            self?.research = log
-        }
-        do {
-            let result = try await engine.report()
-            guard !Task.isCancelled else { return }
-            // The report lives in the chat; file copies only when the request asked for them.
-            let title = "Research – " + TeamEngine.title(TeamEngine.cleanTopic(topic))
-            var files: [ChatFile] = []
-            for format in Self.requestedReportFormats(request) {
-                let data = switch format {
-                case .md: ChatFileWriter.markdown(result.report)
-                case .txt: ChatFileWriter.text(result.report)
-                default: await ChatFileWriter.document(result.report, title: title, format: format)
-                }
-                files.append(ChatFile(name: ChatFileMaker.fileName(title, format), format: format, data: data))
-            }
-            var reply = ChatMessage(role: .friend, text: result.report, sources: result.sources, files: files.isEmpty ? nil : files)
-            reply.research = result.log
-            research = nil
-            finishTurn(reply)
-        } catch {
-            research = nil
-            guard !Task.isCancelled else { return }
-            failure = Self.message(for: error)
-            state = .idle
-        }
-    }
-
-    /// A team of agents for a question with several parts or sources (M34): the live steps show as research's do,
-    /// and the answer keeps them as "How I worked this out". A web task with the web off becomes the web offer.
-    private func runTeam(_ question: String, web: Bool) async {
-        state = .researching
-        let engine = TeamEngine(topic: question, effort: nil, model: model, library: library, conversation: conversation,
+        let topic = effort == nil ? request : TeamEngine.withoutFileRequest(request)
+        let engine = TeamEngine(topic: topic, effort: effort, model: model, library: library, conversation: conversation,
                                 chatInstructions: instructions) { [weak self] log in self?.research = log }
         do {
-            let result = try await engine.answer(web: web)
+            var reply: ChatMessage
+            if effort != nil {
+                let result = try await engine.report()
+                reply = ChatMessage(role: .friend, text: result.report, sources: result.sources,
+                                    files: await TeamEngine.reportFiles(result.report, topic: topic, request: request))
+                reply.research = result.log
+            } else {
+                let result = try await engine.answer(web: web)
+                reply = ChatMessage(role: .friend, text: result.answer, sources: result.sources)
+                reply.research = result.log
+                reply.offer = result.wantedWeb ? .web : nil
+            }
             guard !Task.isCancelled else { return }
-            var reply = ChatMessage(role: .friend, text: result.answer, sources: result.sources)
-            reply.research = result.log
-            reply.offer = result.wantedWeb ? .web : nil
             research = nil
+            meter(engine.uses)
             finishTurn(reply)
         } catch {
             research = nil
@@ -259,14 +238,6 @@ public final class ChatThread {
             failure = Self.message(for: error)
             state = .idle
         }
-    }
-
-    /// "… make them into a pdf and md file": every format a research request asks its report in.
-    nonisolated static func requestedReportFormats(_ request: String) -> [ChatFileFormat] {
-        let lower = request.lowercased()
-        let patterns: [(String, ChatFileFormat)] = [(#"\bpdfs?\b"#, .pdf), (#"\b(markdown|md)\b|\.md\b"#, .md),
-                                                    (#"\bhtml\b|\bweb ?page\b"#, .html), (#"\b(txt|text file|plain text)\b"#, .txt)]
-        return patterns.filter { lower.range(of: $0.0, options: .regularExpression) != nil }.map(\.1)
     }
 
     /// A message from the app itself (/help, /files): shown, never used as context.
@@ -284,6 +255,7 @@ public final class ChatThread {
         conversation.summary = nil
         conversation.summarizedCount = 0
         conversation.contextUsed = nil
+        conversation.contextAgents = nil
         library.save(conversation)
     }
 
@@ -477,6 +449,7 @@ public final class ChatThread {
             conversation.summarizedCount = 0
         }
         conversation.contextUsed = nil
+        conversation.contextAgents = nil
         send(text, web: web)
     }
 
@@ -670,11 +643,17 @@ public final class ChatThread {
         var reply = ChatMessage(role: .friend, text: text, sources: ChatSource.merged(fitted.parts.passages.map(\.source)) + recalled)
         reply.offer = offer
         conversation.messages.append(reply)
-        conversation.contextUsed = await count(instructions: instructions, prompt: prompt, answer: text)
+        meter([AgentUse(name: "Answer", tokens: await count(instructions: instructions, prompt: prompt, answer: text))])
         library.save(conversation)
     }
 
     static let cutOff = "Cut off: that was more than I can write at once."
+
+    /// The meter after a turn (M36): one agent's use, or the fullest of many and each one's.
+    private func meter(_ uses: [AgentUse]) {
+        conversation.contextUsed = uses.map(\.tokens).max()
+        conversation.contextAgents = uses.count > 1 ? uses : nil
+    }
 
     /// Streams the answer into `state`. Nil when nothing was written (`failure` says why); stopped, or out of room
     /// after some text (with the cut-off notice), keeps what was written.
@@ -714,6 +693,7 @@ public final class ChatThread {
         let cap = ContextBudget.cap(used: fixed + pasted, contextSize: contextSize, ceiling: contextSize)
         guard let text = await stream(question, in: session, cap: cap) else { return }
         conversation.messages.append(ChatMessage(role: .friend, text: text))
+        meter([AgentUse(name: "Reformat", tokens: await count(instructions: Reformatter.taskInstructions, prompt: question, answer: text))])
         library.save(conversation)
     }
 

@@ -68,10 +68,14 @@ struct TeamRunTests {
         let result = try await engine.answer(web: false)
         print("TEAM took", ContinuousClock.now - start, "steps:", result.log.steps.map(\.question))
         #expect(!result.answer.isEmpty)
-        #expect(result.answer.contains("Ubud") || result.answer.contains("Seminyak"), "it answers what was asked")
+        #expect(result.answer.contains("Ubud") || result.answer.contains("Seminyak"), "it answers what was asked: \(result.answer)")
         #expect((1...TeamEngine.maxTasks).contains(result.log.steps.count) && result.log.steps.allSatisfy(\.done))
         #expect(result.log.isTeam && result.log.finishedAt != nil)
         #expect(!result.log.steps.contains { $0.question.hasPrefix("Web") }, "the web is off")
+        // Every agent's own window, for the meter (M36): the lead, each task, the writer, the checker.
+        #expect(engine.uses.first?.name == "Lead" && engine.uses.contains { $0.name.hasPrefix("Writer") })
+        #expect(engine.uses.count >= result.log.steps.count + 2)
+        #expect(engine.uses.allSatisfy { $0.tokens > 0 && $0.tokens <= model.contextSize }, "\(engine.uses)")
     }
 
     /// Files are read from the shared pool, as research reads: facts with their source, a chip for the file.

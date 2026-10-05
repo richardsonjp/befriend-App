@@ -67,4 +67,13 @@ struct ContextBudgetTests {
         #expect(fitted.droppedRecent && fitted.parts.recent.count >= 1)
         #expect(ContextBudget.cap(used: fixed + real, contextSize: model.contextSize, ceiling: ContextBudget.answerCeiling) >= ContextBudget.answerFloor - ContextBudget.margin)
     }
+
+    @Test func oldChatsLoadAndTeamsRecordEachAgent() throws {
+        var conversation = Conversation()
+        conversation.contextUsed = 2_100
+        let old = try JSONDecoder().decode(Conversation.self, from: JSONEncoder().encode(conversation))
+        #expect(old.contextUsed == 2_100 && old.contextAgents == nil)
+        conversation.contextAgents = [AgentUse(name: "Lead", tokens: 400), AgentUse(name: "Writer", tokens: 2_900)]
+        #expect(try JSONDecoder().decode(Conversation.self, from: JSONEncoder().encode(conversation)).contextAgents?.count == 2)
+    }
 }

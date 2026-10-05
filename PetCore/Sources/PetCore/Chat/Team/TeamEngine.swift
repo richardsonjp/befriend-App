@@ -104,6 +104,8 @@ final class TeamEngine {
     var siteHome: SitePage?
     /// What a fact from someone else's page must name to count: the topic's exact terms and the site's own name.
     var subjectNames: [String] = []
+    /// Every agent's session this turn, for the context meter (M36).
+    private(set) var uses: [AgentUse] = []
     private let writerInstructions: String
     /// The last two messages before the question, for every agent: "given my budget" means the one said earlier.
     private let recent: String
@@ -122,6 +124,10 @@ final class TeamEngine {
         var log = ResearchLog(topic: topic, effort: effort ?? .low)
         log.team = effort == nil ? true : nil
         self.log = log
+    }
+
+    func record(_ name: String, _ instructions: String, _ prompt: String, _ answer: String) async {
+        uses.append(await ContextBudget.use(name, instructions: instructions, prompt: prompt, answer: answer, model: model))
     }
 
     func status(_ text: String) {
@@ -199,6 +205,7 @@ final class TeamEngine {
         let prompt = earlier + "Available helpers: \(available)\n\nQuestion: \(question)"
         let session = LanguageModelSession(model: model, instructions: Self.leadInstructions)
         guard let plan = try? await session.respond(to: prompt, generating: Plan.self).content else { return [] }
+        await record("Lead", Self.leadInstructions, prompt, plan.tasks.map { "\($0.worker.rawValue): \($0.ask)" }.joined(separator: "\n"))
         return plan.tasks.map { TeamTask(worker: TeamWorker(rawValue: $0.worker.rawValue) ?? .reasoning, ask: $0.ask) }
     }
 
@@ -239,6 +246,7 @@ final class TeamEngine {
         let session = LanguageModelSession(model: model, instructions: instructions)
         let note = (try? await session.respond(to: prompt(), options: GenerationOptions(maximumResponseTokens: Self.noteTokens)).content)
             ?? Self.nothingNoted
+        await record("\(task.worker.label): \(task.ask)", instructions, prompt(), note)
         return Self.trimmed(note)
     }
 
@@ -298,13 +306,16 @@ final class TeamEngine {
         let options = GenerationOptions(maximumResponseTokens: ContextBudget.cap(used: used, contextSize: model.contextSize,
                                                                                  ceiling: ContextBudget.writerCeiling))
         let session = LanguageModelSession(model: model, instructions: writerInstructions)
-        return try await session.respond(to: prompt, options: options).content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let answer = try await session.respond(to: prompt, options: options).content.trimmingCharacters(in: .whitespacesAndNewlines)
+        await record(fix == nil ? "Writer" : "Writer (fixing)", writerInstructions, prompt, answer)
+        return answer
     }
 
     private func check(_ answer: String, notes: String) async -> [String] {
         let session = LanguageModelSession(model: model, instructions: Self.answerCheckInstructions)
         let prompt = "Notes:\n\(notes)\n\nAnswer:\n\(answer)"
         let flagged = (try? await session.respond(to: prompt, generating: Check.self).content.unsupported) ?? []
+        await record("Checker", Self.answerCheckInstructions, prompt, flagged.joined(separator: "\n"))
         return flagged.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     }
 }

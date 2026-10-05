@@ -220,6 +220,12 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
     }
 }
 
+/// One agent's share of a turn (M36): what it was, and the tokens its session used of its 4K.
+public nonisolated struct AgentUse: Codable, Equatable, Sendable {
+    public let name: String
+    public let tokens: Int
+}
+
 public nonisolated struct Conversation: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let createdAt: Date
@@ -227,8 +233,11 @@ public nonisolated struct Conversation: Codable, Equatable, Identifiable, Sendab
     /// What the model remembers of the messages before `summarizedCount`, which it no longer sees.
     public var summary: String?
     public var summarizedCount = 0
-    /// Tokens the last exchange used (instructions, prompt and answer), for the context meter.
+    /// Tokens the last exchange used (instructions, prompt and answer), for the context meter. For a turn of many
+    /// agents (M36), the fullest agent's.
     public var contextUsed: Int?
+    /// A turn of many agents: each one's use (its own 4K). Nil for a single answer.
+    public var contextAgents: [AgentUse]?
     /// Last changed on any device, for sync (the newer copy wins).
     public var modifiedAt: Date?
 

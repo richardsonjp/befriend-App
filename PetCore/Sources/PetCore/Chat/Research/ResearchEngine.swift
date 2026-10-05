@@ -188,6 +188,7 @@ extension TeamEngine {
         guard let schema = try? GenerationSchema(root: root, dependencies: []),
               let content = try? await session.respond(to: prompt, schema: schema).content,
               let questions = try? content.value([String].self, forProperty: "questions"), !questions.isEmpty else { return [topic] }
+        await record("Planner", Self.planInstructions, prompt, content.jsonString)
         return Array(questions.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.prefix(count))
     }
 
@@ -279,6 +280,7 @@ extension TeamEngine {
             let prompt = "Question: \(questions[question])\n\nPassages:\n\(excerpt)"
             if let content = try? await session.respond(to: prompt, schema: schema).content,
                let items = try? content.value([GeneratedContent].self, forProperty: "facts") {
+                await record("Reading: \(questions[question])", Self.noteInstructions, prompt, content.jsonString)
                 let allowed = Set(picked.map { chunks[$0].source })
                 for item in items {
                     guard let number = try? item.value(Int.self, forProperty: "source"), allowed.contains(number - 1),
@@ -325,6 +327,7 @@ extension TeamEngine {
             "Question: \(questions[index])\nKnown so far: " + notes.filter { $0.question == index }.map(\.fact).joined(separator: " ")
         }.joined(separator: "\n\n")
         let text = (try? await session.respond(to: prompt).content) ?? ""
+        await record("Gap finder", Self.gapInstructions, prompt, text)
         return Array(ChatPrompt.queries(from: text).prefix(thin.count))
     }
 
@@ -336,8 +339,9 @@ extension TeamEngine {
         guard notes.count >= Self.minimumFacts, !points.isEmpty else { return Self.nothingFound }
         let facts = notes.prefix(14).map { "[\($0.source + 1)] \($0.fact)" }.joined(separator: "\n")
         let session = LanguageModelSession(model: model, instructions: Self.sectionInstructions)
-        let written = (try? await session.respond(to: "Question: \(question)\n\nFacts:\n\(facts)",
-                                                  options: GenerationOptions(maximumResponseTokens: 300)).content) ?? ""
+        let prompt = "Question: \(question)\n\nFacts:\n\(facts)"
+        let written = (try? await session.respond(to: prompt, options: GenerationOptions(maximumResponseTokens: 300)).content) ?? ""
+        await record("Writing: \(question)", Self.sectionInstructions, prompt, written)
         var paragraph = Self.grounded(Self.citationsLast(Self.cleanSection(written)), in: notes.map(\.fact).joined(separator: " "))
         if paragraph.split(whereSeparator: \.isWhitespace).count < 12 { paragraph = "" } // a refusal or filler
         let said = Retriever.keywords(paragraph)
@@ -497,9 +501,11 @@ extension TeamEngine {
         ])
         let list = shown.enumerated().map { "\($0.offset + 1). \($0.element.fact)" }.joined(separator: "\n")
         let session = LanguageModelSession(model: model, instructions: Self.checkInstructions)
+        let prompt = "Question: \(question)\n\nFacts:\n\(list)"
         guard let schema = try? GenerationSchema(root: root, dependencies: []),
-              let content = try? await session.respond(to: "Question: \(question)\n\nFacts:\n\(list)", schema: schema).content,
-              let numbers = try? content.value([Int].self, forProperty: "answers") else { return notes }
+              let content = try? await session.respond(to: prompt, schema: schema).content else { return notes }
+        await record("Checking: \(question)", Self.checkInstructions, prompt, content.jsonString)
+        guard let numbers = try? content.value([Int].self, forProperty: "answers") else { return notes }
         return shown.indices.filter { numbers.contains($0 + 1) }.map { shown[$0] }
     }
 
@@ -557,6 +563,7 @@ extension TeamEngine {
         if ChatPrompt.estimate(body) > 2400 { body = String(body.prefix(7200)) }
         let session = LanguageModelSession(model: model, instructions: Self.summaryInstructions)
         let text = (try? await session.respond(to: "Topic: \(topic)\n\n\(body)", options: GenerationOptions(maximumResponseTokens: 450)).content) ?? ""
+        await record("Summary", Self.summaryInstructions, "Topic: \(topic)\n\n\(body)", text)
         let facts = sections.map(\.1).joined(separator: " ")
         let lines = String(decoding: ChatFileWriter.markdown(text), as: UTF8.self).components(separatedBy: "\n").map { line in
             let bullet = line.hasPrefix("- ") || line.hasPrefix("* ")
@@ -650,6 +657,29 @@ extension TeamEngine {
             ChatSource(documentName: "[\(index + 1)] \(source.title)", kind: source.url == nil ? .text : .web, locator: .none,
                        text: String(texts[index].prefix(3000)), url: source.url)
         }
+    }
+
+    /// The report as files, when the request asked for them ("… make it a pdf"); nil otherwise (it lives in the chat).
+    static func reportFiles(_ report: String, topic: String, request: String) async -> [ChatFile]? {
+        let title = "Research – " + Self.title(Self.cleanTopic(topic))
+        var files: [ChatFile] = []
+        for format in requestedReportFormats(request) {
+            let data = switch format {
+            case .md: ChatFileWriter.markdown(report)
+            case .txt: ChatFileWriter.text(report)
+            default: await ChatFileWriter.document(report, title: title, format: format)
+            }
+            files.append(ChatFile(name: ChatFileMaker.fileName(title, format), format: format, data: data))
+        }
+        return files.isEmpty ? nil : files
+    }
+
+    /// "… make them into a pdf and md file": every format a research request asks its report in.
+    nonisolated static func requestedReportFormats(_ request: String) -> [ChatFileFormat] {
+        let lower = request.lowercased()
+        let patterns: [(String, ChatFileFormat)] = [(#"\bpdfs?\b"#, .pdf), (#"\b(markdown|md)\b|\.md\b"#, .md),
+                                                    (#"\bhtml\b|\bweb ?page\b"#, .html), (#"\b(txt|text file|plain text)\b"#, .txt)]
+        return patterns.filter { lower.range(of: $0.0, options: .regularExpression) != nil }.map(\.1)
     }
 
     static func title(_ topic: String) -> String {
