@@ -113,6 +113,9 @@ public final class ChatThread {
                 case .clarify: return clarify()
                 case .diagram: return await makeDiagram(request: question, web: web)
                 case .file(let format): return await makeFile(format, request: question, instructions: nil, web: web)
+                case .reformat:
+                    // ponytail: only what code repairs (JSON) for now; the rest is answered as before (M33 C).
+                    if let reply = Reformatter.byCode(question) { return finishTurn(ChatMessage(role: .friend, text: reply)) }
                 case .answer, .web, .research: break
                 }
                 await browse(for: question, web: web)
