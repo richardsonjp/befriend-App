@@ -142,22 +142,18 @@ final class ResearchEngine {
             // What others say: the organisation's own name (from its home page title), not just its address.
             if let name = pages.first.map({ Self.organisation($0.source.title) }), !name.isEmpty {
                 subjectNames.append(name.lowercased())
-                for query in ["\(name)", "\(name) reviews", "\(name) company profile"] {
-                    status("Searching what others say: \(query)")
-                    await search(query, terms: terms + [name.lowercased()], limit: 2, external: site)
-                    try Task.checkCancellation()
-                }
+                status("Searching what others say about \(name)…")
+                await searchAll(["\(name)", "\(name) reviews", "\(name) company profile"], terms: terms + [name.lowercased()],
+                                limit: 2, external: site)
+                try Task.checkCancellation()
             }
         }
         addOwnMaterial(topic: topic, questions: questions)
         try Task.checkCancellation()
         let perQuestion = max(1, depth.pages / max(1, questions.count))
-        for (index, question) in questions.enumerated() {
-            status("Searching: \(question)")
-            await search(question, terms: terms, limit: perQuestion)
-            _ = index
-            try Task.checkCancellation()
-        }
+        status(questions.count > 1 ? "Searching the web for \(questions.count) questions at once…" : "Searching the web…")
+        await searchAll(questions, terms: terms, limit: perQuestion)
+        try Task.checkCancellation()
 
         // 3. For each question, read the passages closest to it across every source.
         try await readAll(questions: questions)
@@ -168,10 +164,8 @@ final class ResearchEngine {
             let gaps = await findGaps(questions: questions, thin: thin)
             guard !gaps.isEmpty else { break }
             status("Filling gaps (round \(round + 1))…")
-            for gap in gaps {
-                await search(gap, terms: terms, limit: 2)
-                try Task.checkCancellation()
-            }
+            await searchAll(gaps, terms: terms, limit: 2)
+            try Task.checkCancellation()
             try await readAll(questions: questions, only: thin)
         }
 
@@ -246,15 +240,36 @@ final class ResearchEngine {
         // ("$500,000 funding") came back as a "source". Add them back only as clearly-marked context if asked.
     }
 
+    /// Searches for every question at once (M32): the network is the slow part, and it runs in parallel even with
+    /// one local model. Pages are added in the order asked, so the report doesn't depend on which search answered first.
     /// `external`: leave out pages of this site (looking for what others say).
-    private func search(_ question: String, terms: [String], limit: Int, external: URL? = nil) async {
+    /// ponytail: no cap beyond the effort's question count; add one if the search API starts rate-limiting.
+    private func searchAll(_ questions: [String], terms: [String], limit: Int, external: URL? = nil) async {
+        let found = await Self.inOrder(questions) { await Self.found($0, terms: terms, external: external) }
+        for sources in found {
+            for source in sources.prefix(limit) { add(source.title, source.url, "web", source.text) }
+        }
+    }
+
+    nonisolated static func found(_ question: String, terms: [String], external: URL?) async -> [WebSource] {
         let queries = external == nil ? ChatPrompt.searchQueries(model: [question], terms: terms, question: question) : [question]
         var found = (try? await WebSearch.search(objective: question, queries: queries)) ?? []
         if !terms.isEmpty { found = found.filter { ExactTerms.mentions($0.title + " " + $0.text, terms) } }
         if let external, let host = external.host()?.replacingOccurrences(of: "www.", with: "") {
             found = found.filter { $0.site != host }
         }
-        for source in WebSource.distinct(found).prefix(limit) { add(source.title, source.url, "web", source.text) }
+        return WebSource.distinct(found)
+    }
+
+    /// `work` on every item at once; the results in the items' order.
+    nonisolated static func inOrder<Item: Sendable, Result: Sendable>(_ items: [Item],
+                                                                      _ work: @escaping @Sendable (Item) async -> Result) async -> [Result] {
+        await withTaskGroup(of: (Int, Result).self) { group in
+            for (index, item) in items.enumerated() { group.addTask { (index, await work(item)) } }
+            var results = [Result?](repeating: nil, count: items.count)
+            for await (index, result) in group { results[index] = result }
+            return results.compactMap { $0 }
+        }
     }
 
     /// One question at a time: the passages closest to it from every source (meaning plus shared words), and

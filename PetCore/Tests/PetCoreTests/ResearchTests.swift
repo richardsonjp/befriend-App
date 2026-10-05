@@ -193,3 +193,24 @@ extension ChatDocumentTests {
         #expect(!String(decoding: output.html, as: UTF8.self).contains("padding-top"))
     }
 }
+
+struct ResearchSearchOrderTests {
+    actor InFlight {
+        var now = 0, peak = 0
+        func enter() { now += 1; peak = max(peak, now) }
+        func leave() { now -= 1 }
+    }
+
+    /// Searches run at once, but pages come back in the order asked: the first finishing last changes nothing.
+    @Test func searchesRunAtOnceAndKeepTheirOrder() async {
+        let inFlight = InFlight()
+        let results = await ResearchEngine.inOrder([3, 2, 1]) { delay in
+            await inFlight.enter()
+            try? await Task.sleep(for: .milliseconds(100 * delay))
+            await inFlight.leave()
+            return delay
+        }
+        #expect(results == [3, 2, 1])
+        #expect(await inFlight.peak == 3, "at once, not one after another")
+    }
+}
