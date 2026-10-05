@@ -24,6 +24,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var calibrationWindow: NSWindow?
     private var framingWindow: NSWindow?
     private var chatWindow: NSWindow?
+    private var modelsWindow: NSWindow?
 
     init(controller: MacController) {
         self.controller = controller
@@ -106,6 +107,22 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         NSApp.activate()
         chatWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Which model chat, explain and research use (M37): Apple's, or the user's own through 9Router.
+    @objc private func showModels() {
+        popover.performClose(nil)
+        if modelsWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 560),
+                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.title = "Models"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: ModelSettingsView())
+            window.center()
+            modelsWindow = window
+        }
+        NSApp.activate()
+        modelsWindow?.makeKeyAndOrderFront(nil)
     }
 
     /// Posture calibration in its own window: a transient popover can't host a sheet.
@@ -226,6 +243,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             }
             menu.addItem(.separator())
             menu.addItem(NSMenuItem(title: "Chat…", action: #selector(showChat), keyEquivalent: "").targeted(self))
+            menu.addItem(NSMenuItem(title: "Models…", action: #selector(showModels), keyEquivalent: "").targeted(self))
             menu.addItem(skinMenu())
             // Home is the menu bar icon: send the friend in, or let it back out.
             if controller.walker.isInside {
