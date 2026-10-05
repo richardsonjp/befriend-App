@@ -25,8 +25,9 @@ let package = Package(
             dependencies: [
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
-            // pixel-cat.zip is built from skins/pixel-cat; mermaid.min.js is mermaid 11.17.2 (MIT), for chat diagrams offline.
-            resources: [.copy("Resources/pixel-cat.zip"), .copy("Resources/mermaid.min.js")],
+            // pixel-cat.zip is built from skins/pixel-cat; mermaid.min.js is mermaid 11.17.2 (MIT), for chat diagrams offline;
+            // asd-ste100 is github.com/danyuchn/asd-ste100-skill (MIT), verbatim, for explanations on the user's own model.
+            resources: [.copy("Resources/pixel-cat.zip"), .copy("Resources/mermaid.min.js"), .copy("Resources/asd-ste100")],
             swiftSettings: settings
         ),
         // Developer tool, not shipped: answers `apiserver harvest inputs` with the on-device model to build

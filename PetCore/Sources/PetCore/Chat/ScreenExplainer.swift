@@ -122,17 +122,50 @@ public nonisolated enum ScreenExplainer {
     /// Said with the screenshot itself, for models that see images: the read text is then a help, not all there is.
     static let imageNote = "You also get the screenshot itself: explain from what you see; the read text helps with exact words."
 
+    /// The ASD-STE100 skill (github.com/danyuchn/asd-ste100-skill, MIT), bundled verbatim with its licence: its main
+    /// file and its rules summary. A big model reads all of it; the on-device one gets the short version above.
+    static let steSkill: String = {
+        let folder = Bundle.module.url(forResource: "asd-ste100", withExtension: nil)
+        let parts = ["SKILL.md", "writing-rules.md"].compactMap { name in
+            folder.flatMap { try? String(contentsOf: $0.appending(path: name), encoding: .utf8) }
+        }
+        return parts.joined(separator: "\n\n---\n\n")
+    }()
+
+    /// On the user's own model the explanation is full, not a summary (M39): every section in depth, written by the
+    /// whole STE skill. No word limit and no cap on the answer: a big model has the room.
+    static var fullInstructions: String {
+        """
+        You explain a part of the user's screen they captured. You get the text read from it, a few labels for what \
+        it shows, the app or website it was taken from when known, and the screenshot itself when you can see images. \
+        Explain it fully, for a reader who has never seen it: say what it is, then go through each section given in \
+        depth. Say what each part means, why it matters, and what to do about it, with concrete steps and examples \
+        taken from the screenshot. Do not summarize and do not skip parts. Use Markdown: a ## heading for each \
+        section, bullets, and numbered lists for steps. If something is unclear, say what is unclear and what would \
+        resolve it.
+
+        Write every sentence by the ASD-STE100 skill below, in its STE-flavored mode: apply its structural rules in \
+        full and its lexical rules as advisory. The skill is written for rewriting text that someone gives you. Here you \
+        apply its rules to your own explanation, so ignore its Process, Output Format, linter script and rule-table \
+        parts. Remember its rule that cutting words is not the goal: stop when a sentence is clear, not when it is short.
+
+        <skill name="asd-ste100">
+        \(steSkill)
+        </skill>
+        """
+    }
+
     /// The same question on a 9Router model, with the screenshot when the model sees images.
     public static func glance(_ read: String, origin: Origin?, image: Data?, on chosen: ChosenModel) async throws -> Glance {
         try await NineRouter(chosen.config).respond([.init(.user, glanceQuestion(read, origin: origin), image: image)],
                                                     model: chosen.name, generating: Glance.self)
     }
 
-    /// The explanation as it's written, capped (M36: one ran on for 1,700 words): on the user's 9Router model when
-    /// one is chosen, else on this Mac.
+    /// The explanation as it's written: on the user's 9Router model when one is chosen, in full; else on this Mac,
+    /// capped (M36: one ran on for 1,700 words).
     static func explanation(_ prompt: String, image: Data?, on chosen: ChosenModel?, model: SystemLanguageModel) -> AsyncThrowingStream<String, Error> {
         if let chosen {
-            return NineRouter(chosen.config).stream(messages(prompt, image: image), model: chosen.name, maxTokens: ContextBudget.explainCeiling)
+            return NineRouter(chosen.config).stream(messages(prompt, image: image), model: chosen.name) // no cap (M39)
         }
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -151,7 +184,7 @@ public nonisolated enum ScreenExplainer {
 
     /// The explanation's request on a 9Router model.
     static func messages(_ prompt: String, image: Data?) -> [NineRouter.Message] {
-        [.init(.system, instructions), .init(.user, prompt + (image == nil ? "" : "\n\n" + imageNote), image: image)]
+        [.init(.system, fullInstructions), .init(.user, prompt + (image == nil ? "" : "\n\n" + imageNote), image: image)]
     }
 
     /// The chat's title for it: "Screenshot · A Python TypeError on line 42".
