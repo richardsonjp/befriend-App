@@ -30,6 +30,10 @@ public nonisolated enum Reformatter {
     /// The friend's reply when code can do it, else nil (the model's turn).
     static func byCode(_ message: String) -> String? {
         let text = pasted(in: message)
+        if let (command, fixes) = CurlFormatter.repair(text) {
+            let what = fixes.isEmpty ? "Reformatted curl:" : "Fixed curl: " + fixes.joined(separator: ", ") + "."
+            return what + "\n\n```bash\n" + command + "\n```"
+        }
         guard looksLikeJSON(text, message: message), let start = text.firstIndex(where: { $0 == "{" || $0 == "[" }),
               let (json, fixes) = LenientJSON.repair(String(text[start...])) else { return nil } // the lead-in isn't a fix
         let what = fixes.isEmpty ? "Reformatted JSON (it was already valid):" : "Fixed JSON: " + fixes.joined(separator: ", ") + "."

@@ -75,7 +75,6 @@ struct ReformatterTests {
         #expect(reply.contains("```json\n{\n  \"a\": 1\n}\n```"))
         #expect(Reformatter.byCode("Reformat:\n```json\n[1,2,]\n```") != nil, "from a fenced block")
         #expect(Reformatter.byCode("tidy this python:\ndef f():\n    return [1, 2]") == nil, "code with brackets isn't JSON")
-        #expect(Reformatter.byCode("fix: curl -X POST https://x.io -d '{\"a\":1}'") == nil, "curl is its own")
         #expect(Reformatter.byCode("can you fix my code") == nil)
     }
 
@@ -89,5 +88,63 @@ struct ReformatterTests {
             if ChatRouter.action(route, for: message, check: .valid) != .reformat { misses.append("\(message) → \(String(describing: route))") }
         }
         #expect(misses.isEmpty, "\(misses)")
+    }
+}
+
+struct CurlFormatterTests {
+    /// What a real zsh makes of the command: `curl` swapped for printf, one argument a line (NUL-separated).
+    static func shellWords(_ command: String) throws -> [String] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-f", "-c", "TOKEN=abc; printf '%s\\0' " + command.dropFirst("curl".count)]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try process.run()
+        process.waitUntilExit()
+        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        return out.split(separator: "\0", omittingEmptySubsequences: false).dropLast().map(String.init)
+    }
+
+    @Test func fixesAChatMangledCurl() throws {
+        let mangled = """
+            here: curl –X POST “https://api.example.com/v1/items?a=1&b=2”
+            —header “Content-Type: application/json”
+            -H 'Authorization: Bearer x' —data '{name: "Ann", tags: ["a",], ok: True'
+            """
+        let (command, fixes) = try #require(CurlFormatter.repair(mangled))
+        #expect(fixes.contains("straightened smart quotes") && fixes.contains("fixed dashes") && fixes.contains("fixed the JSON body"))
+        #expect(command.hasPrefix("curl 'https://api.example.com/v1/items?a=1&b=2' \\\n  -X POST \\\n  --header 'Content-Type: application/json'"))
+        let words = try Self.shellWords(command)
+        #expect(words.prefix(3) == ["https://api.example.com/v1/items?a=1&b=2", "-X", "POST"])
+        let body = try #require(words.last)
+        let object = try JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any]
+        #expect(object?["name"] as? String == "Ann" && object?["ok"] as? Bool == true)
+        #expect(body.contains("\n  \"name\": \"Ann\""), "pretty body")
+    }
+
+    @Test func undoesWindowsAndPowerShell() throws {
+        let cmd = #"curl ^"https://x.io/a^" ^"#.appending("\n") + #"  -H ^"Accept: */*^" ^"#.appending("\n") + #"  --data-raw ^"^{^\^"a^\^":1^}^""#
+        let (command, fixes) = try #require(CurlFormatter.repair(cmd))
+        #expect(fixes.contains("converted from Windows cmd"))
+        #expect(try Self.shellWords(command) == ["https://x.io/a", "-H", "Accept: */*", "--data-raw", "{\n  \"a\": 1\n}"])
+        let powershell = "curl.exe https://x.io `\n  -H \"A: b\""
+        let (ps, psFixes) = try #require(CurlFormatter.repair(powershell))
+        #expect(psFixes.contains("converted from PowerShell"))
+        #expect(try Self.shellWords(ps) == ["https://x.io", "-H", "A: b"])
+    }
+
+    @Test func quotesStaySafeAndVariablesExpand() throws {
+        let (command, _) = try #require(CurlFormatter.repair(#"curl https://x.io -d "it's \"fine\"" -H "Authorization: Bearer $TOKEN""#))
+        #expect(try Self.shellWords(command) == ["https://x.io", "-d", #"it's "fine""#, "-H", "Authorization: Bearer abc"])
+        let (open, fixes) = try #require(CurlFormatter.repair("curl https://x.io -H 'A: b"))
+        #expect(fixes.contains("closed quotes left open"))
+        #expect(try Self.shellWords(open) == ["https://x.io", "-H", "A: b"])
+        #expect(CurlFormatter.repair("no command here") == nil)
+    }
+
+    @Test func reformatterRepliesWithBash() {
+        let reply = Reformatter.byCode("reformat this curl: curl -X POST https://x.io -d '{\"a\":1,}'")!
+        #expect(reply.hasPrefix("Fixed curl: fixed the JSON body."))
+        #expect(reply.contains("```bash\ncurl https://x.io \\\n  -X POST \\\n  -d '{\n  \"a\": 1\n}'\n```"))
     }
 }
