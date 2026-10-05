@@ -13,7 +13,7 @@ import FoundationModels
 public nonisolated enum ChatRouter {
     @Generable
     public enum Route: String, CaseIterable, Sendable {
-        case answer, web, research, team, diagram, reformat, unclear
+        case answer, web, research, team, diagram, reformat, code, unclear
         case csvFile, jsonFile, calendarFile, pdfFile, htmlFile, markdownFile, textFile
     }
 
@@ -38,6 +38,8 @@ public nonisolated enum ChatRouter {
         case reformat
         /// A question with several parts or sources: a team of agents (M34).
         case team
+        /// Write code (M40): complete, with room to finish, the named file attached.
+        case code
         case clarify
     }
 
@@ -47,11 +49,13 @@ public nonisolated enum ChatRouter {
         web: needs current or outside facts: news, prices, weather, scores, a named product, company or website ("weather in Jakarta today", "latest iPhone price").
         team: one question with several parts, or that combines several sources: the user's files, the web, earlier in this chat ("compare my notes on the launch with what the news says", "pros and cons of A and B for my budget").
         research: asks for a broad investigation across many sources ("compare the best budget laptops this year", "research the EV market in Indonesia").
+        code: asks to write code, a script, a function or a program in any language, or a code file like main.go or app.py ("write a Go program that lists prime numbers", "create a python script to rename files").
         reformat: asks to fix, reformat, prettify, indent or clean up text they pasted: JSON, a curl command, code, YAML, SQL ("fix this json: {a:1,}", "reformat this curl").
         diagram: asks to draw a flowchart, mind map, timeline, gantt, pie chart or sequence diagram ("draw how login works").
         csvFile, jsonFile, calendarFile, pdfFile, htmlFile, markdownFile, textFile: asks to make that kind of file ("make a CSV of my budget", "add the launch to my calendar", "export this as a PDF").
         unclear: random letters or words that mean nothing.
-        Only a request to make something picks a file or diagram; mentioning one ("what's in this PDF?") is answer.
+        Only a request to make something picks a file or diagram; mentioning one ("what's in this PDF?") is answer. Code is \
+        never a diagram: a request for a program or a code file is code.
         """
 
     /// The route, from the message and the last messages before it (so "make that a PDF" knows what "that" is).
@@ -69,7 +73,7 @@ public nonisolated enum ChatRouter {
     }
 
     static func makesSomething(_ route: Route) -> Bool {
-        ![.answer, .web, .research, .team, .reformat, .unclear].contains(route)
+        ![.answer, .web, .research, .team, .reformat, .code, .unclear].contains(route)
     }
 
     /// What to do. `check` is the instant guardrail's verdict: "unclear" only stops a borderline message (real words
@@ -87,6 +91,7 @@ public nonisolated enum ChatRouter {
         case .diagram: return .diagram
         case .reformat: return .reformat
         case .team: return .team
+        case .code: return .code
         case .unclear: return check == .unsure ? .clarify : .answer
         case .csvFile: return .file(.csv)
         case .jsonFile: return .file(.json)

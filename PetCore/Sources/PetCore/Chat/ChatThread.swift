@@ -144,11 +144,11 @@ public final class ChatThread {
                 case .file(let format): return await makeFile(format, request: question, instructions: nil, web: web)
                 case .reformat: return await reformat(question)
                 case .team: return await runTeam(question, effort: nil, web: web)
-                case .answer, .web, .research: break
+                case .answer, .web, .research, .code: break
                 }
                 await browse(for: question, web: web)
                 guard !Task.isCancelled else { return }
-                await answer(question, offering: ChatMessage.Offer.after(action, web: web))
+                await answer(question, offering: ChatMessage.Offer.after(action, web: web), code: action == .code)
             default:
                 state = .idle // screen commands never reach here
             }
@@ -603,7 +603,7 @@ public final class ChatThread {
         return last.text
     }
 
-    private func answer(_ question: String, offering offer: ChatMessage.Offer? = nil) async {
+    private func answer(_ question: String, offering offer: ChatMessage.Offer? = nil, code: Bool = false) async {
         // A stopped turn leaves the state alone: the next message may already be under way.
         defer { if !Task.isCancelled { state = .idle } }
         let budget = ChatPrompt.split(contextSize: contextSize, instructions: ChatPrompt.estimate(instructions),
@@ -648,7 +648,7 @@ public final class ChatThread {
         let summary = conversation.summary
         func prompt(_ parts: ContextBudget.AnswerParts) -> String {
             ChatPrompt.make(summary: summary, recent: parts.recent, passages: parts.passages, question: asked,
-                            recalled: parts.recalled, note: groundingNote)
+                            recalled: parts.recalled, note: [groundingNote, code ? CodeAnswer.note : nil].compactMap { $0 }.joined(separator: "\n\n"))
         }
         let fixed = await ContextBudget.tokens(instructions: instructions, model: model)
         let fitted = await ContextBudget.fit(.init(recalled: recall.block, recent: Array(earlier.suffix(keep)), passages: passages),
@@ -659,14 +659,18 @@ public final class ChatThread {
         if ContextBudget.needsTeam(droppedRecent: fitted.droppedRecent, question: question) {
             return await runTeam(question, effort: nil, web: false, reading: .thisChat)
         }
-        let cap = ContextBudget.cap(used: fixed + fitted.tokens, contextSize: contextSize, ceiling: ContextBudget.answerCeiling)
+        // Code gets all the room left: a program cut off at 900 tokens doesn't run (M40).
+        let cap = ContextBudget.cap(used: fixed + fitted.tokens, contextSize: contextSize, ceiling: code ? contextSize : ContextBudget.answerCeiling)
 
         let session = LanguageModelSession(model: model, instructions: instructions)
         let prompt = prompt(fitted.parts)
         guard let text = await stream(prompt, in: session, cap: cap) else { return }
         let recalled = fitted.parts.recalled == nil ? [] : recall.sources
-        var reply = ChatMessage(role: .friend, text: text, sources: ChatSource.merged(fitted.parts.passages.map(\.source)) + recalled)
+        var reply = ChatMessage(role: .friend, text: text, sources: ChatSource.merged(fitted.parts.passages.map(\.source)) + recalled,
+                                files: CodeAnswer.file(for: question, answer: text).map { [$0] })
         reply.offer = offer
+        // Tried (M40): the 3B model's programs often don't compile, and a review pass didn't fix them.
+        if code { notice = CodeAnswer.onDeviceNotice }
         conversation.messages.append(reply)
         meter([AgentUse(name: "Answer", tokens: await count(instructions: instructions, prompt: prompt, answer: text))])
         library.save(conversation)

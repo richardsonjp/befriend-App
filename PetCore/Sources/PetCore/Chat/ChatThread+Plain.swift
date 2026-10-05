@@ -36,7 +36,7 @@ extension ChatThread {
             return
         }
         guard !text.isEmpty else { return }
-        var reply = ChatMessage(role: .friend, text: text)
+        var reply = ChatMessage(role: .friend, text: text, files: CodeAnswer.file(for: question, answer: text).map { [$0] })
         reply.model = chosen.name
         conversation.messages.append(reply)
         let sent = request.messages.map { ContextBudget.estimate($0.text) }.reduce(0, +) + ContextBudget.estimate(text)

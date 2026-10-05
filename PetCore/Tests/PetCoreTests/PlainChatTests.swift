@@ -37,8 +37,9 @@ struct PlainChatTests {
     static func thread(answering handler: @escaping NineRouterStub.Handler) -> (ChatThread, String) {
         let host = "nine-\(UUID().uuidString.lowercased()).test"
         NineRouterStub.serve(host: host, handler: handler)
-        let settings = ModelSettings(defaults: UserDefaults(suiteName: "plain-\(UUID().uuidString)")!, secret: InMemorySecret())
+        let settings = ModelSettings(defaults: UserDefaults(suiteName: "plain-\(UUID().uuidString)")!, secret: InMemorySecret("sk-test"))
         settings.baseURL = "http://\(host)/v1"
+        settings.connection = .connected
         settings.choose(.model("cc/claude-sonnet-4.5"), for: .chat)
         let thread = ChatThread(Conversation(), library: ChatLibrary(root: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)),
                                 friend: nil)
@@ -107,6 +108,11 @@ struct PlainChatTests {
         let reply = try #require(thread.conversation.messages.last)
         #expect(reply.text == "**Takeaway** Sales doubled." && reply.model == "vision/model")
         #expect(calls.value.count == 2, "what it is, then the explanation")
+        let explanation = calls.value.last ?? [:]
+        #expect(explanation["max_tokens"] == nil, "no cap on the user's own model")
+        let system = (explanation["messages"] as? [[String: Any]])?.first?["content"] as? String ?? ""
+        #expect(system.contains("Do not summarize") && system.contains("# Simplified Technical English (ASD-STE100)")
+                && system.contains("ASD-STE100 Writing Rules"), "the whole STE skill goes with it")
         let parts = ((calls.value.last?["messages"] as? [[String: Any]])?.last?["content"] as? [[String: Any]]) ?? []
         #expect((parts.last?["image_url"] as? [String: Any])?["url"] as? String ?? "" != "", "the screenshot went with it")
     }
@@ -118,6 +124,14 @@ struct PlainChatTests {
         for _ in 0..<200 where thread.state != .idle || thread.failure == nil { try await Task.sleep(for: .milliseconds(50)) }
         #expect(thread.failure == "9Router: No provider available")
         #expect(thread.explainRetry != nil, "Explain on this Mac")
+    }
+}
+
+struct SteSkillTests {
+    @Test func theSkillIsBundledWhole() {
+        #expect(ScreenExplainer.steSkill.contains("## Core Rewrite Rules") && ScreenExplainer.steSkill.contains("## Scan Checklist"))
+        #expect(ScreenExplainer.steSkill.contains("53 writing rules across 9 sections"), "the rules summary too")
+        #expect(Bundle.module.url(forResource: "asd-ste100", withExtension: nil)?.appending(path: "LICENSE") != nil)
     }
 }
 

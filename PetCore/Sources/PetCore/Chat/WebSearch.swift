@@ -189,8 +189,14 @@ public nonisolated enum WebSearch {
     public static func links(in text: String) -> [URL] {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
         let typedHTTP = text.lowercased().contains("http://")
+        let lowered = text.lowercased()
         let detected = detector.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap(\.url)
             .filter { ["http", "https"].contains($0.scheme?.lowercased()) }
+            // "lib.rs" bare is a file; a typed "https://lib.rs" is the site (M40).
+            .filter { url in
+                let host = url.host()?.lowercased() ?? ""
+                return !notDomains.contains(String(host.split(separator: ".").last ?? "")) || lowered.contains("//" + host)
+            }
             .map { url in
                 // A bare "antartech.co" comes back as http://; ask for https (fetch falls back if a site has none).
                 guard !typedHTTP, url.scheme == "http", var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
@@ -208,6 +214,9 @@ public nonisolated enum WebSearch {
         "txt", "pdf", "md", "csv", "json", "ics", "swift", "png", "jpg", "jpeg", "heic", "gif", "mov", "mp4", "m4a", "mp3",
         "wav", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "key", "pages", "numbers", "html", "js", "ts", "py", "sh",
         "e", "g", "i",
+        // Code files whose extension is also a domain ending: "main.go" is a file, not a site (M40).
+        "go", "rs", "cs", "cc", "kt", "rb", "php", "java", "cpp", "hpp", "sql", "css", "scss", "yaml", "yml", "toml", "xml",
+        "lua", "dart", "exs", "jsx", "tsx", "vue", "scala", "kts",
     ]
 
     static func bareDomains(in text: String) -> [URL] {

@@ -46,6 +46,8 @@ import Testing
         settings.choose(.model(model), for: .chat)
         settings.choose(.model(model), for: .explain)
         settings.setLimits(ModelLimits(limit: 100_000, seesImages: true), for: model)
+        await settings.connect()
+        #expect(settings.isConnected, "\(settings.connection)")
         let library = ChatLibrary(root: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
         let thread = ChatThread(Conversation(), library: library, friend: nil)
         thread.settings = settings
@@ -80,6 +82,26 @@ import Testing
               "· calls", engine.uses.map(\.name))
         print("LIVE report headings:", report.report.split(separator: "\n").filter { $0.hasPrefix("#") })
         #expect(report.report.contains("## Summary") && report.report.contains("## Sources") && !report.sources.isEmpty)
+    }
+
+    /// The full explanation (M39): an error explained in depth, in STE-flavoured English, not a two-line summary.
+    @Test func anExplanationIsFullOnTheUsersModel() async throws {
+        guard Self.key != nil, let model = Self.models.first else { return }
+        let settings = ModelSettings(defaults: UserDefaults(suiteName: "live-\(UUID().uuidString)")!, secret: InMemorySecret(Self.key))
+        settings.choose(.model(model), for: .explain)
+        await settings.connect()
+        let thread = ChatThread(Conversation(), library: ChatLibrary(root: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)),
+                                friend: nil)
+        thread.settings = settings
+        thread.explain(screenshot: ScreenExplainerTests.screenshot(ScreenExplainerTests.error))
+        for _ in 0..<1800 where thread.state != .idle || (thread.conversation.messages.last?.role != .friend && thread.failure == nil) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let text = thread.conversation.messages.last?.text ?? ""
+        let words = text.split(whereSeparator: \.isWhitespace).count
+        print("LIVE full explain (\(words) words):\n\(text)")
+        #expect(thread.failure == nil && words > 150, "\(words) words")
+        #expect(!text.contains(";"), "STE: no semicolons")
     }
 
     /// Three bars, no text: only a model that sees it can say what it is.
