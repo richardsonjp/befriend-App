@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import FoundationModels
 
 public nonisolated enum Reformatter {
     /// What to repair: the first fenced block when there is one, else the whole message.
@@ -55,15 +54,6 @@ public nonisolated enum Reformatter {
     /// Most tokens of pasted text the model may rewrite: the fix comes back about as long, so half the room left.
     static func maxInputTokens(contextSize: Int, instructionTokens: Int) -> Int {
         max(0, (contextSize - instructionTokens - overhead) / 2)
-    }
-
-    /// Tokens in `text`: the model's count when it can give one, else 2 characters a token (code and symbols take
-    /// more tokens than prose's 3).
-    static func tokens(_ text: String, model: SystemLanguageModel) async -> Int {
-        if #available(iOS 26.4, macOS 26.4, *), model.isAvailable, let count = try? await model.tokenCount(for: text) {
-            return count
-        }
-        return max(1, text.count / 2)
     }
 
     /// The friend's reply to text too long to rewrite in one go.

@@ -158,7 +158,10 @@ public final class ChatThread {
                 guard !Task.isCancelled else { return }
                 let session = LanguageModelSession(model: model, instructions: ScreenExplainer.instructions)
                 state = .answering("")
-                for try await snapshot in session.streamResponse(to: ScreenExplainer.prompt(glance, read: read, web: found, origin: origin)) {
+                // Capped (M36): an explanation once ran on for 1,700 words.
+                let options = GenerationOptions(maximumResponseTokens: ContextBudget.explainCeiling)
+                for try await snapshot in session.streamResponse(to: ScreenExplainer.prompt(glance, read: read, web: found, origin: origin),
+                                                                 options: options) {
                     guard !Task.isCancelled else { break }
                     text = snapshot.content
                     state = .answering(text)
@@ -647,12 +650,24 @@ public final class ChatThread {
         let asked = siteHits.isEmpty ? question
             : ChatPrompt.siteTask(sites: named.map { $0.split(separator: "/").first.map(String.init) ?? $0 },
                                   titles: Array(Set(siteHits.map(\.document.name))), question: question)
-        let prompt = ChatPrompt.make(summary: conversation.summary, recent: Array(earlier.suffix(keep)), passages: passages,
-                                     question: asked, recalled: recall.block, note: groundingNote)
+        // Measured, not guessed (M36): trimmed until the answer has room, then capped at the room left.
+        let summary = conversation.summary
+        func prompt(_ parts: ContextBudget.AnswerParts) -> String {
+            ChatPrompt.make(summary: summary, recent: parts.recent, passages: parts.passages, question: asked,
+                            recalled: parts.recalled, note: groundingNote)
+        }
+        let fixed = await ContextBudget.tokens(instructions: instructions, model: model)
+        let fitted = await ContextBudget.fit(.init(recalled: recall.block, recent: Array(earlier.suffix(keep)), passages: passages),
+                                             limit: contextSize - fixed - ContextBudget.answerFloor) { [model] parts in
+            await ContextBudget.tokens(prompt(parts), model: model)
+        }
+        let cap = ContextBudget.cap(used: fixed + fitted.tokens, contextSize: contextSize, ceiling: ContextBudget.answerCeiling)
 
         let session = LanguageModelSession(model: model, instructions: instructions)
-        guard let text = await stream(prompt, in: session) else { return }
-        var reply = ChatMessage(role: .friend, text: text, sources: ChatSource.merged(passages.map(\.source)) + recall.sources)
+        let prompt = prompt(fitted.parts)
+        guard let text = await stream(prompt, in: session, cap: cap) else { return }
+        let recalled = fitted.parts.recalled == nil ? [] : recall.sources
+        var reply = ChatMessage(role: .friend, text: text, sources: ChatSource.merged(fitted.parts.passages.map(\.source)) + recalled)
         reply.offer = offer
         conversation.messages.append(reply)
         conversation.contextUsed = await count(instructions: instructions, prompt: prompt, answer: text)
@@ -663,11 +678,11 @@ public final class ChatThread {
 
     /// Streams the answer into `state`. Nil when nothing was written (`failure` says why); stopped, or out of room
     /// after some text (with the cut-off notice), keeps what was written.
-    private func stream(_ prompt: String, in session: LanguageModelSession) async -> String? {
+    private func stream(_ prompt: String, in session: LanguageModelSession, cap: Int? = nil) async -> String? {
         var text = ""
         do {
             state = .answering("")
-            for try await snapshot in session.streamResponse(to: prompt) {
+            for try await snapshot in session.streamResponse(to: prompt, options: GenerationOptions(maximumResponseTokens: cap)) {
                 guard !Task.isCancelled else { break }
                 text = snapshot.content
                 state = .answering(text)
@@ -688,13 +703,16 @@ public final class ChatThread {
     private func reformat(_ question: String) async {
         if let reply = Reformatter.byCode(question) { return finishTurn(ChatMessage(role: .friend, text: reply)) }
         defer { if !Task.isCancelled { state = .idle } }
-        let room = Reformatter.maxInputTokens(contextSize: contextSize,
-                                               instructionTokens: await count(instructions: Reformatter.taskInstructions))
-        guard await Reformatter.tokens(question, model: model) <= room else {
+        let fixed = await count(instructions: Reformatter.taskInstructions)
+        let room = Reformatter.maxInputTokens(contextSize: contextSize, instructionTokens: fixed)
+        let pasted = await ContextBudget.tokens(question, model: model)
+        guard pasted <= room else {
             return finishTurn(ChatMessage(role: .friend, text: Reformatter.tooLong(maxTokens: room)))
         }
         let session = LanguageModelSession(model: model, instructions: Reformatter.taskInstructions)
-        guard let text = await stream(question, in: session) else { return }
+        // The fix is about as long as the text: all the room left, no lower ceiling.
+        let cap = ContextBudget.cap(used: fixed + pasted, contextSize: contextSize, ceiling: contextSize)
+        guard let text = await stream(question, in: session, cap: cap) else { return }
         conversation.messages.append(ChatMessage(role: .friend, text: text))
         library.save(conversation)
     }
@@ -761,17 +779,8 @@ public final class ChatThread {
 
     /// Exact counts on 26.4 and later; an estimate before that.
     private func count(instructions: String, prompt: String = "", answer: String = "") async -> Int {
-        if #available(iOS 26.4, macOS 26.4, *), model.isAvailable {
-            do {
-                let fixed = try await model.tokenCount(for: Instructions(instructions))
-                let asked = prompt.isEmpty ? 0 : try await model.tokenCount(for: prompt)
-                let said = answer.isEmpty ? 0 : try await model.tokenCount(for: answer)
-                return fixed + asked + said
-            } catch {
-                Self.log.notice("Token count failed: \(String(describing: error), privacy: .public)")
-            }
-        }
-        return [instructions, prompt, answer].map(ChatPrompt.estimate).reduce(0, +)
+        await ContextBudget.tokens(instructions: instructions, model: model)
+            + ContextBudget.tokens(prompt, model: model) + ContextBudget.tokens(answer, model: model)
     }
 
     static func message(for error: Error) -> String {

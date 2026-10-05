@@ -54,6 +54,8 @@ final class TeamEngine {
     }
 
     static let maxTasks = 4
+    /// Most a worker's notes may run to.
+    static let noteTokens = 220
     /// Most a worker's notes may take in the writer's prompt (tokens).
     static let noteBudget = 150
     /// Most of this chat a worker reads at once (tokens), leaving room for its instructions and notes in 4K.
@@ -224,11 +226,19 @@ final class TeamEngine {
 
     /// This chat and reasoning: a session of their own (look-ups are read from the pool instead).
     private func think(_ task: TeamTask) async -> String {
-        let material = task.worker == .thisChat ? chatMaterial() : ""
+        var material = task.worker == .thisChat ? chatMaterial() : []
         if task.worker == .thisChat, material.isEmpty { return Self.nothingNoted }
-        let prompt = earlier + "Task: \(task.ask)" + (material.isEmpty ? "" : "\n\nMaterial:\n\(material)")
-        let session = LanguageModelSession(model: model, instructions: task.worker == .reasoning ? Self.reasoningInstructions : Self.workerInstructions)
-        let note = (try? await session.respond(to: prompt, options: GenerationOptions(maximumResponseTokens: 220)).content) ?? Self.nothingNoted
+        let instructions = task.worker == .reasoning ? Self.reasoningInstructions : Self.workerInstructions
+        func prompt() -> String {
+            earlier + "Task: \(task.ask)" + (material.isEmpty ? "" : "\n\nMaterial:\n" + material.joined(separator: "\n"))
+        }
+        // Measured (M36): the oldest of this chat goes until the notes have room.
+        let fixed = await ContextBudget.tokens(instructions: instructions, model: model)
+        let limit = model.contextSize - fixed - Self.noteTokens - ContextBudget.margin
+        while material.count > 1, await ContextBudget.tokens(prompt(), model: model) > limit { material.removeFirst() }
+        let session = LanguageModelSession(model: model, instructions: instructions)
+        let note = (try? await session.respond(to: prompt(), options: GenerationOptions(maximumResponseTokens: Self.noteTokens)).content)
+            ?? Self.nothingNoted
         return Self.trimmed(note)
     }
 
@@ -238,13 +248,14 @@ final class TeamEngine {
         return lines.isEmpty ? nothingNoted : trimmed(lines.joined(separator: "\n"))
     }
 
-    private func chatMaterial() -> String {
+    /// This chat for a worker, oldest first: as much as the estimate allows (measuring trims the rest).
+    private func chatMaterial() -> [String] {
         var lines: [String] = []
         if let summary = conversation.summary { lines.append("Notes on older messages: " + summary) }
         lines += conversation.messages.dropLast().filter { !$0.isAside }.map { ChatPrompt.line(ChatPrompt.shortened($0)) }
         // The newest count most: keep the end when it doesn't all fit.
         let kept = ChatPrompt.fitting(lines.reversed().map { ChatPrompt.estimate($0) + 2 }, budget: Self.materialBudget)
-        return lines.suffix(kept).joined(separator: "\n")
+        return Array(lines.suffix(kept))
     }
 
     static func trimmed(_ note: String) -> String {
@@ -283,8 +294,11 @@ final class TeamEngine {
             prompt += "\n\nYour first answer:\n\(fix.draft)\n\nThese statements aren't backed by the notes; remove or correct them, keep the rest:\n"
                 + fix.unsupported.map { "- \($0)" }.joined(separator: "\n")
         }
+        let used = await ContextBudget.tokens(instructions: writerInstructions, model: model) + ContextBudget.tokens(prompt, model: model)
+        let options = GenerationOptions(maximumResponseTokens: ContextBudget.cap(used: used, contextSize: model.contextSize,
+                                                                                 ceiling: ContextBudget.writerCeiling))
         let session = LanguageModelSession(model: model, instructions: writerInstructions)
-        return try await session.respond(to: prompt).content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await session.respond(to: prompt, options: options).content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func check(_ answer: String, notes: String) async -> [String] {
