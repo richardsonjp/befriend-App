@@ -68,13 +68,18 @@ struct CodeAnswerTests {
         process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/go")
         process.arguments = ["run", "main.go"]
         process.currentDirectoryURL = dir
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        let output = dir.appending(path: "out.txt")
+        FileManager.default.createFile(atPath: output.path(), contents: nil)
+        let handle = try? FileHandle(forWritingTo: output)
+        process.standardOutput = handle
+        process.standardError = handle
+        process.standardInput = FileHandle.nullDevice // a program reading input gets none, as on godbolt
         try? process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(decoding: data, as: UTF8.self)
+        let deadline = Date.now.addingTimeInterval(20)
+        while process.isRunning, Date.now < deadline { Thread.sleep(forTimeInterval: 0.1) }
+        if process.isRunning { process.terminate() }
+        try? handle?.close()
+        return (try? String(contentsOf: output, encoding: .utf8)) ?? ""
     }
 
     /// The measurement (M40): the user's Go request on Apple's model, planned, written, checked and fixed on the
@@ -91,6 +96,7 @@ struct CodeAnswerTests {
             let right = squeezed.contains("1 3 5 7 9 11") && squeezed.contains("2 4 6 8 10 12") && squeezed.contains("2 3 5 7 11 13 17")
             works += outcome.works ? 1 : 0
             correct += right && outcome.works ? 1 : 0
+            FileHandle.standardError.write(Data("MEASURE \(trial): works=\(outcome.works)\n".utf8))
             print("MEASURE \(trial): works=\(outcome.works) right=\(right) file=\(outcome.file?.name ?? "-")")
             if outcome.works && !right {
                 let lines = Self.runLocally(outcome.file.map { String(decoding: $0.data, as: UTF8.self) } ?? "").split(separator: "\n")

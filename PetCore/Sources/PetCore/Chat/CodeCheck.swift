@@ -132,11 +132,15 @@ final class CodeWriter {
     }
 
     let brain: Brain
+    /// Writes and fixes the code. On Apple's model with the permissive guardrails: the default ones refused a
+    /// quarter of plain number-listing programs as "unsafe" (3 of 12 measured).
+    let coder: Brain
     let checker: CodeChecker?
     let status: (String) -> Void
 
     init(brain: Brain, checker: CodeChecker?, status: @escaping (String) -> Void) {
         self.brain = brain
+        if case .apple = brain { coder = .apple(SystemLanguageModel(guardrails: .permissiveContentTransformations)) } else { coder = brain }
         self.checker = checker
         self.status = status
     }
@@ -148,7 +152,7 @@ final class CodeWriter {
                                             schema: CodeSpec.generationSchema)
         let specText = spec.flatMap { try? CodeSpec($0) }.map(Self.text) ?? "Request: " + request
         status("Writing the code…")
-        let first = try await brain.respond(instructions: Self.writerInstructions,
+        let first = try await coder.respond(instructions: Self.writerInstructions,
                                             prompt: earlier + "Write the program for this specification.\n\n" + specText)
         var code = CodeAnswer.firstBlock(in: first) ?? first
         let fence = Self.fenceTag(in: first)
@@ -167,7 +171,7 @@ final class CodeWriter {
                 status("Fixing: " + (checked.errors.split(separator: "\n").first { $0.contains(":") }.map(String.init) ?? "the errors"))
                 let fix = specText + "\n\nCode:\n```" + (fence ?? language) + "\n" + code + "\n```\n\nThe compiler says:\n"
                     + String(checked.errors.prefix(1500))
-                guard let reply = try? await brain.respond(instructions: Self.fixerInstructions, prompt: fix) else { break }
+                guard let reply = try? await coder.respond(instructions: Self.fixerInstructions, prompt: fix) else { break }
                 code = CodeAnswer.firstBlock(in: reply) ?? reply
             }
         }
