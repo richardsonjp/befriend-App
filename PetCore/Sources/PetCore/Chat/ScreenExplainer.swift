@@ -110,9 +110,48 @@ public nonisolated enum ScreenExplainer {
     }
 
     public static func glance(_ read: String, origin: Origin? = nil, model: SystemLanguageModel) async throws -> Glance {
-        let session = LanguageModelSession(model: model)
-        let taken = origin.map { "Taken from: \($0.line)\n" } ?? ""
-        return try await session.respond(to: "What is this part of a screen?\n\(taken)\n\(read)", generating: Glance.self).content
+        try await LanguageModelSession(model: model).respond(to: glanceQuestion(read, origin: origin), generating: Glance.self).content
+    }
+
+    static func glanceQuestion(_ read: String, origin: Origin?) -> String {
+        "What is this part of a screen?\n" + (origin.map { "Taken from: \($0.line)\n" } ?? "") + "\n" + read
+    }
+
+    // MARK: On the user's own model (M37)
+
+    /// Said with the screenshot itself, for models that see images: the read text is then a help, not all there is.
+    static let imageNote = "You also get the screenshot itself: explain from what you see; the read text helps with exact words."
+
+    /// The same question on a 9Router model, with the screenshot when the model sees images.
+    public static func glance(_ read: String, origin: Origin?, image: Data?, on chosen: ChosenModel) async throws -> Glance {
+        try await NineRouter(chosen.config).respond([.init(.user, glanceQuestion(read, origin: origin), image: image)],
+                                                    model: chosen.name, generating: Glance.self)
+    }
+
+    /// The explanation as it's written, capped (M36: one ran on for 1,700 words): on the user's 9Router model when
+    /// one is chosen, else on this Mac.
+    static func explanation(_ prompt: String, image: Data?, on chosen: ChosenModel?, model: SystemLanguageModel) -> AsyncThrowingStream<String, Error> {
+        if let chosen {
+            return NineRouter(chosen.config).stream(messages(prompt, image: image), model: chosen.name, maxTokens: ContextBudget.explainCeiling)
+        }
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let session = LanguageModelSession(model: model, instructions: instructions)
+                    let options = GenerationOptions(maximumResponseTokens: ContextBudget.explainCeiling)
+                    for try await snapshot in session.streamResponse(to: prompt, options: options) { continuation.yield(snapshot.content) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// The explanation's request on a 9Router model.
+    static func messages(_ prompt: String, image: Data?) -> [NineRouter.Message] {
+        [.init(.system, instructions), .init(.user, prompt + (image == nil ? "" : "\n\n" + imageNote), image: image)]
     }
 
     /// The chat's title for it: "Screenshot · A Python TypeError on line 42".

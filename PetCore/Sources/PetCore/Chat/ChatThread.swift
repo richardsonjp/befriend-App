@@ -41,6 +41,8 @@ public final class ChatThread {
     public internal(set) var failure: String?
     /// A heads-up about the last turn that didn't stop it, e.g. the web search finding nothing.
     public internal(set) var notice: String?
+    /// 9Router couldn't explain it (M37): run it again on this Mac.
+    public private(set) var explainRetry: (() -> Void)?
     /// Where an explained screenshot was taken (M31): shown above the explanation.
     public private(set) var origin: ScreenExplainer.Origin?
     /// The research under way: plan, sources, what it's doing.
@@ -151,18 +153,24 @@ public final class ChatThread {
     /// Explains a captured part of the screen (M31). The screenshot is attached to this conversation, the user's turn
     /// names what it is ("Screenshot · …", the chat's title), and the explanation takes the shape that fits. With
     /// `web`, what it is is searched too and the best excerpts join the prompt.
-    public func explain(screenshot png: Data, web: Bool = false, origin: ScreenExplainer.Origin? = nil) {
+    public func explain(screenshot png: Data, web: Bool = false, origin: ScreenExplainer.Origin? = nil, onDevice: Bool = false) {
         guard state == .idle, unavailable == nil else { return }
         self.origin = origin
         failure = nil
         notice = nil
+        explainRetry = nil
         state = .making("Looking…")
+        // The user's own model (M37), with the screenshot itself when it sees images.
+        let chosen = onDevice ? nil : settings.model(for: .explain)
+        let image = chosen?.limits.seesImages == true ? png : nil
         turn = Task {
             defer { if !Task.isCancelled { state = .idle } }
             var text = "", asked = ""
             do {
-                let read = try await ScreenExplainer.read(png)
-                let glance = try await ScreenExplainer.glance(read, origin: origin, model: model)
+                var read = ""
+                do { read = try await ScreenExplainer.read(png) } catch ScreenExplainer.Failure.nothingFound where image != nil {} // it sees it
+                let glance = if let chosen { try await ScreenExplainer.glance(read, origin: origin, image: image, on: chosen) }
+                             else { try await ScreenExplainer.glance(read, origin: origin, model: model) }
                 guard !Task.isCancelled else { return }
                 // The title, then where it was taken: follow-ups (and the chat later) still know it.
                 let title = ScreenExplainer.title(glance.what)
@@ -176,24 +184,27 @@ public final class ChatThread {
                 library.save(conversation)
                 let found = web ? await lookUp(glance, origin: origin) : []
                 guard !Task.isCancelled else { return }
-                let session = LanguageModelSession(model: model, instructions: ScreenExplainer.instructions)
                 state = .answering("")
-                // Capped (M36): an explanation once ran on for 1,700 words.
-                let options = GenerationOptions(maximumResponseTokens: ContextBudget.explainCeiling)
                 asked = ScreenExplainer.prompt(glance, read: read, web: found, origin: origin)
-                for try await snapshot in session.streamResponse(to: asked, options: options) {
+                for try await snapshot in ScreenExplainer.explanation(asked, image: image, on: chosen, model: model) {
                     guard !Task.isCancelled else { break }
-                    text = snapshot.content
+                    text = snapshot
                     state = .answering(text)
                 }
             } catch is CancellationError {
                 // Stopped: keep what was written.
             } catch {
                 Self.log.error("Explaining a screenshot failed: \(String(describing: error), privacy: .public)")
-                if text.isEmpty { return failure = (error as? ScreenExplainer.Failure)?.errorDescription ?? Self.message(for: error) }
+                // 9Router couldn't: say so, and offer this Mac (M37).
+                if chosen != nil, error is NineRouter.Failure {
+                    explainRetry = { [weak self] in self?.explain(screenshot: png, web: web, origin: origin, onDevice: true) }
+                }
+                if text.isEmpty { return failure = (error as? LocalizedError)?.errorDescription ?? Self.message(for: error) }
             }
             guard !text.isEmpty else { return }
-            conversation.messages.append(ChatMessage(role: .friend, text: text))
+            var reply = ChatMessage(role: .friend, text: text)
+            reply.model = chosen?.name
+            conversation.messages.append(reply)
             meter([AgentUse(name: "Explain", tokens: await count(instructions: ScreenExplainer.instructions, prompt: asked, answer: text))])
             library.save(conversation)
         }

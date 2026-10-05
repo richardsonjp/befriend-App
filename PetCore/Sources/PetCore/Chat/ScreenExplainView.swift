@@ -102,6 +102,7 @@ public struct ScreenExplainView: View {
             }
             if let failure = thread.failure ?? (thread.conversation.messages.isEmpty ? thread.unavailable : nil) {
                 Text(failure).foregroundStyle(.red).font(.callout)
+                if let retry = thread.explainRetry { Button("Explain on this Mac", systemImage: "cpu", action: retry) }
             }
         case .answering(let text) where !text.isEmpty:
             MarkdownView(text: text, live: true)

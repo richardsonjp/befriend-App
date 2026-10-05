@@ -85,3 +85,38 @@ struct PlainChatTests {
         #expect(thread.conversation.messages.count == 2, "the failed reply was replaced")
     }
 }
+
+@MainActor struct ExplainOnNineRouterTests {
+    @Test func aModelThatSeesGetsTheScreenshotEvenWithoutText() async throws {
+        let calls = Box<[[String: Any]]>([])
+        let (thread, _) = PlainChatTurnTests.thread { _, body in
+            let sent = try JSONSerialization.jsonObject(with: body) as! [String: Any]
+            calls.value.append(sent)
+            if sent["response_format"] != nil {
+                let glance = #"{"kind":"chart","what":"A sales bar chart","search":"sales chart"}"#
+                return (200, NineRouterTests.json(["choices": [["message": ["role": "assistant", "content": glance]]]]))
+            }
+            return (200, Data("data: {\"choices\":[{\"delta\":{\"content\":\"**Takeaway** Sales doubled.\"}}]}\n\ndata: [DONE]\n\n".utf8))
+        }
+        thread.settings.choose(.model("vision/model"), for: .explain)
+        thread.settings.setLimits(ModelLimits(seesImages: true), for: "vision/model")
+        thread.explain(screenshot: ScreenExplainerTests.screenshot([])) // no text at all: only the picture says anything
+        try await PlainChatTurnTests.idle(thread)
+        #expect(thread.failure == nil)
+        #expect(thread.conversation.title == "Screenshot · A sales bar chart")
+        let reply = try #require(thread.conversation.messages.last)
+        #expect(reply.text == "**Takeaway** Sales doubled." && reply.model == "vision/model")
+        #expect(calls.value.count == 2, "what it is, then the explanation")
+        let parts = ((calls.value.last?["messages"] as? [[String: Any]])?.last?["content"] as? [[String: Any]]) ?? []
+        #expect((parts.last?["image_url"] as? [String: Any])?["url"] as? String ?? "" != "", "the screenshot went with it")
+    }
+
+    @Test func whenNineRouterFailsTheCardOffersThisMac() async throws {
+        let (thread, _) = PlainChatTurnTests.thread { _, _ in (502, Data(#"{"error":{"message":"No provider available"}}"#.utf8)) }
+        thread.settings.choose(.model("m"), for: .explain)
+        thread.explain(screenshot: ScreenExplainerTests.screenshot(ScreenExplainerTests.error))
+        for _ in 0..<200 where thread.state != .idle || thread.failure == nil { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(thread.failure == "9Router: No provider available")
+        #expect(thread.explainRetry != nil, "Explain on this Mac")
+    }
+}
