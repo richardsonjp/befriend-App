@@ -3,12 +3,11 @@
 //  PetCore
 //
 //  The chat's guardrail (M22): is a message something to answer, or keyboard noise like "asd"? An instant check on
-//  this device first (known words, keyboard runs, repeats); only borderline messages ask the model. Gibberish gets a
+//  this device first (known words, keyboard runs, repeats); borderline ones are left to the chat router (M32). Gibberish gets a
 //  "what do you mean?" instead of a search, a web lookup or an answer.
 //
 
 import Foundation
-import FoundationModels
 import NaturalLanguage
 #if os(macOS)
 import AppKit
@@ -19,7 +18,7 @@ import UIKit
 public nonisolated enum MessageCheck: Equatable, Sendable {
     case valid
     case gibberish
-    /// Can't tell from the words alone: ask the model.
+    /// Can't tell from the words alone: the router may still call it unclear.
     case unsure
 
     /// Short replies that aren't in a spelling dictionary but mean something.
@@ -72,29 +71,6 @@ public nonisolated enum MessageCheck: Equatable, Sendable {
         if Set(letters).count == 1 { return true }
         if keyboardRows.contains(where: { $0.contains(letters) || String($0.reversed()).contains(letters) }) { return true }
         return letters.count >= 5 && !letters.contains(where: { "aeiouy".contains($0) })
-    }
-
-    // MARK: Borderline: ask the model
-
-    /// Tried on the real model: named examples and a true/false field got 10 of 10 borderline cases right.
-    static let modelInstructions = """
-        You decide whether a chat message is meaningful: something a friend could understand and reply to, in any \
-        language, including slang, typos and abbreviations ("wat r u doin", "brb", "thx"). Random letters and \
-        keyboard mashing ("dfg kjh", "asdkj qwe") and placeholder text ("lorem ipsum") are not meaningful.
-        """
-
-    /// The model's verdict on a borderline message. If it can't answer, the message goes through.
-    public static func askModel(_ message: String, model: SystemLanguageModel = .default) async -> Bool {
-        guard model.isAvailable else { return true }
-        let session = LanguageModelSession(model: model, instructions: modelInstructions)
-        let root = DynamicGenerationSchema(name: "Verdict", description: "Whether the message is meaningful", properties: [
-            .init(name: "meaningful", description: "true if a friend could understand and reply to it",
-                  schema: DynamicGenerationSchema(type: Bool.self)),
-        ])
-        guard let schema = try? GenerationSchema(root: root, dependencies: []),
-              let reply = try? await session.respond(to: "Message: \"\(PetBrain.quote(message, 300))\"", schema: schema).content,
-              let meaningful = try? reply.value(Bool.self, forProperty: "meaningful") else { return true }
-        return meaningful
     }
 
     /// What the friend says to a message it couldn't make sense of.

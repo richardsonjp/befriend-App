@@ -18,7 +18,7 @@ public final class ChatThread {
 
     public enum State: Equatable {
         case idle
-        /// Making sure a borderline message means something (the guardrail's model check).
+        /// Working out which agent takes the message (the router, M32).
         case checking
         case compacting
         case searching
@@ -107,14 +107,13 @@ public final class ChatThread {
                 guard !Task.isCancelled else { return }
                 await answer(invocation?.argument ?? question)
             case nil:
-                let sensible = await makesSense(question)
+                let action = await route(question)
                 guard !Task.isCancelled else { return } // stopped: stop() already tidied up
-                guard sensible else { return clarify() }
-                if DiagramIntent.detect(question), FileIntent.detect(question) == nil {
-                    return await makeDiagram(request: question, web: web)
-                }
-                if let format = FileIntent.detect(question) {
-                    return await makeFile(format, request: question, instructions: nil, web: web)
+                switch action {
+                case .clarify: return clarify()
+                case .diagram: return await makeDiagram(request: question, web: web)
+                case .file(let format): return await makeFile(format, request: question, instructions: nil, web: web)
+                case .answer, .web, .research: break // slice B offers the web and research
                 }
                 await browse(for: question, web: web)
                 guard !Task.isCancelled else { return }
@@ -461,15 +460,13 @@ public final class ChatThread {
 
     // MARK: Guardrail
 
-    /// The instant check, then the model for borderline messages.
-    private func makesSense(_ question: String) async -> Bool {
-        switch MessageCheck.judge(question) {
-        case .valid: return true
-        case .gibberish: return false
-        case .unsure:
-            state = .checking
-            return await MessageCheck.askModel(question, model: model)
-        }
+    /// The instant gibberish check, then the router picks the agent (M32).
+    private func route(_ question: String) async -> ChatRouter.Action {
+        let check = MessageCheck.judge(question)
+        guard check != .gibberish else { return .clarify }
+        state = .checking
+        let route = await ChatRouter.route(question, recent: conversation.messages.dropLast(), model: model)
+        return ChatRouter.action(route, for: question, check: check)
     }
 
     /// Gibberish: the friend asks what was meant. Neither message is used as context later.
