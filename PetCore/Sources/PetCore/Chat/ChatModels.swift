@@ -60,6 +60,9 @@ public nonisolated struct ChatDocument: Codable, Equatable, Identifiable, Sendab
         case library
         /// Attached to one conversation only.
         case conversation(UUID)
+        /// In a conversation's message box, not sent yet: neither searched nor synced. Sending attaches it to the
+        /// message and the conversation, as in Claude.
+        case draft(UUID)
     }
 
     public let id: UUID
@@ -89,6 +92,8 @@ public nonisolated struct ChatDocument: Codable, Equatable, Identifiable, Sendab
         self.language = language
         self.url = url
     }
+
+    public var isDraft: Bool { if case .draft = scope { true } else { false } }
 
     public func with(scope: Scope) -> ChatDocument {
         ChatDocument(id: id, name: name, kind: kind, scope: scope, addedAt: addedAt, passages: passages, note: note,
@@ -158,6 +163,15 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
     public var links: [MessageRef]?
     /// The plan and sources of a research report (M28).
     public var research: ResearchLog?
+    /// Files sent with this message: shown on it, and searched by the conversation from then on.
+    public var attachments: [Attachment]?
+
+    /// A sent file, by name and kind, so the chip stays even after the file is removed.
+    public struct Attachment: Codable, Equatable, Hashable, Identifiable, Sendable {
+        public let id: UUID
+        public let name: String
+        public let kind: ChatDocumentKind
+    }
     /// A button under the friend's answer (M32): search the web for the question, or research it in depth.
     public var offer: Offer?
 
@@ -194,12 +208,14 @@ public nonisolated struct ChatMessage: Codable, Equatable, Identifiable, Sendabl
         copy.links = links
         copy.research = research
         copy.offer = offer
+        copy.attachments = attachments
         return copy
     }
 
     func markedAside() -> ChatMessage {
         var copy = ChatMessage(id: id, role: role, text: text, sources: sources, date: date, aside: true, files: files)
         copy.links = links
+        copy.attachments = attachments
         return copy
     }
 }

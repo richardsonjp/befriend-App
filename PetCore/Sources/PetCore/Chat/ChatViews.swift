@@ -175,7 +175,8 @@ struct ChatScreen: View {
         self.openLibrary = openLibrary
         _draft = State(initialValue: draft)
         _thread = State(initialValue: ChatThread(conversation, library: library, friend: friend))
-        _adder = State(initialValue: FileAdder(library: library, scope: .conversation(conversation.id)))
+        // Added files wait in the message box until sent (M35).
+        _adder = State(initialValue: FileAdder(library: library, scope: .draft(conversation.id)))
     }
 
     var body: some View {
@@ -509,6 +510,7 @@ struct MessageRow: View {
         let mine = message.role == .user
         VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
             if let log = message.research { ResearchStepsDisclosure(log: log) } // above the report, as in Claude
+            if let attachments = message.attachments, !attachments.isEmpty { attachmentRow(attachments) }
             if let openDocument { DocumentCard(message: message, open: openDocument) } else { bubble(mine: mine) }
             ForEach(message.files ?? []) { ChatFileCard(file: $0) }
             if !message.sources.isEmpty { sources }
@@ -570,6 +572,31 @@ struct MessageRow: View {
         .background(mine ? AnyShapeStyle(.tint.opacity(0.2)) : AnyShapeStyle(.quaternary.opacity(0.5)),
                     in: RoundedRectangle(cornerRadius: 14))
         .opacity(message.isAside ? 0.7 : 1)
+    }
+
+    /// The files sent with this message, as in Claude: a tile and the name (still there after the file is removed).
+    private func attachmentRow(_ attachments: [ChatMessage.Attachment]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(attachments) { attachment in
+                    let document = library?.documents.first { $0.id == attachment.id }
+                    HStack(spacing: 6) {
+                        if let library {
+                            FileIcon(item: ChatFileItem(id: attachment.id, name: attachment.name, kind: attachment.kind,
+                                                        scope: document?.scope ?? .library, language: nil,
+                                                        status: document.map(ChatFileItem.Status.ready) ?? .failed("Removed")),
+                                     library: library, size: 28)
+                        }
+                        Text(attachment.name).font(.caption).lineLimit(1)
+                    }
+                    .padding(.trailing, 8)
+                    .padding(3)
+                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                    .help(document == nil ? "\(attachment.name) (removed)" : attachment.name)
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var sources: some View {

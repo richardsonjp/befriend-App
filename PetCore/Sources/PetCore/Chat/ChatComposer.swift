@@ -2,8 +2,9 @@
 //  ChatComposer.swift
 //  PetCore
 //
-//  The message box, as one glass card: this conversation's files as cards on top, the text, then + on the left and
-//  send on the right. Long pasted text becomes a "Pasted text" file instead of a wall in the box.
+//  The message box, as one glass card: the files about to be sent as cards on top, the text, then + on the left and
+//  send on the right. Long pasted text becomes a "Pasted text" file instead of a wall in the box. As in Claude, files
+//  go with the message they're sent with and leave the box (the conversation keeps using them).
 //
 
 import SwiftUI
@@ -32,10 +33,7 @@ struct ChatComposer: View {
     static let pasteAsFile = 1000
 
     var body: some View {
-        let all = library.items(in: .conversation(conversation))
-        // Web pages from Search stay out of the box: one chip opens them (they still inform later answers).
-        let items = all.filter { $0.kind != .web }
-        let webPages = all.filter { $0.kind == .web }
+        let items = library.items(in: .draft(conversation))
         let commands = ChatCommand.suggestions(for: draft)
         VStack(alignment: .leading, spacing: 10) {
             if let commands {
@@ -50,19 +48,16 @@ struct ChatComposer: View {
                             Button("Clear All", role: .destructive) { confirmingClear = true }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
-                                .accessibilityHint("Removes every file attached to this conversation")
+                                .accessibilityHint("Removes every file from the message box")
                         }
                     }
                     .padding(.top, 6)
                     .padding(.trailing, 6)
                 }
                 .scrollClipDisabled()
-                .confirmationDialog("Remove all \(items.count) files from this conversation?", isPresented: $confirmingClear) {
-                    Button("Remove All", role: .destructive) { library.removeAll(in: .conversation(conversation), web: false) }
+                .confirmationDialog("Remove all \(items.count) files from the message box?", isPresented: $confirmingClear) {
+                    Button("Remove All", role: .destructive) { library.removeAll(in: .draft(conversation), web: false) }
                 }
-            }
-            if !webPages.isEmpty {
-                WebPagesChip(pages: webPages, library: library, conversation: conversation)
             }
             TextField("Ask about your files", text: $draft, selection: $selection, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -113,7 +108,7 @@ struct ChatComposer: View {
         .padding(.bottom, 12)
         .onChange(of: draft) { old, new in
             guard let split = Self.pastedBlock(old: old, new: new) else { return }
-            library.add(text: split.pasted, name: "Pasted text", scope: .conversation(conversation))
+            library.add(text: split.pasted, name: "Pasted text", scope: .draft(conversation))
             draft = split.draft
         }
     }
@@ -141,14 +136,16 @@ struct ChatComposer: View {
 
     private var sendButton: some View {
         let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Files still being read go with the message once they're ready.
+        let reading = library.readingDrafts(of: conversation)
         return Button(action: answering ? stop : send) {
             Image(systemName: answering ? "stop.fill" : "arrow.up").fontWeight(.semibold)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.circle)
-        .disabled(!answering && (empty || disabled))
+        .disabled(!answering && (empty || disabled || reading))
         .keyboardShortcut(answering ? KeyboardShortcut(".", modifiers: .command) : KeyboardShortcut(.return, modifiers: .command))
-        .help(answering ? "Stop (⌘. or Esc)" : "Send (Return)")
+        .help(answering ? "Stop (⌘. or Esc)" : reading ? "Waiting for your files to be read" : "Send (Return)")
         .accessibilityLabel(answering ? "Stop answering" : "Send")
     }
 
@@ -229,82 +226,5 @@ struct AttachmentCard: View {
 
     private func remove() {
         if case .ready = item.status { library.delete(document: item.id) } else { library.cancel(item.id) }
-    }
-}
-
-/// "🌐 12 web pages": what Search found for this conversation, out of the way. Opens the list, with Clear All.
-struct WebPagesChip: View {
-    let pages: [ChatFileItem]
-    let library: ChatLibrary
-    let conversation: UUID
-    @State private var showing = false
-
-    var body: some View {
-        Button { showing = true } label: {
-            Label(pages.count == 1 ? "1 web page" : "\(pages.count) web pages", systemImage: "globe")
-                .font(.caption.weight(.medium))
-        }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .controlSize(.small)
-        .help("Pages Search found; your friend can still use them")
-        .popover(isPresented: $showing) {
-            WebPagesList(pages: pages, library: library) {
-                library.removeAll(in: .conversation(conversation), web: true)
-                showing = false
-            }
-            .presentationCompactAdaptation(.sheet)
-            .presentationDetents([.medium, .large])
-        }
-    }
-}
-
-struct WebPagesList: View {
-    let pages: [ChatFileItem]
-    let library: ChatLibrary
-    let clearAll: () -> Void
-    @State private var confirming = false
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    ForEach(pages) { page in
-                        HStack(spacing: 10) {
-                            Image(systemName: "globe").foregroundStyle(.teal)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(page.name).lineLimit(1)
-                                Text(page.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                            Spacer(minLength: 4)
-                            if case .ready(let document) = page.status, let url = document.url {
-                                Link(destination: url) { Image(systemName: "safari") }
-                                    .buttonStyle(.borderless)
-                                    .accessibilityLabel("Open \(page.name)")
-                            }
-                        }
-                        .swipeActions { Button("Remove", role: .destructive) { library.delete(document: page.id) } }
-                        .contextMenu { Button("Remove", systemImage: "trash", role: .destructive) { library.delete(document: page.id) } }
-                    }
-                } footer: {
-                    Text("Search keeps these so follow-up questions can use them. Removing them doesn't change past answers.")
-                }
-            }
-            .navigationTitle("Web Pages")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .destructiveAction) {
-                    Button("Clear All", role: .destructive) { confirming = true }
-                }
-            }
-            .confirmationDialog("Remove all \(pages.count) web pages?", isPresented: $confirming) {
-                Button("Remove All", role: .destructive, action: clearAll)
-            }
-        }
-        #if os(macOS)
-        .frame(width: 380, height: 360)
-        #endif
     }
 }

@@ -83,7 +83,9 @@ public final class ChatThread {
         guard !question.isEmpty, state == .idle, unavailable == nil else { return }
         failure = nil
         notice = nil
-        conversation.messages.append(ChatMessage(role: .user, text: question))
+        var message = ChatMessage(role: .user, text: question)
+        message.attachments = library.sendDrafts(of: conversation.id)
+        conversation.messages.append(message)
         library.save(conversation)
         state = .searching // busy from the moment it's sent, so Stop works at once
         let invocation = ChatCommand.parse(question)
@@ -144,11 +146,14 @@ public final class ChatThread {
                 guard !Task.isCancelled else { return }
                 // The title, then where it was taken: follow-ups (and the chat later) still know it.
                 let title = ScreenExplainer.title(glance.what)
-                conversation.messages.append(ChatMessage(role: .user, text: origin.map { title + "\n" + $0.line } ?? title))
-                library.save(conversation)
                 let file = FileManager.default.temporaryDirectory.appending(path: "Screenshot \(UUID().uuidString.prefix(8)).png")
                 try png.write(to: file)
-                library.add(file, scope: .conversation(conversation.id), temporary: true)
+                let screenshot = UUID()
+                library.add(file, scope: .conversation(conversation.id), temporary: true, id: screenshot)
+                var message = ChatMessage(role: .user, text: origin.map { title + "\n" + $0.line } ?? title)
+                message.attachments = [ChatMessage.Attachment(id: screenshot, name: file.lastPathComponent, kind: .image)]
+                conversation.messages.append(message)
+                library.save(conversation)
                 let found = web ? await lookUp(glance, origin: origin) : []
                 guard !Task.isCancelled else { return }
                 let session = LanguageModelSession(model: model, instructions: ScreenExplainer.instructions)
@@ -190,7 +195,9 @@ public final class ChatThread {
         guard state == .idle, unavailable == nil, !topic.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         failure = nil
         notice = nil
-        conversation.messages.append(ChatMessage(role: .user, text: typed))
+        var message = ChatMessage(role: .user, text: typed)
+        message.attachments = library.sendDrafts(of: conversation.id)
+        conversation.messages.append(message)
         library.save(conversation)
         state = .researching
         turn = Task { await runResearch(topic, effort: effort) }
@@ -458,6 +465,8 @@ public final class ChatThread {
     public func resend(from messageID: UUID, as text: String, web: Bool = false) {
         guard state == .idle, let index = conversation.messages.firstIndex(where: { $0.id == messageID }),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // The edited message keeps its files: back to the box, and sent again with it.
+        library.unsend(conversation.messages[index].attachments, in: conversation.id)
         conversation.messages.removeSubrange(index...)
         if conversation.summarizedCount > index {
             // The notes covered messages that are gone: start them over; compaction redoes them if needed.
@@ -592,6 +601,7 @@ public final class ChatThread {
         state = .idle
         guard early, let last = conversation.messages.last, last.role == .user else { return nil }
         conversation.messages.removeLast()
+        library.unsend(last.attachments, in: conversation.id) // back in the box with the question
         library.save(conversation)
         return last.text
     }

@@ -74,6 +74,30 @@ public final class ChatLibrary {
         documents.filter { $0.scope == .conversation(conversation) }
     }
 
+    // MARK: The message box's files
+
+    /// Files in the message box still being read: Send waits for them.
+    public func readingDrafts(of conversation: UUID) -> Bool {
+        jobs.contains { $0.scope == .draft(conversation) && $0.failure == nil }
+    }
+
+    /// Sends the message box's files with a message: they become the conversation's (searched from now on) and
+    /// leave the box. Nil when there were none.
+    public func sendDrafts(of conversation: UUID) -> [ChatMessage.Attachment]? {
+        let drafts = documents.filter { $0.scope == .draft(conversation) }
+        for document in drafts { store(document.with(scope: .conversation(conversation))) }
+        jobs.removeAll { $0.scope == .draft(conversation) && $0.failure != nil } // failed ones go with the message
+        return drafts.isEmpty ? nil : drafts.reversed().map { ChatMessage.Attachment(id: $0.id, name: $0.name, kind: $0.kind) }
+    }
+
+    /// A message taken back (stopped before an answer, or edited): its files return to the message box.
+    public func unsend(_ attachments: [ChatMessage.Attachment]?, in conversation: UUID) {
+        for attachment in attachments ?? [] {
+            guard let document = documents.first(where: { $0.id == attachment.id }) else { continue }
+            store(document.with(scope: .draft(conversation)))
+        }
+    }
+
     // MARK: Conversations
 
     /// Questions and their answers from the last `days`, newest first: what the friend may bring up (M19).
@@ -144,7 +168,9 @@ public final class ChatLibrary {
     /// Also removes the files attached to it.
     public func delete(conversation id: UUID) {
         erase(.conversation, id)
-        for document in attached(to: id) { delete(document: document.id) }
+        for document in documents where document.scope == .conversation(id) || document.scope == .draft(id) {
+            delete(document: document.id)
+        }
     }
 
     // MARK: Sync (M23)
@@ -182,7 +208,8 @@ public final class ChatLibrary {
         documents.removeAll { $0.id == stamped.id }
         documents.insert(stamped, at: 0)
         Self.write(stamped, to: documentsDir.appending(path: "\(stamped.id).json"))
-        if local { onChange(Change(kind: .document, id: stamped.id, deleted: false, at: stamped.modifiedAt ?? .now)) }
+        // Message-box files stay on this device until they're sent.
+        if local, !stamped.isDraft { onChange(Change(kind: .document, id: stamped.id, deleted: false, at: stamped.modifiedAt ?? .now)) }
     }
 
     private func erase(_ kind: RecordKind, _ id: UUID, local: Bool = true) {
