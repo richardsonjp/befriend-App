@@ -69,10 +69,11 @@ final class TeamEngine {
         files (the user's own files), web (the internet), thisChat (earlier in this conversation) or reasoning (thinking \
         it through). Use only the helpers that are available. Each task asks one thing.
         """
-    static let workerInstructions = """
-        You do one task for a team. Answer only the task, only from the material given. Write at most 4 short bullet \
-        points of facts, each ending with its source number in brackets like [2]. If the material doesn't answer the \
-        task, write exactly: Nothing found.
+    /// The this-chat worker reads the conversation: what was said, not passages with numbers.
+    static let chatWorkerInstructions = """
+        You look through the conversation so far for one task. Write at most 4 short bullet points saying what was \
+        said about it, with the exact names, places and numbers. If nothing in the conversation is about it, write \
+        exactly: Nothing found.
         """
     /// The reasoning worker has no material: it answers from what it knows (told apart from looked-up facts).
     static let reasoningInstructions = """
@@ -136,12 +137,16 @@ final class TeamEngine {
     }
 
     /// The answer, the sources its notes used, the log, and whether a web task was left out (the web is off).
-    func answer(web: Bool) async throws -> (answer: String, sources: [ChatSource], log: ResearchLog, wantedWeb: Bool) {
+    /// `reading`: a worker that must take the whole question (this chat, when the plain answer couldn't fit it).
+    func answer(web: Bool, reading: TeamWorker? = nil) async throws -> (answer: String, sources: [ChatSource], log: ResearchLog, wantedWeb: Bool) {
         let question = log.topic
         subjectNames = ExactTerms.find(question)
         let planned = await lead(question, web: web)
         let documents = library.documents(for: conversation.id).filter { $0.kind != .web }
-        let tasks = Self.usable(planned, question: question, web: web, hasHistory: conversation.messages.count > 1) { ask in
+        // A question that points back ("what did we decide earlier") always reads this chat, however it got here.
+        let hasHistory = conversation.messages.count > 1
+        let reading = reading ?? (hasHistory && ChatMemory.pointsBack(question) ? .thisChat : nil)
+        let tasks = Self.usable(planned, question: question, web: web, hasHistory: hasHistory, reading: reading) { ask in
             !Retriever.rank(ask, vector: Retriever.embed(ask), in: documents).isEmpty
         }
         log.steps = tasks.map { ResearchLog.Step(question: "\($0.worker.label): \($0.ask)") }
@@ -213,7 +218,7 @@ final class TeamEngine {
     /// four; none left (or no plan) → think about the question itself. The small lead often plans "reasoning" for
     /// what's in the user's files ("ticket prices from my launch plan"): a task `matchesFiles` reads the files, and
     /// a question that matches them is always read from the files as a whole.
-    static func usable(_ tasks: [TeamTask], question: String, web: Bool, hasHistory: Bool,
+    static func usable(_ tasks: [TeamTask], question: String, web: Bool, hasHistory: Bool, reading: TeamWorker? = nil,
                        matchesFiles: (String) -> Bool = { _ in false }) -> [TeamTask] {
         var seen = Set<String>()
         let tasks = tasks.map { $0.worker == .reasoning && matchesFiles($0.ask) ? TeamTask(worker: .files, ask: $0.ask) : $0 }
@@ -225,7 +230,11 @@ final class TeamEngine {
         // The whole question too: the lead's own files task can miss ("What is the URL of my launch plan?").
         let asked = kept.contains { $0.worker == .files && $0.ask.lowercased() == question.lowercased() }
         let files = !asked && matchesFiles(question) ? [TeamTask(worker: .files, ask: question)] : []
-        let all = files + kept
+        // The whole question, as with files: the lead's own task for that worker can ask something narrower.
+        let must = reading.map { worker in
+            kept.contains { $0.worker == worker && $0.ask.lowercased() == question.lowercased() } ? [] : [TeamTask(worker: worker, ask: question)]
+        } ?? []
+        let all = must + files + kept
         return all.isEmpty ? [TeamTask(worker: .reasoning, ask: question)] : Array(all.prefix(maxTasks))
     }
 
@@ -233,16 +242,25 @@ final class TeamEngine {
 
     /// This chat and reasoning: a session of their own (look-ups are read from the pool instead).
     private func think(_ task: TeamTask) async -> String {
-        var material = task.worker == .thisChat ? chatMaterial() : []
+        var material = task.worker == .thisChat ? chatMaterial(for: task.ask) : []
         if task.worker == .thisChat, material.isEmpty { return Self.nothingNoted }
-        let instructions = task.worker == .reasoning ? Self.reasoningInstructions : Self.workerInstructions
+        let instructions = task.worker == .reasoning ? Self.reasoningInstructions : Self.chatWorkerInstructions
         func prompt() -> String {
-            earlier + "Task: \(task.ask)" + (material.isEmpty ? "" : "\n\nMaterial:\n" + material.joined(separator: "\n"))
+            // This chat's worker reads the conversation itself, so the last two messages aren't repeated on top.
+            task.worker == .thisChat ? "Task: \(task.ask)\n\nThe conversation:\n" + material.joined(separator: "\n")
+                : earlier + "Task: \(task.ask)"
         }
-        // Measured (M36): the oldest of this chat goes until the notes have room.
+        // Measured (M36): what's least related to the task goes until the notes have room (the oldest first among
+        // equals), so a question about something said long ago still finds it.
         let fixed = await ContextBudget.tokens(instructions: instructions, model: model)
         let limit = model.contextSize - fixed - Self.noteTokens - ContextBudget.margin
-        while material.count > 1, await ContextBudget.tokens(prompt(), model: model) > limit { material.removeFirst() }
+        var order = ContextBudget.dropOrder(material, for: task.ask)[...]
+        var dropped = Set<Int>()
+        let all = material
+        while all.count - dropped.count > 1, await ContextBudget.tokens(prompt(), model: model) > limit, let next = order.popFirst() {
+            dropped.insert(next)
+            material = all.indices.filter { !dropped.contains($0) }.map { all[$0] }
+        }
         let session = LanguageModelSession(model: model, instructions: instructions)
         let note = (try? await session.respond(to: prompt(), options: GenerationOptions(maximumResponseTokens: Self.noteTokens)).content)
             ?? Self.nothingNoted
@@ -256,14 +274,24 @@ final class TeamEngine {
         return lines.isEmpty ? nothingNoted : trimmed(lines.joined(separator: "\n"))
     }
 
-    /// This chat for a worker, oldest first: as much as the estimate allows (measuring trims the rest).
-    private func chatMaterial() -> [String] {
+    /// This chat for a worker, in order: as much as the estimate allows, the least related to `ask` left out first
+    /// (measuring trims the rest), so something said long ago can still be found.
+    private func chatMaterial(for ask: String) -> [String] {
         var lines: [String] = []
         if let summary = conversation.summary { lines.append("Notes on older messages: " + summary) }
         lines += conversation.messages.dropLast().filter { !$0.isAside }.map { ChatPrompt.line(ChatPrompt.shortened($0)) }
-        // The newest count most: keep the end when it doesn't all fit.
-        let kept = ChatPrompt.fitting(lines.reversed().map { ChatPrompt.estimate($0) + 2 }, budget: Self.materialBudget)
-        return Array(lines.suffix(kept))
+        // When some of it is about the task, only that (and the notes on older messages): the small model misses one
+        // line about the venue among forty about snacks.
+        let words = Retriever.keywords(ask)
+        let related = lines.filter { $0.hasPrefix("Notes on older messages") || !words.intersection(Retriever.keywords($0)).isEmpty }
+        if related.contains(where: { !$0.hasPrefix("Notes on older messages") }) { lines = related }
+        let costs = lines.map { ChatPrompt.estimate($0) + 2 }
+        var total = costs.reduce(0, +), dropped = Set<Int>()
+        for index in ContextBudget.dropOrder(lines, for: ask) where total > Self.materialBudget && lines.count - dropped.count > 1 {
+            dropped.insert(index)
+            total -= costs[index]
+        }
+        return lines.indices.filter { !dropped.contains($0) }.map { lines[$0] }
     }
 
     static func trimmed(_ note: String) -> String {

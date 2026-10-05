@@ -209,7 +209,7 @@ public final class ChatThread {
 
     /// The team engine (M34): a quick answer (`effort` nil; a web task with the web off becomes the web offer), or
     /// deep research at that effort (a report, with file copies when the request asks). Live steps show either way.
-    private func runTeam(_ request: String, effort: ResearchEffort?, web: Bool = true) async {
+    private func runTeam(_ request: String, effort: ResearchEffort?, web: Bool = true, reading: TeamWorker? = nil) async {
         state = .researching
         // "… make them into a pdf and md file" is about the output, not the topic.
         let topic = effort == nil ? request : TeamEngine.withoutFileRequest(request)
@@ -223,7 +223,7 @@ public final class ChatThread {
                                     files: await TeamEngine.reportFiles(result.report, topic: topic, request: request))
                 reply.research = result.log
             } else {
-                let result = try await engine.answer(web: web)
+                let result = try await engine.answer(web: web, reading: reading)
                 reply = ChatMessage(role: .friend, text: result.answer, sources: result.sources)
                 reply.research = result.log
                 reply.offer = result.wantedWeb ? .web : nil
@@ -633,6 +633,10 @@ public final class ChatThread {
         let fitted = await ContextBudget.fit(.init(recalled: recall.block, recent: Array(earlier.suffix(keep)), passages: passages),
                                              limit: contextSize - fixed - ContextBudget.answerFloor) { [model] parts in
             await ContextBudget.tokens(prompt(parts), model: model)
+        }
+        // It points back to what no longer fits: the team reads this chat in its own window (M36).
+        if ContextBudget.needsTeam(droppedRecent: fitted.droppedRecent, question: question) {
+            return await runTeam(question, effort: nil, web: false, reading: .thisChat)
         }
         let cap = ContextBudget.cap(used: fixed + fitted.tokens, contextSize: contextSize, ceiling: ContextBudget.answerCeiling)
 

@@ -76,4 +76,35 @@ struct ContextBudgetTests {
         conversation.contextAgents = [AgentUse(name: "Lead", tokens: 400), AgentUse(name: "Writer", tokens: 2_900)]
         #expect(try JSONDecoder().decode(Conversation.self, from: JSONEncoder().encode(conversation)).contextAgents?.count == 2)
     }
+
+    @Test func pointingBackPastWhatFitsGoesToTheTeam() {
+        #expect(ContextBudget.needsTeam(droppedRecent: true, question: "what did we decide earlier about the venue?"))
+        #expect(!ContextBudget.needsTeam(droppedRecent: false, question: "what did we decide earlier about the venue?"), "it all fit")
+        #expect(!ContextBudget.needsTeam(droppedRecent: true, question: "what's a good venue?"), "it doesn't point back")
+        let lines = ["User: hi", "User: the venue is the Grand Hall", "You: nice", "User: lunch ideas?"]
+        #expect(ContextBudget.dropOrder(lines, for: "which venue did we pick")[...].last == 1, "the related line goes last")
+        #expect(ContextBudget.dropOrder(lines, for: "which venue did we pick").first == 0, "oldest first among equals")
+        let tasks = TeamEngine.usable([TeamTask(worker: .reasoning, ask: "venues")], question: "the venue we picked earlier?",
+                                      web: false, hasHistory: true, reading: .thisChat)
+        #expect(tasks.first == TeamTask(worker: .thisChat, ask: "the venue we picked earlier?"))
+    }
+
+    /// The real model, end to end: a detail far back in a long chat, asked about again.
+    @MainActor @Test func aDetailFarBackIsFoundByTheTeam() async throws {
+        let library = ChatLibrary(root: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+        var conversation = Conversation()
+        conversation.messages = [ChatMessage(role: .user, text: "For the launch party we decided the venue is the Grand Hall in Jakarta."),
+                                 ChatMessage(role: .friend, text: "Great, the Grand Hall it is!")]
+            + (0..<40).map { ChatMessage(role: $0.isMultiple(of: 2) ? .user : .friend,
+                                         text: "Another thought about snacks and music number \($0): " + String(repeating: "chips, playlists and lights. ", count: 12)) }
+        let thread = ChatThread(conversation, library: library, friend: nil)
+        guard thread.unavailable == nil else { return }
+        thread.send("What venue did we decide on earlier for the launch party?")
+        for _ in 0..<1200 where thread.state != .idle || thread.conversation.messages.last?.role != .friend {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let reply = try #require(thread.conversation.messages.last)
+        #expect(reply.text.contains("Grand Hall"), "\(reply.text)")
+        #expect(reply.research?.isTeam == true, "read by a team: the history didn't fit the plain answer")
+    }
 }

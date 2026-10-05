@@ -54,6 +54,20 @@ public nonisolated enum ContextBudget {
         max(64, min(ceiling, contextSize - used - margin))
     }
 
+    /// A question that points back ("what did we decide earlier") whose prompt had to lose messages: the plain
+    /// answer can't see what it asks about, so a team's "this chat" worker reads the history in its own window.
+    static func needsTeam(droppedRecent: Bool, question: String) -> Bool {
+        droppedRecent && ChatMemory.pointsBack(question)
+    }
+
+    /// The order to drop lines in when they don't fit: least related to `ask` first (shared words), the oldest
+    /// first among equals. Indices into `lines`.
+    static func dropOrder(_ lines: [String], for ask: String) -> [Int] {
+        let words = Retriever.keywords(ask)
+        let scores = lines.map { words.intersection(Retriever.keywords($0)).count }
+        return lines.indices.sorted { scores[$0] != scores[$1] ? scores[$0] < scores[$1] : $0 < $1 }
+    }
+
     // MARK: The plain answer's prompt
 
     /// What a plain answer's prompt is made of, besides the question and the summary (which always stay).
