@@ -15,17 +15,17 @@ public nonisolated struct CatchLink: Codable, Equatable, Sendable {
     public let port: UInt16
     public let key: Data
 
-    /// The key, the steer as a big-endian Double, then 1 while jump is held.
-    static func packet(_ steer: Double, jump: Bool, key: Data) -> Data {
-        withUnsafeBytes(of: steer.bitPattern.bigEndian) { key + Data($0) } + [jump ? 1 : 0]
+    /// The key, the steer as a big-endian Double, then the held pads: 1 jump, 2 drop.
+    static func packet(_ steer: Double, jump: Bool, drop: Bool = false, key: Data) -> Data {
+        withUnsafeBytes(of: steer.bitPattern.bigEndian) { key + Data($0) } + [(jump ? 1 : 0) | (drop ? 2 : 0)]
     }
 
     /// The input from a packet sent with this key; anything else (another sender, junk, NaN) is nil.
-    static func input(from packet: Data, key: Data) -> (steer: Double, jump: Bool)? {
+    static func input(from packet: Data, key: Data) -> (steer: Double, jump: Bool, drop: Bool)? {
         guard packet.count == key.count + 9, packet.prefix(key.count) == key else { return nil }
         let bytes = Array(packet.suffix(9))
         let value = Double(bitPattern: bytes.prefix(8).reduce(UInt64(0)) { $0 << 8 | UInt64($1) })
-        return value.isFinite ? (max(-1, min(1, value)), bytes[8] == 1) : nil
+        return value.isFinite ? (max(-1, min(1, value)), bytes[8] & 1 != 0, bytes[8] & 2 != 0) : nil
     }
 
     /// This Mac's IPv4 addresses on Wi-Fi and Ethernet (`en*`), where the phone can reach it through the router.
@@ -51,7 +51,7 @@ public nonisolated struct CatchLink: Codable, Equatable, Sendable {
 /// The Mac's end: a UDP port open while a game runs.
 public final class CatchLinkListener {
     /// Input from the phone, on the main actor.
-    public var onInput: (_ steer: Double, _ jump: Bool) -> Void = { _, _ in }
+    public var onInput: (_ steer: Double, _ jump: Bool, _ drop: Bool) -> Void = { _, _, _ in }
     public private(set) var link: CatchLink?
 
     // ponytail: the key keeps other devices on the Wi-Fi from steering; it isn't secret from the account's own peers.
@@ -100,7 +100,7 @@ public final class CatchLinkListener {
         connection.receiveMessage { [weak self] data, _, _, error in
             MainActor.assumeIsolated {
                 guard let self, error == nil else { return connection.cancel() }
-                if let data, let input = CatchLink.input(from: data, key: self.key) { self.onInput(input.steer, input.jump) }
+                if let data, let input = CatchLink.input(from: data, key: self.key) { self.onInput(input.steer, input.jump, input.drop) }
                 self.receive(on: connection)
             }
         }
@@ -129,9 +129,9 @@ public final class CatchLinkSender {
         }
     }
 
-    public func send(steer: Double, jump: Bool) {
+    public func send(steer: Double, jump: Bool, drop: Bool) {
         guard !connections.isEmpty else { return }
-        let packet = CatchLink.packet(steer, jump: jump, key: key)
+        let packet = CatchLink.packet(steer, jump: jump, drop: drop, key: key)
         connections.forEach { $0.send(content: packet, completion: .idempotent) }
     }
 

@@ -4,7 +4,8 @@
 //
 //  The Mac games on the friend's display, in a click-through layer; the iPhone starts them and steers.
 //  Catch (M41): food and bombs fall and the friend runs along the bottom (`CatchGame`).
-//  Runner (M42): the friend runs and jumps on the real windows' top edges above rising lava (`RunnerGame`).
+//  Runner (M42): the friend runs and jumps across the words on screen above rising lava (`RunnerGame`).
+//  Rhythm (M43): a song plays and notes fall down a highway; the phone's four lanes play them (`RhythmJudge`).
 //
 
 import AppKit
@@ -24,9 +25,13 @@ final class CatchSession {
         let at: Date
     }
 
-    private static func bestKey(_ mode: MacGame) -> String { "\(mode.rawValue).best" }
-    /// Runner re-reads the windows this often, so moving one changes the level.
-    private static let windowReadInterval: TimeInterval = 1.0 / 15 // smooth enough to ride a dragged window
+    private static func bestKey(_ mode: MacGame, _ pick: RhythmPick?) -> String {
+        pick.map { "rhythm.\($0.song).\($0.difficulty.rawValue).best" } ?? "\(mode.rawValue).best"
+    }
+    /// The friend cheers or cries at most this often in Rhythm, where notes come several a second.
+    private static let reactionInterval: TimeInterval = 1
+    /// Runner re-reads the screen's words this often, so scrolling or typing changes the level.
+    private static let wordReadInterval: TimeInterval = 1
     /// Paused, over or without the phone this long, the game ends by itself.
     private static let idleLimit: TimeInterval = 30
     /// Tilt is sent unreliably 60 times a second; none for this long means the phone stopped steering.
@@ -37,6 +42,12 @@ final class CatchSession {
     private(set) var mode = MacGame.catchFood
     private(set) var game: CatchGame?
     private(set) var runner: RunnerGame?
+    /// Runner without Screen Recording: there are no words to stand on, only the clouds.
+    private(set) var wordsBlocked = false
+    private(set) var rhythm: RhythmJudge?
+    private(set) var rhythmPick: RhythmPick?
+    /// Seconds into the song, corrected by the player's calibration (what they hear now).
+    private(set) var songTime = 0.0
     private(set) var pops: [Pop] = []
     private(set) var best = 0
     var isOn: Bool { phase != .off }
@@ -51,7 +62,9 @@ final class CatchSession {
     @ObservationIgnored private var field = CGRect.zero
     @ObservationIgnored private var steer = 0.0
     @ObservationIgnored private var jump = false
-    @ObservationIgnored private var windowsReadAt = Date.distantPast
+    @ObservationIgnored private var drop = false
+    @ObservationIgnored private var wordsReadAt = Date.distantPast
+    @ObservationIgnored private var readingWords = false
     @ObservationIgnored private var lastTilt = Date.distantPast
     /// While the fast lane delivers, Multipeer's copies of the same tilt arrive later and are ignored.
     @ObservationIgnored private var lastFastTilt = Date.distantPast
@@ -62,6 +75,10 @@ final class CatchSession {
     @ObservationIgnored private var window: NSWindow?
     @ObservationIgnored private var rng = SystemRandomNumberGenerator()
     @ObservationIgnored private var escapeBefore: (() -> Void)?
+    @ObservationIgnored private let player = RhythmPlayer()
+    @ObservationIgnored private var pausedAt = 0.0
+    @ObservationIgnored private var reactedAt = Date.distantPast
+    @ObservationIgnored private var clicksDone: Task<Void, Never>?
 
     /// Picking a box to explain holds Esc; a game doesn't start over it.
     @ObservationIgnored var explaining: () -> Bool = { false }
@@ -70,9 +87,10 @@ final class CatchSession {
         self.walker = walker
         self.pet = pet
         self.hotkey = hotkey
-        fastLane.onInput = { [weak self] steer, jump in
+        fastLane.onInput = { [weak self] steer, jump, drop in
             self?.steer = steer
             self?.jump = jump
+            self?.drop = drop
             self?.lastTilt = .now
             self?.lastFastTilt = .now
         }
@@ -80,13 +98,18 @@ final class CatchSession {
 
     func handle(_ message: CatchMessage) {
         switch message {
-        case .start(let mode): begin(mode)
-        case .input(let value, let jump) where value.isFinite && Date.now.timeIntervalSince(lastFastTilt) > Self.tiltTimeout:
+        case .start(let mode, let pick): begin(mode, pick)
+        case .lane(let touch): play(touch)
+        case .ping(let sent): send(.pong(sent: sent, mac: RhythmPlayer.now))
+        case .calibrate where phase != .playing: playClicks()
+        case .input(let value, let jump, let drop) where value.isFinite && Date.now.timeIntervalSince(lastFastTilt) > Self.tiltTimeout:
             steer = max(-1, min(1, value))
             self.jump = jump
+            self.drop = drop
             lastTilt = .now
         case .pause where phase == .playing: pause()
         case .resume where phase == .paused:
+            if let pick = rhythmPick, let song = RhythmSong.named(pick.song), !player.play(song, from: pausedAt) { return end() }
             phase = .playing
             idleSince = nil
             lastTick = .now
@@ -115,6 +138,9 @@ final class CatchSession {
         window = nil
         game = nil
         runner = nil
+        rhythm = nil
+        rhythmPick = nil
+        player.stop()
         pops = []
         hotkey.catchEscape = false
         fastLane.stop()
@@ -127,7 +153,12 @@ final class CatchSession {
 
     // MARK: Running
 
-    private func begin(_ mode: MacGame) {
+    private func begin(_ mode: MacGame, _ pick: RhythmPick?) {
+        let song = pick.flatMap { RhythmSong.named($0.song) }
+        guard mode != .rhythm || song != nil else { return phase == .off ? send(.quit) : () } // an unknown song: ignore it
+        player.stop()
+        // The song first: if the sounds can't play, nothing has been put on screen yet.
+        if mode == .rhythm, let song, !player.play(song) { return phase == .off ? send(.quit) : end() }
         if phase == .off {
             guard !explaining(), let screen = walker.panel?.characterScreen ?? NSScreen.main else { return send(.quit) }
             field = screen.visibleFrame
@@ -145,18 +176,30 @@ final class CatchSession {
             fastLane.start { [weak self] in self?.send(.link($0)) }
         }
         self.mode = mode
-        best = UserDefaults.standard.integer(forKey: Self.bestKey(mode))
+        best = UserDefaults.standard.integer(forKey: Self.bestKey(mode, pick))
         game = mode == .catchFood ? CatchGame(width: field.width, height: field.height) : nil
         runner = nil
+        rhythm = nil
+        rhythmPick = nil
+        if mode == .rhythm, let song, let pick {
+            rhythm = RhythmJudge(notes: song.chart(pick.difficulty))
+            rhythmPick = RhythmPick(song: pick.song, difficulty: pick.difficulty, calibration: max(0, min(0.4, pick.calibration)))
+            songTime = -rhythmPick!.calibration
+            // Beside the hit line, left of the highway.
+            let size = field.size, spot = CGPoint(x: field.minX + RhythmStage.highway(in: size).minX - 70,
+                                                  y: field.maxY - RhythmStage.hitY(in: size))
+            walker.run(to: spot, steer: 1) // faces the highway…
+            walker.run(to: spot, steer: 0) // …and stands still
+        }
         if mode == .runner {
-            var runner = RunnerGame(width: field.width, height: field.height)
-            runner.setWindows(windows())
-            self.runner = runner
-            windowsReadAt = .now
+            runner = RunnerGame(width: field.width, height: field.height)
+            if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() } // asks once; Explain uses it too
+            readWords()
         }
         phase = .playing
         steer = 0
         jump = false
+        drop = false
         pops = []
         idleSince = nil
         lastTick = .now
@@ -164,6 +207,11 @@ final class CatchSession {
     }
 
     private func pause() {
+        if rhythm != nil {
+            pausedAt = player.stop()
+            // The phone's lanes vanish without a release: let go here, so a hold can't finish while nobody holds it.
+            judged((0..<RhythmSong.lanes).flatMap { rhythm!.release(lane: $0, at: pausedAt - (rhythmPick?.calibration ?? 0)) })
+        }
         phase = .paused
         idleSince = .now
         publish()
@@ -178,7 +226,7 @@ final class CatchSession {
             if let idleSince, now.timeIntervalSince(idleSince) > Self.idleLimit { end() }
             return
         }
-        if now.timeIntervalSince(lastTilt) > Self.tiltTimeout { (steer, jump) = (0, false) }
+        if now.timeIntervalSince(lastTilt) > Self.tiltTimeout { (steer, jump, drop) = (0, false, false) }
         if var game {
             let events = game.step(dt: dt, steer: steer, using: &rng)
             self.game = game
@@ -192,11 +240,8 @@ final class CatchSession {
             }
             if !events.isEmpty { publish() }
         } else if var runner {
-            if now.timeIntervalSince(windowsReadAt) > Self.windowReadInterval {
-                runner.setWindows(windows())
-                windowsReadAt = now
-            }
-            let events = runner.step(dt: dt, steer: steer, jump: jump, using: &rng)
+            if now.timeIntervalSince(wordsReadAt) > Self.wordReadInterval { readWords() }
+            let events = runner.step(dt: dt, steer: steer, jump: jump, drop: drop, using: &rng)
             self.runner = runner
             walker.run(to: CGPoint(x: field.minX + runner.x, y: field.maxY - runner.y), steer: steer)
             for event in events {
@@ -207,6 +252,59 @@ final class CatchSession {
                 }
             }
             if !events.isEmpty { publish() }
+        } else if rhythm != nil, let time = player.time {
+            songTime = time - (rhythmPick?.calibration ?? 0)
+            judged(rhythm!.advance(to: songTime))
+        }
+    }
+
+    // MARK: Rhythm
+
+    /// A lane pressed or let go on the phone, judged at the moment it happened in the song (as the player heard it).
+    private func play(_ touch: RhythmTouch) {
+        guard phase == .playing, var judge = rhythm, let startedAt = player.startedAt, touch.at.isFinite else { return }
+        let time = touch.at - startedAt - (rhythmPick?.calibration ?? 0)
+        let events = touch.down ? judge.press(lane: touch.lane, at: time) : judge.release(lane: touch.lane, at: time)
+        rhythm = judge
+        judged(events)
+    }
+
+    private func judged(_ events: [RhythmJudge.Event]) {
+        guard let judge = rhythm, !events.isEmpty else { return }
+        let size = field.size, hit = RhythmStage.hitY(in: size)
+        for event in events {
+            switch event {
+            case .judged(let index, let judgement):
+                pops.append(Pop(text: judgement.title, x: RhythmStage.laneX(judge.notes[index].lane, in: size), y: hit - 30, at: .now))
+                if judgement == .miss { react(.cry, .concerned) } else { send(.hit(.food)); react(.cheer, .excited) }
+            case .broke(let index):
+                pops.append(Pop(text: "Let go", x: RhythmStage.laneX(judge.notes[index].lane, in: size), y: hit - 30, at: .now))
+            case .held(let index):
+                pops.append(Pop(text: "+100", x: RhythmStage.laneX(judge.notes[index].lane, in: size), y: hit - 30, at: .now))
+            case .failed, .finished:
+                player.stop()
+                over(score: judge.score)
+            }
+        }
+        publish()
+    }
+
+    private func react(_ action: PetAction, _ mood: PetMood) {
+        guard Date.now.timeIntervalSince(reactedAt) > Self.reactionInterval else { return }
+        reactedAt = .now
+        pet.apply(PetReaction(action: action, mood: mood, dialogue: ""))
+    }
+
+    /// The phone's tap-along calibration: eight clicks, and when each plays on this clock.
+    private func playClicks() {
+        let song = RhythmSong.clicks
+        guard player.play(song), let startedAt = player.startedAt else { return }
+        send(.clicks(song.parts[0].notes.map { startedAt + song.seconds($0.beat) }))
+        clicksDone?.cancel() // a second calibration keeps its own clicks
+        clicksDone = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(song.duration + 0.5))
+            guard !Task.isCancelled, let self, self.phase != .playing else { return } // a song started meanwhile keeps playing
+            self.player.stop()
         }
     }
 
@@ -227,28 +325,34 @@ final class CatchSession {
         idleSince = .now
         guard score > best else { return }
         best = score
-        UserDefaults.standard.set(best, forKey: Self.bestKey(mode))
+        UserDefaults.standard.set(best, forKey: Self.bestKey(mode, rhythmPick))
     }
 
     private func publish() {
+        if let judge = rhythm {
+            let status = RhythmStatus(health: judge.health, combo: judge.combo, accuracy: judge.accuracy, grade: judge.grade, failed: judge.failed)
+            return send(.state(CatchStatus(score: judge.score, lives: 0, best: max(best, judge.score),
+                                           paused: phase == .paused, over: phase == .over, rhythm: status)))
+        }
         guard let (score, lives) = game.map({ ($0.score, $0.lives) }) ?? runner.map({ ($0.score, $0.lives) }) else { return }
         send(.state(CatchStatus(score: score, lives: lives, best: max(best, score),
                                 paused: phase == .paused, over: phase == .over)))
     }
 
-    /// The normal windows on the friend's display, front to back, in the field's coordinates (top-left, y down).
-    /// Window bounds need no permission; only titles do.
-    private func windows() -> [RunnerGame.Window] {
-        let me = ProcessInfo.processInfo.processIdentifier
-        // CGWindowList counts from the top-left of the main display; AppKit from its bottom-left.
-        let fieldTop = (NSScreen.screens.first?.frame.height ?? field.maxY) - field.maxY
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        return list.compactMap { info in
-            guard (info[kCGWindowLayer as String] as? Int) == 0, (info[kCGWindowOwnerPID as String] as? pid_t) != me,
-                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0, let id = info[kCGWindowNumber as String] as? Int,
-                  let bounds = info[kCGWindowBounds as String] as CFTypeRef?,
-                  let rect = CGRect(dictionaryRepresentation: bounds as! CFDictionary) else { return nil }
-            return RunnerGame.Window(id: id, frame: rect.offsetBy(dx: -field.minX, dy: -fieldTop))
+    /// Reads the words on the friend's display in the background; the level changes when they arrive.
+    private func readWords() {
+        guard !readingWords, let screen = walker.panel?.characterScreen ?? NSScreen.main else { return }
+        readingWords = true
+        wordsReadAt = .now
+        let field = field
+        Task { [weak self] in
+            let words = await ScreenWords.read(field, on: screen)
+            guard let self else { return }
+            self.readingWords = false
+            self.wordsBlocked = words == nil
+            guard self.phase != .off, self.field == field, var runner = self.runner else { return }
+            runner.setWords(words ?? [])
+            self.runner = runner
         }
     }
 
@@ -285,6 +389,7 @@ private struct CatchField: View {
                     }
                 }
                 if let runner = session.runner { drawRunner(runner, in: context, size: size) }
+                if let judge = session.rhythm { RhythmStage.draw(judge, at: session.songTime, in: context, size: size) }
                 for pop in session.pops {
                     let age = Date.now.timeIntervalSince(pop.at)
                     var faded = context
@@ -293,17 +398,18 @@ private struct CatchField: View {
                                at: CGPoint(x: pop.x, y: pop.y - 30 - age * 60))
                 }
             }
-            if let (score, lives) = session.game.map({ ($0.score, $0.lives) }) ?? session.runner.map({ ($0.score, $0.lives) }) {
+            if let (score, lives) = session.game.map({ ($0.score, $0.lives) }) ?? session.runner.map({ ($0.score, $0.lives) })
+                ?? session.rhythm.map({ ($0.score, -1) }) {
                 header(score: score, lives: lives)
             }
         }
         .ignoresSafeArea()
     }
 
-    /// The window edges glow faintly so you can see what's solid; clouds, coins and the lava are drawn.
+    /// The words' tops glow faintly so you can see what's solid; clouds, coins and the lava are drawn.
     private func drawRunner(_ runner: RunnerGame, in context: GraphicsContext, size: CGSize) {
         for ledge in runner.ledges {
-            let edge = CGRect(x: ledge.minX, y: ledge.y - 3, width: ledge.maxX - ledge.minX, height: 6)
+            let edge = CGRect(x: ledge.minX, y: ledge.y - 2, width: ledge.maxX - ledge.minX, height: 4)
             if ledge.isCloud {
                 context.fill(Path(roundedRect: edge.insetBy(dx: 0, dy: -8).offsetBy(dx: 0, dy: 8), cornerRadius: 12), with: .color(.white.opacity(0.9)))
                 context.draw(Text("☁️").font(.system(size: 28)), at: CGPoint(x: edge.midX, y: ledge.y + 10))
@@ -322,14 +428,26 @@ private struct CatchField: View {
     private func header(score: Int, lives: Int) -> some View {
         VStack(spacing: 6) {
             HStack(spacing: 14) {
-                Text(String(repeating: "❤️", count: max(0, lives)) + String(repeating: "🤍", count: max(0, CatchGame.startLives - lives)))
+                if lives >= 0 { // Rhythm has a health bar instead
+                    Text(String(repeating: "❤️", count: lives) + String(repeating: "🤍", count: max(0, CatchGame.startLives - lives)))
+                } else if let song = session.rhythmPick.flatMap({ RhythmSong.named($0.song) }) {
+                    Text(song.title)
+                }
                 Text("\(score)").monospacedDigit()
                 Text("Best \(max(session.best, score))").foregroundStyle(.secondary)
             }
             .font(.title2.bold())
             switch session.phase {
             case .paused: Text("Paused · resume on your iPhone, Esc ends").font(.headline)
-            case .over: Text("Game over · play again on your iPhone, Esc ends").font(.headline)
+            case .playing where session.runner != nil && session.wordsBlocked:
+                Text("Allow befriend in Screen Recording (System Settings) to stand on your screen's words").font(.headline)
+            case .over:
+                if let judge = session.rhythm {
+                    Text(judge.failed ? "Failed · try again on your iPhone, Esc ends"
+                         : "Grade \(judge.grade) · \(Int((judge.accuracy * 100).rounded()))% · play again on your iPhone, Esc ends").font(.headline)
+                } else {
+                    Text("Game over · play again on your iPhone, Esc ends").font(.headline)
+                }
             default: EmptyView()
             }
         }

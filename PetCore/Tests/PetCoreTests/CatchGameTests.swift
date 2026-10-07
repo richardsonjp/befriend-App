@@ -90,7 +90,8 @@ struct CatchGameTests {
     }
 
     @Test func messagesRoundTrip() throws {
-        let messages: [CatchMessage] = [.start(.catchFood), .start(.runner), .input(steer: -0.25, jump: true), .pause, .resume, .quit, .hit(.bomb),
+        let messages: [CatchMessage] = [.start(.catchFood), .start(.rhythm, rhythm: RhythmPick(song: "sunny", difficulty: .hard, calibration: 0.1)),
+                                        .lane(RhythmTouch(lane: 2, down: true, at: 12.5)), .ping(3), .pong(sent: 3, mac: 9), .clicks([1, 2]), .input(steer: -0.25, jump: true), .pause, .resume, .quit, .hit(.bomb),
                                         .state(CatchStatus(score: 12, lives: 2, best: 30, paused: false, over: false)),
                                         .link(CatchLink(hosts: ["192.168.1.5"], port: 50123, key: Data([1, 2, 3])))]
         for message in messages {
@@ -103,7 +104,8 @@ struct CatchGameTests {
     @Test func fastLanePacketsNeedTheKey() {
         let key = Data(repeating: 7, count: 16)
         let input = CatchLink.input(from: CatchLink.packet(-0.4, jump: true, key: key), key: key)
-        #expect(input?.steer == -0.4 && input?.jump == true)
+        #expect(input?.steer == -0.4 && input?.jump == true && input?.drop == false)
+        #expect(CatchLink.input(from: CatchLink.packet(0, jump: false, drop: true, key: key), key: key)?.drop == true)
         #expect(CatchLink.input(from: CatchLink.packet(3, jump: false, key: key), key: key)?.steer == 1, "clamped")
         #expect(CatchLink.input(from: CatchLink.packet(0.4, jump: false, key: Data(repeating: 8, count: 16)), key: key) == nil)
         #expect(CatchLink.input(from: CatchLink.packet(.nan, jump: false, key: key), key: key) == nil)
@@ -116,13 +118,13 @@ struct CatchGameTests {
         let sender = CatchLinkSender()
         defer { listener.stop(); sender.stop() }
         let steer = await withCheckedContinuation { (done: CheckedContinuation<Double, Never>) in
-            listener.onInput = { steer, _ in
-                listener.onInput = { _, _ in }
+            listener.onInput = { steer, _, _ in
+                listener.onInput = { _, _, _ in }
                 done.resume(returning: steer)
             }
             listener.start { link in
                 sender.connect(link)
-                Task { for _ in 0..<20 { sender.send(steer: -0.6, jump: false); try? await Task.sleep(for: .milliseconds(50)) } }
+                Task { for _ in 0..<20 { sender.send(steer: -0.6, jump: false, drop: false); try? await Task.sleep(for: .milliseconds(50)) } }
             }
         }
         #expect(steer == -0.6)

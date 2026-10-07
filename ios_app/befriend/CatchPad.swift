@@ -2,8 +2,8 @@
 //  CatchPad.swift
 //  befriend
 //
-//  The iPhone as the controller for the Mac games: Catch (M41) and Runner (M42). Tilt it like a steering wheel and
-//  the friend runs on the Mac; in Runner, hold the pad to jump. The game itself runs on the Mac; this sends the input
+//  The iPhone as the controller for the Mac games: Catch (M41), Runner (M42) and Rhythm (M43, `RhythmPad`). Tilt it
+//  like a steering wheel and the friend runs on the Mac; in Runner, hold the pad to jump. The game itself runs on the Mac; this sends the input
 //  60 times a second and shows the score, with a buzz on every catch.
 //
 
@@ -25,12 +25,17 @@ final class CatchPad {
     private(set) var status: CatchStatus?
     /// -1…1, for the steering bar.
     private(set) var steer = 0.0
-    /// The jump pad is held (Runner).
+    /// The jump and drop pads are held (Runner).
     private(set) var jumping = false
+    private(set) var dropping = false
     /// The Mac didn't answer Ready (an older befriend, or it couldn't start).
     private(set) var noAnswer = false
 
-    @ObservationIgnored var send: (CatchMessage) -> Void = { _ in }
+    let rhythm = RhythmPad()
+
+    @ObservationIgnored var send: (CatchMessage) -> Void = { _ in } {
+        didSet { rhythm.send = send }
+    }
     /// Opened or closed: the screen stays awake while it's open.
     @ObservationIgnored var onOpenChange: () -> Void = {}
 
@@ -58,7 +63,7 @@ final class CatchPad {
         stage = .playing
         Orientation.allow(Orientation.current) // steering mustn't turn the screen
         noAnswer = false
-        send(.start(game))
+        start()
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
             guard let self, self.isOpen, self.stage == .playing, self.status == nil else { return }
@@ -66,12 +71,26 @@ final class CatchPad {
         }
     }
 
-    func playAgain() { send(.start(game)) }
+    func playAgain() { start() }
+
+    private func start() {
+        guard game == .rhythm else { return send(.start(game)) }
+        Task {
+            await rhythm.syncClock() // first: starting a song keeps the Mac busy, which would skew the pings
+            send(.start(game, rhythm: rhythm.pick))
+        }
+    }
 
     func setJump(_ held: Bool) {
         guard held != jumping else { return }
         jumping = held
         sendInput() // now, not on the next motion frame
+    }
+
+    func setDrop(_ held: Bool) {
+        guard held != dropping else { return }
+        dropping = held
+        sendInput()
     }
     func pause() { send(.pause) }
     func resume() { send(.resume) }
@@ -85,10 +104,16 @@ final class CatchPad {
         switch message {
         case .state(let status):
             self.status = status
-            if status.over || status.paused { jumping = false } // the pad disappears under the finger without an end
+            if status.over || status.paused { // the pads disappear under the finger without an end
+                jumping = false
+                dropping = false
+                rhythm.releaseAll()
+            }
         case .hit(.food): light.impactOccurred()
         case .hit(.bomb): heavy.impactOccurred()
         case .link(let link): fastLane.connect(link)
+        case .pong(let sent, let mac): rhythm.pong(sent: sent, mac: mac)
+        case .clicks(let times): rhythm.clicks(times)
         case .quit where stage == .playing:
             if status == nil { // it never started: say so instead of closing
                 notAnswered()
@@ -120,6 +145,9 @@ final class CatchPad {
         status = nil
         steer = 0
         jumping = false
+        dropping = false
+        rhythm.releaseAll()
+        rhythm.cancelCalibration()
         onOpenChange()
     }
 
@@ -136,9 +164,9 @@ final class CatchPad {
     }
 
     private func sendInput() {
-        guard stage == .playing, status?.paused != true, status?.over != true else { return }
-        fastLane.send(steer: steer, jump: jumping) // through the router: steady
-        send(.input(steer: steer, jump: jumping)) // Multipeer: the fallback when the router path is blocked
+        guard stage == .playing, game != .rhythm, status?.paused != true, status?.over != true else { return }
+        fastLane.send(steer: steer, jump: jumping, drop: dropping) // through the router: steady
+        send(.input(steer: steer, jump: jumping, drop: dropping)) // Multipeer: the fallback when the router path is blocked
     }
 }
 
@@ -157,6 +185,8 @@ struct CatchPadView: View {
             if !pad.macNearby {
                 ContentUnavailableView("Looking for your Mac…", systemImage: "laptopcomputer",
                                        description: Text("Open befriend on your Mac, on the same Wi-Fi."))
+            } else if pad.stage == .calibrate, pad.rhythm.tapAlong != nil {
+                RhythmTapAlong(rhythm: pad.rhythm)
             } else if pad.stage == .calibrate {
                 calibrate
             } else if let status = pad.status {
@@ -176,16 +206,15 @@ struct CatchPadView: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 280)
-            if !landscape { Text(pad.game == .catchFood ? "🍎🥕🍖 💣" : "🏃 🪙 🌋").font(.system(size: 44)) }
+            if !landscape { Text(["catch": "🍎🥕🍖 💣", "runner": "🏃 🪙 🌋", "rhythm": "🎵 🟢🔴🟡🔵"][pad.game.rawValue] ?? "").font(.system(size: 44)) }
+            if pad.game == .rhythm { RhythmSetup(rhythm: pad.rhythm) }
             if pad.noAnswer {
                 Text("Your Mac didn't answer. Make sure befriend on your Mac is up to date, then try again.")
                     .font(.callout)
                     .foregroundStyle(.red)
                     .multilineTextAlignment(.center)
             }
-            Text(pad.game == .catchFood
-                 ? "Hold your iPhone however feels comfortable, then tap Ready. Turn it like a steering wheel to run. Catch the food and dodge the bombs: three bombs and it's over."
-                 : "Hold your iPhone however feels comfortable, then tap Ready. Turn it to run along your windows' top edges and hold the pad to jump. Grab the coins and stay above the lava.")
+            Text(Self.howToPlay[pad.game] ?? "")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             Button("Ready", action: pad.ready)
@@ -194,12 +223,18 @@ struct CatchPadView: View {
         }
     }
 
+    private static let howToPlay: [MacGame: String] = [
+        .catchFood: "Hold your iPhone however feels comfortable, then tap Ready. Turn it like a steering wheel to run. Catch the food and dodge the bombs: three bombs and it's over.",
+        .runner: "Hold your iPhone however feels comfortable, then tap Ready. Every word on your Mac's screen is a platform: turn the phone to run, Jump (again in the air for a double jump) and Drop through to the line below. Grab the coins and stay above the lava.",
+        .rhythm: "Notes fall down the highway on your Mac. Tap the lane of the same colour as each one crosses the line, and hold the long ones to the end. Too many misses and the song stops. Using AirPods? Calibrate first.",
+    ]
+
     /// Side by side in landscape: the score on the left, the controls on the right.
     private func playing(_ status: CatchStatus) -> some View {
         let layout = landscape ? AnyLayout(HStackLayout(spacing: 48)) : AnyLayout(VStackLayout(spacing: 20))
         return layout {
             VStack(spacing: 12) {
-                Text(hearts).font(.largeTitle)
+                if let rhythm = status.rhythm { RhythmHealth(status: rhythm) } else { Text(hearts).font(.largeTitle) }
                 Text("\(status.score)").font(.system(size: landscape ? 60 : 72, weight: .bold)).monospacedDigit()
                 Text("Best \(status.best)").foregroundStyle(.secondary)
             }
@@ -210,11 +245,21 @@ struct CatchPadView: View {
     private func controls(_ status: CatchStatus) -> some View {
         VStack(spacing: 20) {
             if status.over {
-                Text("Game over").font(.title2.bold())
+                Text(overTitle(status)).font(.title2.bold())
                 Button("Play Again", action: pad.playAgain).buttonStyle(.borderedProminent).controlSize(.large)
             } else {
-                SteerBar(steer: pad.steer).frame(height: 12)
-                if pad.game == .runner { jumpPad }
+                if pad.game == .rhythm {
+                    RhythmLanes(rhythm: pad.rhythm).frame(height: landscape ? 200 : 260)
+                } else {
+                    SteerBar(steer: pad.steer).frame(height: 12)
+                }
+                if pad.game == .runner {
+                    HStack(spacing: 12) {
+                        holdPad("Drop", systemImage: "arrow.down", held: pad.dropping, set: pad.setDrop).frame(maxWidth: 120)
+                        holdPad("Jump", systemImage: "arrow.up", held: pad.jumping, set: pad.setJump)
+                    }
+                    .frame(height: landscape ? 140 : 180)
+                }
                 pauseButton(paused: status.paused)
             }
         }
@@ -232,19 +277,24 @@ private extension CatchPadView {
         .controlSize(.large)
     }
 
-    /// Held = jumping; a longer hold jumps higher.
-    var jumpPad: some View {
+    /// A pad that counts while it's held: Jump (a longer hold jumps higher; press again in the air for a second
+    /// jump) and Drop (through the word you stand on).
+    func holdPad(_ title: String, systemImage: String, held: Bool, set: @escaping (Bool) -> Void) -> some View {
         RoundedRectangle(cornerRadius: 24)
-            .fill(pad.jumping ? AnyShapeStyle(.tint) : AnyShapeStyle(.tint.opacity(0.25)))
-            .overlay { Label("Jump", systemImage: "arrow.up").font(.title.bold()).foregroundStyle(pad.jumping ? .white : .primary) }
-            .frame(height: landscape ? 140 : 180)
+            .fill(held ? AnyShapeStyle(.tint) : AnyShapeStyle(.tint.opacity(0.25)))
+            .overlay { Label(title, systemImage: systemImage).font(.title2.bold()).foregroundStyle(held ? .white : .primary) }
             .contentShape(.rect)
             .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { _ in pad.setJump(true) }
-                .onEnded { _ in pad.setJump(false) })
+                .onChanged { _ in set(true) }
+                .onEnded { _ in set(false) })
             .accessibilityElement()
-            .accessibilityLabel("Jump")
+            .accessibilityLabel(title)
             .accessibilityAddTraits(.isButton)
+    }
+
+    func overTitle(_ status: CatchStatus) -> String {
+        guard let rhythm = status.rhythm else { return "Game over" }
+        return rhythm.failed ? "Failed" : "Grade \(rhythm.grade) · \(Int((rhythm.accuracy * 100).rounded()))%"
     }
 
     var hearts: String {
