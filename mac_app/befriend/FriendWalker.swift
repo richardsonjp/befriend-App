@@ -15,6 +15,8 @@ import SwiftUI
 final class FriendWalker {
     enum Place {
         case inside, hoppingOut, out, wandering, walkingHome, hoppingIn
+        /// Steered by the Catch game (M41): only `run(toX:steer:)` moves it.
+        case playing
     }
 
     private static let tickInterval: TimeInterval = 1.0 / 60
@@ -30,11 +32,13 @@ final class FriendWalker {
 
     private(set) var place: Place = .inside
     private(set) var facingLeft = false
+    private var playField: CGRect?
     /// 0 while tucked into the icon, 1 at full size.
     private(set) var hop: CGFloat = 0
 
     var isInside: Bool { place == .inside }
-    var isWalking: Bool { place == .wandering || place == .walkingHome }
+    var isWalking: Bool { place == .wandering || place == .walkingHome || (place == .playing && running) }
+    private(set) var running = false
     var isHopping: Bool { place == .hoppingOut || place == .hoppingIn }
 
     @ObservationIgnored weak var panel: PetPanel?
@@ -66,7 +70,7 @@ final class FriendWalker {
     func comeOut() {
         guard let panel else { return }
         switch place {
-        case .out, .wandering, .hoppingOut:
+        case .out, .wandering, .hoppingOut, .playing:
             return
         case .walkingHome:
             wanderAway()
@@ -90,7 +94,7 @@ final class FriendWalker {
         if instant { return settleInside() }
         if Self.reduceMotion { return fadeOut() }
         switch place {
-        case .inside, .walkingHome, .hoppingIn:
+        case .inside, .walkingHome, .hoppingIn, .playing:
             return
         case .hoppingOut: // still at the icon
             animateHop(to:0, as: .hoppingIn) { [weak self] in self?.settleInside() }
@@ -118,6 +122,40 @@ final class FriendWalker {
     /// Debug: wander right away instead of after the wait.
     func wanderNow() {
         if place == .out { wanderAway() }
+    }
+
+    // MARK: Games (M41, M42)
+
+    /// Stands the friend at the bottom of `field` (its display's visible frame) for a game, out of the icon if needed.
+    func play(in field: CGRect) {
+        guard let panel else { return }
+        stopMoving()
+        place = .playing
+        playField = field
+        running = false
+        hop = 1
+        panel.setFrameOrigin(CGPoint(x: field.midX - panel.frame.width / 2, y: field.minY))
+        panel.alphaValue = 1
+        panel.orderFrontRegardless()
+    }
+
+    /// Puts the friend's feet (middle, bottom) at a screen point; `steer` picks the walk cycle and which way it faces.
+    func run(to feet: CGPoint, steer: Double) {
+        guard let panel, place == .playing else { return }
+        panel.setFrameOrigin(CGPoint(x: feet.x - panel.frame.width / 2, y: feet.y))
+        running = steer != 0
+        if steer != 0 { facingLeft = steer < 0 }
+    }
+
+    /// The game is over: the friend drops to the bottom where it is (Runner leaves it anywhere), as if it had
+    /// just wandered there.
+    func stopPlaying() {
+        guard place == .playing else { return }
+        if let panel, let playField { panel.setFrameOrigin(CGPoint(x: panel.frame.minX, y: playField.minY)) }
+        playField = nil
+        running = false
+        panel?.updateClickThrough()
+        settleOut()
     }
 
     // MARK: Walking

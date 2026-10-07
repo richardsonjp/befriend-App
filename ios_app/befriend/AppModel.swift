@@ -84,6 +84,8 @@ final class AppModel {
     @ObservationIgnored private var isForeground = false
     @ObservationIgnored private var presenceClaim: Task<Void, Never>?
     @ObservationIgnored private var peer: PresencePeer?
+    /// Catch (M41): this iPhone steers the friend on a Mac nearby.
+    let catchPad = CatchPad()
 
     init() {
         surfaces = SurfaceController(api: api)
@@ -147,7 +149,12 @@ final class AppModel {
         case .paused: .paused
         }
         surfaces.pomodoroChanged(PomodoroSurface(pomodoro.state, at: .now, timelapse: status))
-        UIApplication.shared.isIdleTimerDisabled = status == .recording // the camera needs the screen on
+        keepScreenOn()
+    }
+
+    /// The camera needs the screen on while recording, and so does Catch while you play.
+    private func keepScreenOn() {
+        UIApplication.shared.isIdleTimerDisabled = timelapse.recorder.state == .recording || catchPad.isOpen
     }
 
     var friend: FriendProfile? {
@@ -241,8 +248,10 @@ final class AppModel {
         hatchTask = nil
         presenceClaim?.cancel()
         presenceClaim = nil
+        catchPad.close()
         peer?.stop()
         peer = nil
+        catchPad.macNearby = false
         SharedStore.saveFriend(nil)
         SharedStore.saveEncouragements(nil)
         surfaces.signedOut()
@@ -295,7 +304,12 @@ final class AppModel {
             Task { [weak self] in
                 guard let self, self.peer == nil, let me = try? await self.api.me() else { return }
                 self.startChatSync(userID: me.id)
-                self.peer = PresencePeer(userID: me.id, displayName: UIDevice.current.name)
+                let peer = PresencePeer(userID: me.id, displayName: UIDevice.current.name)
+                peer.onCatch = { [weak self] in self?.catchPad.receive($0) }
+                peer.onConnectedChange = { [weak self] in self?.catchPad.macNearby = $0 }
+                self.catchPad.send = { [weak peer] in peer?.send($0) }
+                self.catchPad.onOpenChange = { [weak self] in self?.keepScreenOn() }
+                self.peer = peer
                 if self.isForeground { self.startClaiming() }
             }
         }
@@ -445,6 +459,7 @@ final class AppModel {
                 }
             }
         case .background:
+            catchPad.backgrounded()
             backgroundedAt = .now
             uploader.record(.leftApp)
             show(brain.quickReaction(to: .leftApp, mood: pet.mood))

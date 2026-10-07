@@ -15,6 +15,9 @@ import SwiftUI
 final class ScreenExplainFlow {
     let hotkey = ExplainHotkey()
     @ObservationIgnored private var busy = false
+    /// A Catch game owns the screen and Esc (M41): explaining waits until it's over.
+    @ObservationIgnored var isBlocked: () -> Bool = { false }
+    var isPicking: Bool { busy }
     @ObservationIgnored private var thread: ChatThread?
     @ObservationIgnored private var card: ExplainCard?
     private let library: ChatLibrary
@@ -42,6 +45,7 @@ final class ScreenExplainFlow {
 
     /// Dims the screens for a box to be dragged; one capture at a time. Again while picking cancels it.
     func begin() {
+        guard !isBlocked() else { return }
         guard !busy else { return ScreenCapture.cancel() }
         busy = true
         Task {

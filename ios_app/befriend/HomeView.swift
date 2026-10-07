@@ -166,6 +166,14 @@ struct HomeView: View {
                         Text("Open befriend on your Mac and scan the QR code it shows with your iPhone's Camera.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                        Button("Play on your Mac", systemImage: "gamecontroller", action: model.catchPad.open)
+                            .buttonStyle(.bordered)
+                            .disabled(!model.catchPad.macNearby)
+                        if !model.catchPad.macNearby {
+                            Text("Your Mac shows up here when befriend is open on it, on the same Wi-Fi.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
@@ -196,6 +204,9 @@ struct HomeView: View {
             }
             .navigationDestination(isPresented: $showTimelapses) {
                 TimelapseGallery(library: model.timelapse.library).navigationTitle("Timelapses")
+            }
+            .fullScreenCover(isPresented: Binding(get: { model.catchPad.isOpen }, set: { if !$0 { model.catchPad.close() } })) {
+                CatchPadView(pad: model.catchPad)
             }
             .fullScreenCover(isPresented: $showChat) {
                 ChatRoot(library: model.chat, friend: friend, navigator: model.chatNavigator, sync: model.chatSync) { showChat = false }

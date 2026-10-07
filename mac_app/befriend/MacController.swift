@@ -67,6 +67,8 @@ final class MacController {
     )
     /// Local chat about the user's files (M18); only on this device.
     @ObservationIgnored private(set) lazy var chat = ChatLibrary()
+    /// Catch (M41): the iPhone tilts, the friend catches food across this display.
+    @ObservationIgnored private(set) lazy var catchSession = CatchSession(walker: walker, pet: pet, hotkey: screenExplain.hotkey)
     /// Explain part of the screen (M31): its shortcut, the capture and the explanation.
     @ObservationIgnored private(set) lazy var screenExplain = ScreenExplainFlow(
         library: chat, friend: { [weak self] in self?.friend }, openChat: { [weak self] in self?.openChat($0) },
@@ -391,6 +393,16 @@ final class MacController {
             self?.phoneClaimedNearby = message == .claim
             self?.updateVisibility()
         }
+        peer.onCatch = { [weak self] in self?.catchSession.handle($0) }
+        catchSession.explaining = { [weak self] in self?.screenExplain.isPicking ?? false }
+        screenExplain.isBlocked = { [weak self] in self?.catchSession.isOn ?? false }
+        peer.onConnectedChange = { [weak self] in self?.catchSession.phoneConnected($0) }
+        catchSession.send = { [weak peer] in peer?.send($0) }
+        catchSession.onEnd = { [weak self] in
+            // The game showed the friend whatever presence said; now presence decides again.
+            self?.friendVisible = true
+            self?.updateVisibility()
+        }
         peer.start()
         self.peer = peer
     }
@@ -398,7 +410,7 @@ final class MacController {
     /// Shows the friend only where it is (see PresenceVisibility) and not while it's home for a focus phase: it comes
     /// out of the menu bar icon, or goes back in, straight away if the screen is locked or asleep.
     private func updateVisibility() {
-        guard panel != nil, let presence else { return }
+        guard panel != nil, let presence, !catchSession.isOn else { return } // the iPhone in hand claims it during Catch
         if presence.owner == .phone { phoneClaimedNearby = false } // the backend caught up with the nearby claim
         let show = PresenceVisibility.friendShows(
             presenceShows: PresenceVisibility.macShowsFriend(
@@ -604,6 +616,7 @@ final class MacController {
         friendPoll?.cancel()
         friendPoll = nil
         backgroundRefresh?.cancel()
+        catchSession.end()
         presence?.stop()
         presence = nil
         peer?.stop()

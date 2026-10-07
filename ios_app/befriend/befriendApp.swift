@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct befriendApp: App {
+    @UIApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -27,6 +28,12 @@ struct befriendApp: App {
         .backgroundTask(.appRefresh(CheckIn.taskIdentifier)) {
             await model.checkIn()
         }
+    }
+}
+
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        Orientation.allowed
     }
 }
 

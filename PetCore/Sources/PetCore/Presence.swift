@@ -66,6 +66,10 @@ public final class PresencePeer: NSObject {
 
     /// Messages from the other device, on the main actor.
     public var onMessage: (Message) -> Void = { _ in }
+    public var onCatch: (CatchMessage) -> Void = { _ in }
+    /// The other device joined or left, on the main actor.
+    public var onConnectedChange: (Bool) -> Void = { _ in }
+    public private(set) var isConnected = false
 
     private let peerID: MCPeerID
     private let accountTag: String
@@ -109,14 +113,35 @@ public final class PresencePeer: NSObject {
         }
     }
 
+    /// The Mac games (M41, M42) over the same session: input is sent unreliably (a late one is useless, the next is 16 ms away).
+    public func send(_ message: CatchMessage) {
+        guard !session.connectedPeers.isEmpty, let data = try? JSONEncoder().encode(message) else { return }
+        let mode: MCSessionSendDataMode = if case .input = message { .unreliable } else { .reliable }
+        do {
+            try session.send(data, toPeers: session.connectedPeers, with: mode)
+        } catch {
+            Self.log.error("Sending a catch message failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func deliver(_ data: Data) {
-        guard let message = try? JSONDecoder().decode(Message.self, from: data) else { return }
-        onMessage(message)
+        if let message = try? JSONDecoder().decode(Message.self, from: data) {
+            onMessage(message)
+        } else if let message = try? JSONDecoder().decode(CatchMessage.self, from: data) {
+            onCatch(message)
+        }
     }
 }
 
 extension PresencePeer: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDelegate {
-    nonisolated public func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {}
+    nonisolated public func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+        Task { @MainActor in
+            let connected = !self.session.connectedPeers.isEmpty // read now, so quick flips can't land out of order
+            guard connected != self.isConnected else { return }
+            self.isConnected = connected
+            self.onConnectedChange(connected)
+        }
+    }
 
     nonisolated public func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
         Task { @MainActor in self.deliver(data) }
