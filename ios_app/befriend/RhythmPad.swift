@@ -22,6 +22,8 @@ final class RhythmPad {
     private static let pings = 8
 
     var song = RhythmSong.all[0].id
+    /// What the Mac can play: the built-in songs until it says, then those plus the ones added there.
+    private(set) var songs = RhythmSongInfo.builtIn
     var difficulty = RhythmSong.Difficulty.easy
     /// Seconds this player taps late to what they hear; 0 until calibrated.
     private(set) var calibration = UserDefaults.standard.double(forKey: RhythmPad.calibrationKey)
@@ -36,6 +38,11 @@ final class RhythmPad {
     @ObservationIgnored private var finishing: Task<Void, Never>?
 
     private static var now: Double { ProcessInfo.processInfo.systemUptime }
+
+    func setSongs(_ list: [RhythmSongInfo]) {
+        songs = list.isEmpty ? RhythmSongInfo.builtIn : list
+        if !songs.contains(where: { $0.id == song }) { song = songs[0].id } // removed on the Mac
+    }
 
     var pick: RhythmPick { RhythmPick(song: song, difficulty: difficulty, calibration: calibration) }
 
@@ -126,7 +133,7 @@ struct RhythmSetup: View {
     var body: some View {
         VStack(spacing: 12) {
             Picker("Song", selection: $rhythm.song) {
-                ForEach(RhythmSong.all) { song in Text("\(song.title) · \(Int(song.bpm)) bpm").tag(song.id) }
+                ForEach(rhythm.songs) { song in Text("\(song.title) · \(Int(song.bpm)) bpm").tag(song.id) }
             }
             .pickerStyle(.menu)
             Picker("Difficulty", selection: $rhythm.difficulty) {

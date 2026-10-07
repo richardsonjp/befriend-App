@@ -28,6 +28,9 @@ enum MacConfig {
         URL.applicationSupportDirectory.appending(path: "befriend", directoryHint: .isDirectory)
     }
 
+    /// Songs added to Rhythm (M43) and their charts.
+    static var rhythmFolder: URL { supportDirectory.appending(path: "Rhythm", directoryHint: .isDirectory) }
+
     static var triggerQueueURL: URL { supportDirectory.appending(path: "trigger-queue.json") }
 
     /// Installed skins and the one to draw (see SkinInstaller).

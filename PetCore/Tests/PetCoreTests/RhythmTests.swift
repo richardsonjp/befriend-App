@@ -82,4 +82,31 @@ struct RhythmTests {
         #expect(RhythmJudge.calibration(taps: [10.0, 10.6], clicks: clicks) == nil, "too few taps")
         #expect(RhythmJudge.calibration(taps: [9.9, 10.5, 11.1, 11.7], clicks: clicks) == 0, "never negative")
     }
+
+    @Test func aMIDIFileChartsLikeTheSongItCameFrom() throws {
+        let song = RhythmSong.all[1]
+        let data = try #require(song.midiData())
+        let loaded = try RhythmSong.load(midi: data, id: "mine", title: "Mine")
+        #expect(abs(loaded.bpm - song.bpm) < 0.01)
+        #expect(loaded.parts[0].notes.count == song.parts[0].notes.count, "the melody is picked out of bass, pad and drums")
+        for difficulty in RhythmSong.Difficulty.allCases {
+            let mine = loaded.chart(difficulty), theirs = song.chart(difficulty)
+            #expect(mine.map(\.lane) == theirs.map(\.lane))
+            #expect(zip(mine, theirs).allSatisfy { abs($0.time - $1.time) < 0.001 && abs($0.hold - $1.hold) < 0.01 })
+        }
+        #expect(throws: RhythmSong.MIDIFailure.self) { try RhythmSong.load(midi: Data("nope".utf8), id: "x", title: "x") }
+    }
+
+    @Test func tempoChangesMoveTheNotes() {
+        var song = RhythmSong(id: "t", title: "t", bpm: 120, parts: [])
+        song.tempos = [.init(beat: 0, bpm: 120), .init(beat: 8, bpm: 60)]
+        #expect(song.seconds(8) == 4 && song.seconds(10) == 6, "4 s for 8 beats at 120, then a second a beat")
+        #expect(RhythmSong.thinned([note(0), note(0.2), note(0.6), note(0.9)], gap: 0.5).map(\.time) == [0, 0.6])
+    }
+
+    @Test func anEmptyChartStillEnds() {
+        var judge = RhythmJudge(notes: [])
+        #expect(judge.advance(to: 0.5).isEmpty)
+        #expect(judge.advance(to: 3) == [.finished])
+    }
 }

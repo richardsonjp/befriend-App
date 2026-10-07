@@ -25,6 +25,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var framingWindow: NSWindow?
     private var chatWindow: NSWindow?
     private var modelsWindow: NSWindow?
+    private var rhythmWindow: NSWindow?
 
     init(controller: MacController) {
         self.controller = controller
@@ -51,6 +52,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             .buttonStyle(.plain)
             Button { [weak self] in self?.showModels() } label: {
                 Label("Models", systemImage: "cpu").frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            Button { [weak self] in self?.showRhythmSongs() } label: {
+                Label("Rhythm Songs", systemImage: "music.note.list").frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
         }.padding(16).frame(width: 290))
@@ -127,6 +132,22 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         NSApp.activate()
         modelsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// The songs added to the Rhythm game (M43).
+    private func showRhythmSongs() {
+        popover.performClose(nil)
+        if rhythmWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 420),
+                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.title = "Rhythm Songs"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: RhythmSongsView(library: controller.rhythmLibrary))
+            window.center()
+            rhythmWindow = window
+        }
+        NSApp.activate()
+        rhythmWindow?.makeKeyAndOrderFront(nil)
     }
 
     /// Posture calibration in its own window: a transient popover can't host a sheet.

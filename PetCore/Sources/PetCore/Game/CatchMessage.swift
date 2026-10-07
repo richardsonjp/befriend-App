@@ -23,6 +23,7 @@ public nonisolated enum CatchMessage: Codable, Equatable, Sendable {
     case hit(CatchHit)
     case pong(sent: Double, mac: Double)
     case clicks([Double]) // when each calibration click plays, on the Mac's clock
+    case songs([RhythmSongInfo]) // what Rhythm can play: the built-in songs and the ones added on the Mac
     case link(CatchLink) // where to send tilt over the fast lane
 }
 
@@ -32,6 +33,20 @@ public nonisolated enum MacGame: String, Codable, Sendable, CaseIterable {
     case rhythm
 
     public var title: String { rawValue == "catch" ? "Catch" : rawValue.capitalized }
+}
+
+public nonisolated struct RhythmSongInfo: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var title: String
+    public var bpm: Double
+
+    public init(id: String, title: String, bpm: Double) {
+        self.id = id
+        self.title = title
+        self.bpm = bpm
+    }
+
+    public static let builtIn = RhythmSong.all.map { RhythmSongInfo(id: $0.id, title: $0.title, bpm: $0.bpm) }
 }
 
 /// The song to play, and how late this player taps along to what they hear (seconds).

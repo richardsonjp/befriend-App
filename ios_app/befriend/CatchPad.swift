@@ -114,6 +114,7 @@ final class CatchPad {
         case .link(let link): fastLane.connect(link)
         case .pong(let sent, let mac): rhythm.pong(sent: sent, mac: mac)
         case .clicks(let times): rhythm.clicks(times)
+        case .songs(let list): rhythm.setSongs(list)
         case .quit where stage == .playing:
             if status == nil { // it never started: say so instead of closing
                 notAnswered()
@@ -226,7 +227,7 @@ struct CatchPadView: View {
     private static let howToPlay: [MacGame: String] = [
         .catchFood: "Hold your iPhone however feels comfortable, then tap Ready. Turn it like a steering wheel to run. Catch the food and dodge the bombs: three bombs and it's over.",
         .runner: "Hold your iPhone however feels comfortable, then tap Ready. Every word on your Mac's screen is a platform: turn the phone to run, Jump (again in the air for a double jump) and Drop through to the line below. Grab the coins and stay above the lava.",
-        .rhythm: "Notes fall down the highway on your Mac. Tap the lane of the same colour as each one crosses the line, and hold the long ones to the end. Too many misses and the song stops. Using AirPods? Calibrate first.",
+        .rhythm: "Notes fall down the highway on your Mac. Tap the lane of the same colour as each one crosses the line, and hold the long ones to the end. Too many misses and the song stops. Using AirPods? Calibrate first. Add your own songs on the Mac: Rhythm Songs in befriend's menu.",
     ]
 
     /// Side by side in landscape: the score on the left, the controls on the right.

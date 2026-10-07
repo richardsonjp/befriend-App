@@ -28,10 +28,16 @@ public nonisolated struct RhythmSong: Sendable, Identifiable {
         public var title: String { rawValue.capitalized }
     }
 
-    public struct ChartNote: Equatable, Sendable {
+    public struct ChartNote: Codable, Equatable, Sendable {
         public var time: Double // seconds from the song's start
         public var lane: Int // 0…3
         public var hold: Double // seconds; 0 is a tap
+    }
+
+    /// From `beat` on, the song plays at `bpm`.
+    public struct Tempo: Sendable {
+        public var beat: Double
+        public var bpm: Double
     }
 
     public static let lanes = 4
@@ -41,9 +47,26 @@ public nonisolated struct RhythmSong: Sendable, Identifiable {
     public let bpm: Double
     /// `parts[0]` is the melody the chart follows.
     public let parts: [Part]
+    /// Tempo changes, in order (MIDI files); empty means `bpm` throughout.
+    public var tempos: [Tempo] = []
 
     public var duration: Double { seconds(parts.flatMap(\.notes).map { $0.beat + $0.length }.max() ?? 0) }
-    public func seconds(_ beat: Double) -> Double { beat * 60 / bpm }
+
+    public func seconds(_ beat: Double) -> Double {
+        var time = 0.0, at = 0.0, current = bpm
+        for change in tempos where change.beat < beat {
+            time += (change.beat - at) * 60 / current
+            (at, current) = (change.beat, change.bpm)
+        }
+        return time + (beat - at) * 60 / current
+    }
+
+    /// Notes at least `gap` seconds apart, for an Easy chart made from a Hard one.
+    public static func thinned(_ notes: [ChartNote], gap: Double) -> [ChartNote] {
+        var kept: [ChartNote] = []
+        for note in notes where note.time - (kept.last?.time ?? -.infinity) >= gap { kept.append(note) }
+        return kept
+    }
 
     public static let all: [RhythmSong] = [
         compose(id: "sunny", title: "Sunny Walk", bpm: 92, key: 60, minor: false, chords: [0, 4, 5, 3],
@@ -63,15 +86,18 @@ public nonisolated struct RhythmSong: Sendable, Identifiable {
 
     // MARK: Charts
 
-    /// Hard: every melody note, its lane by pitch (low left, high right), long notes held. Easy: only the notes on the
-    /// bar's strong beats (1 and 3), at least two beats apart.
+    /// Hard: every melody note (the top one of a chord, at most one every 0.1 s), its lane by pitch (low left, high
+    /// right), long notes held. Easy: only the notes on the bar's strong beats (1 and 3), at least two beats apart.
     public func chart(_ difficulty: Difficulty) -> [ChartNote] {
-        let melody = parts[0].notes.sorted { $0.beat < $1.beat }
+        let melody = parts[0].notes.sorted { ($0.beat, $1.pitch) < ($1.beat, $0.pitch) }
         guard let low = melody.map(\.pitch).min(), let high = melody.map(\.pitch).max() else { return [] }
         var lastBeat = -Double.infinity
         return melody.compactMap { note in
             if difficulty == .easy {
-                guard note.beat.truncatingRemainder(dividingBy: 2) == 0, note.beat - lastBeat >= 2 else { return nil }
+                // Played-in MIDI isn't exactly on the grid: near enough counts.
+                guard abs(note.beat - (note.beat / 2).rounded() * 2) < 0.03, note.beat - lastBeat >= 1.9 else { return nil }
+            } else {
+                guard seconds(note.beat - lastBeat) >= 0.1 else { return nil }
             }
             lastBeat = note.beat
             let lane = min(Self.lanes - 1, Int(note.pitch - low) * Self.lanes / (Int(high - low) + 1))

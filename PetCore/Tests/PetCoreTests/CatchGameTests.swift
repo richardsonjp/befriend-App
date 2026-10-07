@@ -91,7 +91,7 @@ struct CatchGameTests {
 
     @Test func messagesRoundTrip() throws {
         let messages: [CatchMessage] = [.start(.catchFood), .start(.rhythm, rhythm: RhythmPick(song: "sunny", difficulty: .hard, calibration: 0.1)),
-                                        .lane(RhythmTouch(lane: 2, down: true, at: 12.5)), .ping(3), .pong(sent: 3, mac: 9), .clicks([1, 2]), .input(steer: -0.25, jump: true), .pause, .resume, .quit, .hit(.bomb),
+                                        .lane(RhythmTouch(lane: 2, down: true, at: 12.5)), .ping(3), .pong(sent: 3, mac: 9), .clicks([1, 2]), .songs(RhythmSongInfo.builtIn), .input(steer: -0.25, jump: true), .pause, .resume, .quit, .hit(.bomb),
                                         .state(CatchStatus(score: 12, lives: 2, best: 30, paused: false, over: false)),
                                         .link(CatchLink(hosts: ["192.168.1.5"], port: 50123, key: Data([1, 2, 3])))]
         for message in messages {

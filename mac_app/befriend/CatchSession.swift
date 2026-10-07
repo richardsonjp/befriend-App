@@ -83,7 +83,20 @@ final class CatchSession {
     /// Picking a box to explain holds Esc; a game doesn't start over it.
     @ObservationIgnored var explaining: () -> Bool = { false }
 
-    init(walker: FriendWalker, pet: PetStateMachine, hotkey: ExplainHotkey) {
+    /// A Rhythm song ready to play: built in, or added on the Mac.
+    struct RhythmTrack {
+        let title: String
+        let source: RhythmPlayer.Source
+        let chart: (RhythmSong.Difficulty) -> [RhythmSong.ChartNote]
+    }
+
+    /// The song playing in Rhythm.
+    private(set) var rhythmTrack: RhythmTrack?
+
+    @ObservationIgnored private let library: RhythmLibrary
+
+    init(walker: FriendWalker, pet: PetStateMachine, hotkey: ExplainHotkey, library: RhythmLibrary) {
+        self.library = library
         self.walker = walker
         self.pet = pet
         self.hotkey = hotkey
@@ -109,7 +122,7 @@ final class CatchSession {
             lastTilt = .now
         case .pause where phase == .playing: pause()
         case .resume where phase == .paused:
-            if let pick = rhythmPick, let song = RhythmSong.named(pick.song), !player.play(song, from: pausedAt) { return end() }
+            if let track = rhythmTrack, !player.play(track.source, from: pausedAt) { return end() }
             phase = .playing
             idleSince = nil
             lastTick = .now
@@ -124,6 +137,7 @@ final class CatchSession {
     func phoneConnected(_ connected: Bool) {
         if !connected, phase == .playing { pause() }
         guard connected else { return }
+        send(.songs(library.songs))
         if phase == .off { return send(.quit) }
         publish()
         if let link = fastLane.link { send(.link(link)) }
@@ -154,11 +168,11 @@ final class CatchSession {
     // MARK: Running
 
     private func begin(_ mode: MacGame, _ pick: RhythmPick?) {
-        let song = pick.flatMap { RhythmSong.named($0.song) }
-        guard mode != .rhythm || song != nil else { return phase == .off ? send(.quit) : () } // an unknown song: ignore it
+        let track = pick.flatMap { rhythmTrack(id: $0.song) }
+        guard mode != .rhythm || track != nil else { return phase == .off ? send(.quit) : () } // an unknown song: ignore it
         player.stop()
         // The song first: if the sounds can't play, nothing has been put on screen yet.
-        if mode == .rhythm, let song, !player.play(song) { return phase == .off ? send(.quit) : end() }
+        if mode == .rhythm, let track, !player.play(track.source) { return phase == .off ? send(.quit) : end() }
         if phase == .off {
             guard !explaining(), let screen = walker.panel?.characterScreen ?? NSScreen.main else { return send(.quit) }
             field = screen.visibleFrame
@@ -181,8 +195,9 @@ final class CatchSession {
         runner = nil
         rhythm = nil
         rhythmPick = nil
-        if mode == .rhythm, let song, let pick {
-            rhythm = RhythmJudge(notes: song.chart(pick.difficulty))
+        rhythmTrack = track
+        if mode == .rhythm, let track, let pick {
+            rhythm = RhythmJudge(notes: track.chart(pick.difficulty))
             rhythmPick = RhythmPick(song: pick.song, difficulty: pick.difficulty, calibration: max(0, min(0.4, pick.calibration)))
             songTime = -rhythmPick!.calibration
             // Beside the hit line, left of the highway.
@@ -260,6 +275,13 @@ final class CatchSession {
 
     // MARK: Rhythm
 
+    private func rhythmTrack(id: String) -> RhythmTrack? {
+        if let song = RhythmSong.named(id) { return RhythmTrack(title: song.title, source: .song(song), chart: song.chart) }
+        guard let entry = library.entry(id) else { return nil }
+        let url = library.url(of: entry)
+        return RhythmTrack(title: entry.title, source: entry.kind == .midi ? .midi(url) : .audio(url), chart: entry.chart)
+    }
+
     /// A lane pressed or let go on the phone, judged at the moment it happened in the song (as the player heard it).
     private func play(_ touch: RhythmTouch) {
         guard phase == .playing, var judge = rhythm, let startedAt = player.startedAt, touch.at.isFinite else { return }
@@ -298,7 +320,7 @@ final class CatchSession {
     /// The phone's tap-along calibration: eight clicks, and when each plays on this clock.
     private func playClicks() {
         let song = RhythmSong.clicks
-        guard player.play(song), let startedAt = player.startedAt else { return }
+        guard player.play(.song(song)), let startedAt = player.startedAt else { return }
         send(.clicks(song.parts[0].notes.map { startedAt + song.seconds($0.beat) }))
         clicksDone?.cancel() // a second calibration keeps its own clicks
         clicksDone = Task { [weak self] in
@@ -430,8 +452,8 @@ private struct CatchField: View {
             HStack(spacing: 14) {
                 if lives >= 0 { // Rhythm has a health bar instead
                     Text(String(repeating: "❤️", count: lives) + String(repeating: "🤍", count: max(0, CatchGame.startLives - lives)))
-                } else if let song = session.rhythmPick.flatMap({ RhythmSong.named($0.song) }) {
-                    Text(song.title)
+                } else if let track = session.rhythmTrack {
+                    Text(track.title)
                 }
                 Text("\(score)").monospacedDigit()
                 Text("Best \(max(session.best, score))").foregroundStyle(.secondary)

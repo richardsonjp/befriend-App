@@ -68,7 +68,10 @@ final class MacController {
     /// Local chat about the user's files (M18); only on this device.
     @ObservationIgnored private(set) lazy var chat = ChatLibrary()
     /// Catch (M41): the iPhone tilts, the friend catches food across this display.
-    @ObservationIgnored private(set) lazy var catchSession = CatchSession(walker: walker, pet: pet, hotkey: screenExplain.hotkey)
+    @ObservationIgnored private(set) lazy var catchSession = CatchSession(walker: walker, pet: pet, hotkey: screenExplain.hotkey,
+                                                                          library: rhythmLibrary)
+    /// Songs added to Rhythm (M43).
+    let rhythmLibrary = RhythmLibrary()
     /// Explain part of the screen (M31): its shortcut, the capture and the explanation.
     @ObservationIgnored private(set) lazy var screenExplain = ScreenExplainFlow(
         library: chat, friend: { [weak self] in self?.friend }, openChat: { [weak self] in self?.openChat($0) },
@@ -398,6 +401,10 @@ final class MacController {
         screenExplain.isBlocked = { [weak self] in self?.catchSession.isOn ?? false }
         peer.onConnectedChange = { [weak self] in self?.catchSession.phoneConnected($0) }
         catchSession.send = { [weak peer] in peer?.send($0) }
+        rhythmLibrary.onChange = { [weak self] in
+            guard let self else { return }
+            self.catchSession.send(.songs(self.rhythmLibrary.songs))
+        }
         catchSession.onEnd = { [weak self] in
             // The game showed the friend whatever presence said; now presence decides again.
             self?.friendVisible = true

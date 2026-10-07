@@ -103,7 +103,7 @@ public nonisolated struct RhythmJudge: Sendable {
             events += finishHold(index)
         }
         if isDone { return events }
-        if let last = notes.last, time > last.time + last.hold + late + 1 {
+        if time > (notes.map { $0.time + $0.hold }.max() ?? 0) + late + 1 { // an empty chart ends too
             isDone = true
             events.append(.finished)
         }
